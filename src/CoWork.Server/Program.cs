@@ -20,7 +20,12 @@ builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
 builder.Services.AddSingleton<RunnerRegistry>();
 builder.Services.AddSingleton<Dispatcher>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
+{
+    // a runner that dies hard (or whose connection is dropped silently, e.g. behind a port proxy) is noticed within seconds
+    o.KeepAliveInterval = TimeSpan.FromSeconds(3);
+    o.ClientTimeoutInterval = TimeSpan.FromSeconds(10);
+});
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 builder.Services.AddAuthorization();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

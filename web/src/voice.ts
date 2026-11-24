@@ -54,14 +54,20 @@ export async function joinVoice(channelId: number) {
     })
     r.on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => { track.detach().forEach(e => e.remove()); audioEls.delete(p.identity) })
     r.on(RoomEvent.Disconnected, () => { if (room === r) void leaveVoice() })
-    await r.connect(liveKitUrl(url ?? store.voice.url), token)
+    const target = liveKitUrl(url ?? store.voice.url)
+    let timer: ReturnType<typeof setTimeout>
+    await Promise.race([
+      r.connect(target, token),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), 20000) }),
+    ]).finally(() => clearTimeout(timer))
     try { await r.localParticipant.setMicrophoneEnabled(true) }
     catch { voice.error = 'Couldn’t use your microphone, so you’re listening only. Allow microphone access to talk.' }
     await hubInvoke('JoinVoice', channelId)
     voice.status = 'connected'
     refresh()
   } catch (e) {
-    voice.error = e instanceof ApiError ? e.message : 'Couldn’t join the call. Try again.'
+    voice.error = e instanceof ApiError ? e.message
+      : 'Couldn’t connect to the voice server. Check that LiveKit is running and that its ports are open (the README lists them), then try again.'
     await leaveVoice(true)
   }
 }

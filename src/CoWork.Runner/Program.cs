@@ -49,6 +49,8 @@ static class Cli
         using var stop = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => stop.Cancel();
+        // SIGTERM: stop serving and close the connections properly, so the server sees the runner leave at once
+        using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Cancel(); });
         var links = new List<ServerLink>();
         foreach (var a in agents)
         {

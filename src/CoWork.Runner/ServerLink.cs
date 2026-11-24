@@ -29,6 +29,7 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
             .WithAutomaticReconnect(new Backoff())
             .Build();
         _hub.ServerTimeout = TimeSpan.FromSeconds(30);
+        _hub.KeepAliveInterval = TimeSpan.FromSeconds(3);      // the server drops a runner it hasn't heard from in 10 s
         _hub.On<DeliverMessage>("Deliver", m => { _ = Task.Run(() => _adapter.Deliver(m)); });
         _hub.On<PermissionAnswerMsg>("PermissionAnswer", a =>
         {

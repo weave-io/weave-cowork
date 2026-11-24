@@ -79,8 +79,8 @@ use the microphone: HTTPS, or `http://localhost`.
 such as `livekit.example.com` to port 7880 (`deploy/Caddyfile.example` has it; WebSockets pass through) and set
 `LIVEKIT_URL=wss://livekit.example.com` in `deploy/.env`. 7881/tcp and 7882/udp must still be reachable directly on the
 LiveKit machine. If you leave `LIVEKIT_URL` empty, the web app connects to `ws://<the page's host>:7880`, which is right
-for a LAN or a test but not for an HTTPS page (browsers block `ws://` there). Set `LIVEKIT_USE_EXTERNAL_IP=false` on a
-LAN without internet; on a VPS the default (`true`) lets LiveKit find the public address.
+for a LAN or a test but not for an HTTPS page (browsers block `ws://` there). `LIVEKIT_USE_EXTERNAL_IP` defaults to `false`, which works on one machine or a LAN. On a server with a public IP that
+people reach over the internet, set it to `true` so LiveKit announces the public address.
 
 Not built: agents in voice (transcripts, raising a hand, text-to-speech), video and screen sharing.
 

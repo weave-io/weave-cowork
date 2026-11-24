@@ -42,7 +42,7 @@ services:
         rtc:
           tcp_port: ${LIVEKIT_TCP_PORT:-7881}
           udp_port: ${LIVEKIT_UDP_PORT:-7882}
-          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-false}
         logging:
           level: info
 
