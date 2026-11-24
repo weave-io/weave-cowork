@@ -18,8 +18,9 @@ watch(() => [t.value?.replies.length, t.value?.replies.at(-1)?.body.length], asy
 }, { flush: 'post' })
 watch(() => t.value?.rootId, async () => { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
 
-function status(a: { online: boolean; busy: boolean; queued: number }) {
-  if (!a.online) return a.queued > 0 ? 'waiting for the runner' : 'offline'
+const isOnline = (a: { id: number; online: boolean }) => memberById(a.id)?.online ?? a.online
+function status(a: { id: number; online: boolean; busy: boolean; queued: number }) {
+  if (!isOnline(a)) return a.queued > 0 ? 'waiting for the runner' : 'offline'
   if (a.busy) return 'working…'
   return a.queued > 0 ? 'queued' : 'idle'
 }
@@ -43,7 +44,7 @@ async function send(text: string) {
         <span v-if="a.runnerHost">· on {{ a.runnerHost }}</span>
         <span v-if="startedBy">· started by {{ startedBy.displayName }}</span>
         <span class="ml-auto flex items-center gap-1.5" data-testid="agent-status">
-          <i class="w-[7px] h-[7px] rounded-full inline-block" :class="[a.online ? 'bg-online' : 'bg-offline', a.busy && 'pulse']" />
+          <i class="w-[7px] h-[7px] rounded-full inline-block" :class="[isOnline(a) ? 'bg-online' : 'bg-offline', a.busy && 'pulse']" />
           {{ status(a) }}
         </span>
       </div>
@@ -53,7 +54,7 @@ async function send(text: string) {
       <div class="flex items-center gap-2.5 text-faint text-xs mx-2.5 my-2"><span class="flex-1 h-px bg-line" />{{ t.replies.filter(r => r.kind === 'text').length }} {{ t.replies.filter(r => r.kind === 'text').length === 1 ? 'reply' : 'replies' }}<span class="flex-1 h-px bg-line" /></div>
       <PostItem v-for="r in t.replies" :key="r.id" :post="r" in-thread />
       <template v-for="a in t.agents" :key="'w' + a.id">
-        <div v-if="!a.online && a.queued > 0" class="mx-2.5 my-1.5 border border-dashed border-line rounded-btn px-2.5 py-1.5 text-[12.5px] text-muted" data-testid="waiting-runner">
+        <div v-if="!isOnline(a) && a.queued > 0" class="mx-2.5 my-1.5 border border-dashed border-line rounded-btn px-2.5 py-1.5 text-[12.5px] text-muted" data-testid="waiting-runner">
           Waiting for {{ a.displayName }}’s runner. It'll answer when the runner is back.
         </div>
       </template>

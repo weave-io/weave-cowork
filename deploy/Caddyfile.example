@@ -1,0 +1,4 @@
+# Reverse proxy with automatic HTTPS. Replace the domain. WebSockets (SignalR) pass through without extra setup.
+cowork.example.com {
+	reverse_proxy cowork:5880
+}

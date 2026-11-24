@@ -25,7 +25,7 @@ const answered = computed(() => (meta.value.options ?? []).find((o: any) => o.id
 <template>
   <!-- a tool call: one compact row -->
   <div v-if="post.kind === 'tool'" class="ml-[46px] my-0.5 border border-line rounded-btn bg-card px-2.5 py-1 text-[12.5px] flex gap-2 items-center max-w-[560px]" data-testid="tool-row">
-    <span class="font-mono text-[11.5px] text-muted">{{ meta.toolKind || 'tool' }}</span>
+    <span v-if="(meta.toolKind || 'tool') !== post.body.toLowerCase()" class="font-mono text-[11.5px] text-muted">{{ meta.toolKind || 'tool' }}</span>
     <span class="truncate">{{ post.body }}</span>
     <span class="ml-auto text-[12px]" :class="meta.status === 'failed' ? 'text-danger-ink' : meta.status === 'completed' ? 'text-online-ink' : 'text-muted pulse'">
       {{ meta.status === 'completed' ? '✓' : meta.status === 'failed' ? 'failed' : 'running…' }}

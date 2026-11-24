@@ -44,7 +44,7 @@ async function join() {
       <div v-if="!online">
         <p class="mt-0 text-[13px]">On the machine where <b>{{ agent?.handle }}</b> should work, run this. The code works once and expires in 10 minutes.</p>
         <div class="flex gap-2 items-center bg-card border border-line rounded-btn p-2"><code class="flex-1" data-testid="runner-command">{{ created.command }}</code><Button small @click="copy">{{ copied ? 'Copied' : 'Copy' }}</Button></div>
-        <p class="text-[13px] text-muted mt-3 flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-away pulse inline-block" /> Waiting for the runner to connect… then start it with <code>cowork-runner run</code>.</p>
+        <p class="text-[13px] text-muted mt-3 flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-away pulse inline-block" /> Waiting for the runner to connect… It stays connected while it runs; next time, <code>cowork-runner run</code> serves every agent saved on that machine.</p>
         <Button small @click="newCode">Get a new code</Button>
       </div>
       <div v-else>

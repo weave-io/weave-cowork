@@ -49,6 +49,7 @@ public sealed class Dispatcher
     public Dispatcher(Db db, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> runnerHub)
     { _db = db; _rt = rt; _runners = runners; _runnerHub = runnerHub; }
 
+    private static readonly JsonSerializerOptions Camel = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static readonly Regex MentionRx = new(@"(?<![\w@])@([a-zA-Z0-9][a-zA-Z0-9_-]*)", RegexOptions.Compiled);
 
     public static IEnumerable<string> Mentions(string body) => MentionRx.Matches(body).Select(m => m.Groups[1].Value.ToLowerInvariant()).Distinct();
@@ -62,7 +63,7 @@ public sealed class Dispatcher
     public async Task Route(long postId)
     {
         var toPump = new List<long>();
-        long? threadForPost = null;
+        long? threadForPost = null, routedThread = null;
         await _lock.WaitAsync();
         try
         {
@@ -89,6 +90,7 @@ public sealed class Dispatcher
                 if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM threads WHERE root_id=@threadId", new { threadId }) == 0)
                     c.Execute("INSERT INTO threads(root_id, channel_id, started_by) VALUES (@threadId, @ch, @by)", new { threadId, ch = post.ChannelId, by = post.AuthorId });
             }
+            routedThread = threadId;
             if (fromPerson) c.Execute("UPDATE threads SET agent_chain=0 WHERE root_id=@threadId", new { threadId });
 
             var targets = new Dictionary<long, MemberRow>();
@@ -116,7 +118,9 @@ public sealed class Dispatcher
         }
         finally { _lock.Release(); }
 
+        // the thread's agent status (queued, waiting for the runner) changed
         if (threadForPost is not null) await BroadcastThread(threadForPost.Value);
+        else if (toPump.Count > 0 && routedThread is not null) await BroadcastThread(routedThread.Value);
         foreach (var a in toPump.Distinct()) await Pump(a);
     }
 
@@ -162,7 +166,16 @@ public sealed class Dispatcher
             await FailInFlight(c, agentId, "the runner went offline during this turn");
         }
         await _rt.ToAll("bootstrap-changed");
+        await BroadcastAgentThreads(agentId);
         await Pump(agentId);
+    }
+
+    /// <summary>An agent went online or offline: every thread it's in shows its new status.</summary>
+    public async Task BroadcastAgentThreads(long agentId)
+    {
+        List<long> threads;
+        using (var c = _db.Open()) threads = c.Query<long>("SELECT thread_id FROM thread_agents WHERE agent_id=@agentId", new { agentId }).ToList();
+        foreach (var t in threads) await BroadcastThread(t);
     }
 
     public async Task RunnerDisconnected(long agentId, string conn)
@@ -170,6 +183,7 @@ public sealed class Dispatcher
         if (!_runners.Remove(agentId, conn)) return;
         using (var c = _db.Open()) await FailInFlight(c, agentId, "the runner went offline during this turn");
         await _rt.ToAll("bootstrap-changed");
+        await BroadcastAgentThreads(agentId);
     }
 
     private async Task FailInFlight(Microsoft.Data.Sqlite.SqliteConnection c, long agentId, string why)
@@ -357,7 +371,7 @@ public sealed class Dispatcher
             if (th is null) return;
             ch = th.Value;
             var owner = c.ExecuteScalar<long>("SELECT owner_id FROM agents WHERE member_id=@agentId", new { agentId });
-            var meta = JsonSerializer.Serialize(new { requestId = r.RequestId, agentId, ownerId = owner, title = r.Title, options = r.Options, status = "pending" });
+            var meta = JsonSerializer.Serialize(new { requestId = r.RequestId, agentId, ownerId = owner, title = r.Title, options = r.Options, status = "pending" }, Camel);
             id = c.ExecuteScalar<long>(@"INSERT INTO posts(channel_id, thread_id, author_id, body, kind, meta, created_at) VALUES (@ch,@t,@agentId,@title,'ask',@meta,@now); SELECT last_insert_rowid();",
                 new { ch, t = r.ThreadId, agentId, title = r.Title, meta, now = Db.Now() });
         }

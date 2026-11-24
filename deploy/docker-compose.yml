@@ -1,0 +1,32 @@
+# Weave CoWork, self-hosted.
+#   docker compose -f deploy/docker-compose.yml up -d --build      (podman compose works too)
+# Then open http://localhost:5880: the first person to arrive sets the server up and becomes its admin.
+
+services:
+  cowork:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: weave-cowork:local
+    restart: unless-stopped
+    ports:
+      - "5880:5880"
+    volumes:
+      - cowork-data:/data          # the SQLite database lives here
+    environment:
+      COWORK_DATA: /data
+
+  # TLS with Caddy: uncomment, put your domain in Caddyfile.example, point DNS at this machine, and drop the
+  # "ports" entry on the cowork service above so only Caddy is reachable.
+  # caddy:
+  #   image: docker.io/library/caddy:2
+  #   restart: unless-stopped
+  #   ports: ["80:80", "443:443"]
+  #   volumes:
+  #     - ./Caddyfile.example:/etc/caddy/Caddyfile:ro
+  #     - caddy-data:/data
+  #   depends_on: [cowork]
+
+volumes:
+  cowork-data:
+  # caddy-data:
