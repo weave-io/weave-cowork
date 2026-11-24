@@ -121,7 +121,7 @@ public sealed class AcpAdapter : IAsyncDisposable
                     yield return new StreamEvent(thread, StreamKinds.Text, t);
                 break;
             case "tool_call":
-                yield return new StreamEvent(thread, StreamKinds.ToolStart, null, (string?)u["toolCallId"], (string?)u["title"] ?? "tool", (string?)u["kind"], Norm((string?)u["status"]));
+                yield return new StreamEvent(thread, StreamKinds.ToolStart, null, (string?)u["toolCallId"], Describe(u) ?? "tool", (string?)u["kind"], Norm((string?)u["status"]));
                 if (Norm((string?)u["status"]) is "completed" or "failed")
                     yield return new StreamEvent(thread, StreamKinds.ToolEnd, null, (string?)u["toolCallId"], null, null, Norm((string?)u["status"]));
                 break;
@@ -130,6 +130,18 @@ public sealed class AcpAdapter : IAsyncDisposable
                     yield return new StreamEvent(thread, StreamKinds.ToolEnd, null, id, (string?)u["title"], null, Norm((string?)u["status"]));
                 break;
         }
+    }
+    /// <summary>What a tool touched: the title, plus the first path, pattern or command from locations / rawInput when there is one.</summary>
+    public static string? Describe(JsonNode u)
+    {
+        var title = (string?)u["title"];
+        string? detail = (string?)u["locations"]?[0]?["path"];
+        if (detail is null && u["rawInput"] is JsonObject raw)
+            foreach (var k in new[] { "filePath", "path", "pattern", "command", "query", "url" })
+                if (raw[k] is JsonValue v && v.TryGetValue<string>(out var sv) && !string.IsNullOrWhiteSpace(sv)) { detail = sv; break; }
+        if (detail is null) return title;
+        if (detail.Length > 120) detail = detail[..120] + "…";
+        return string.IsNullOrWhiteSpace(title) || title!.Contains(detail) ? detail : $"{title} {detail}";
     }
     private static string? Norm(string? s) => s switch { "in_progress" or "pending" => "running", null => null, _ => s };
 

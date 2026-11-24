@@ -17,6 +17,15 @@ public class AcpMappingTests
     }
 
     [Fact]
+    public void Tool_rows_say_what_was_touched()
+    {
+        var e = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c","title":"read","kind":"read","locations":[{"path":"src/Api.cs"}]}""")).First();
+        Assert.Equal("read src/Api.cs", e.Title);
+        e = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c","title":"glob","kind":"search","rawInput":{"pattern":"**/*.csproj"}}""")).First();
+        Assert.Equal("glob **/*.csproj", e.Title);
+    }
+
+    [Fact]
     public void Tool_calls_start_then_end_and_thoughts_are_ignored()
     {
         var start = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c1","title":"Read a.txt","kind":"read","status":"in_progress"}""")).Single();
@@ -85,6 +94,7 @@ public class AcpAdapterTests
         var deny = new Sink { Answer = null };
         await using var adapter2 = new AcpAdapter(deny);
         await adapter2.Deliver(Msg(4, "PERMISSION please"));
+        await deny.WaitTurnEnd(4);
         Assert.Contains(deny.Events, e => e.Kind == StreamKinds.Text && e.Text!.Contains("cancelled"));
     }
 
