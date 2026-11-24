@@ -18,6 +18,11 @@ watch(() => [t.value?.replies.length, t.value?.replies.at(-1)?.body.length], asy
 }, { flush: 'post' })
 watch(() => t.value?.rootId, async () => { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
 
+/** "/home/alex/.bin/opencode acp" → "opencode acp": the executable's name, then its arguments. */
+function shortCommand(cmd: string[]) {
+  const [exe = '', ...rest] = cmd
+  return [exe.split(/[\\/]/).pop(), ...rest].join(' ')
+}
 const isOnline = (a: { id: number; online: boolean }) => memberById(a.id)?.online ?? a.online
 function status(a: { id: number; online: boolean; busy: boolean; queued: number }) {
   if (!isOnline(a)) return a.queued > 0 ? 'waiting for the runner' : 'offline'
@@ -40,7 +45,7 @@ async function send(text: string) {
       <div v-for="a in t.agents" :key="a.id" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted" data-testid="session-line">
         <span class="font-mono text-[11.5px] border border-line rounded-full px-2 bg-panel">session</span>
         <b class="text-ink">@{{ a.handle }}</b>
-        <span class="font-mono text-[11.5px]">{{ a.harnessCommand.join(' ') }}</span>
+        <span class="font-mono text-[11.5px]" :title="a.harnessCommand.join(' ')" data-testid="session-command">{{ shortCommand(a.harnessCommand) }}</span>
         <span v-if="a.runnerHost">· on {{ a.runnerHost }}</span>
         <span v-if="startedBy">· started by {{ startedBy.displayName }}</span>
         <span class="ml-auto flex items-center gap-1.5" data-testid="agent-status">

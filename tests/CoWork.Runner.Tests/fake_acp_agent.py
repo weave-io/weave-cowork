@@ -6,20 +6,30 @@ import json, sys
 def send(o): sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
 n = 0
 pending = {}
+loaded = set()
 for line in sys.stdin:
     m = json.loads(line)
     if "method" not in m:                      # a response to our request
         pending[m["id"]] = m; continue
     if m["method"] == "initialize":
-        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {}}})
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}}})
+    elif m["method"] == "session/load":
+        sid = m["params"]["sessionId"]
+        if sid.startswith("bad"):
+            send({"jsonrpc": "2.0", "id": m["id"], "error": {"code": -32602, "message": "no such session"}})
+        else:
+            loaded.add(sid)
+            # a real harness replays the old conversation; the runner must not show it again
+            send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": sid, "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "REPLAYED"}}}})
+            send({"jsonrpc": "2.0", "id": m["id"], "result": {}})
     elif m["method"] == "session/new":
         n += 1
-        send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessionId": f"s{n}"}})
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessionId": f"s{n}-{__import__('os').getpid()}"}})
     elif m["method"] == "session/prompt":
         sid = m["params"]["sessionId"]; text = m["params"]["prompt"][0]["text"]
         upd = lambda u: send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": sid, "update": u}})
         if "ECHO" in text:
-            upd({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "ECHO[" + text + "]"}})
+            upd({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "ECHO[" + text + "]" + ("LOADED:" + sid if sid in loaded else "")}})
         else:
             upd({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Hello "}})
             upd({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Read README.md", "kind": "read", "status": "in_progress"})

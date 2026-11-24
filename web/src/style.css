@@ -8,7 +8,7 @@
   --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12);
   --online: #16a34a; --online-text: #15803d; --away: #d97706; --away-text: #a85a05; --offline: #a8a49d;
   --danger: #dc2626; --danger-text: #B92323; --hover: rgba(26,25,24,.05);
-  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {

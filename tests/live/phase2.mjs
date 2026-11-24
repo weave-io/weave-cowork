@@ -3,7 +3,7 @@
 import { launch, person, BASE, SHOTS, expect, ok } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
-import { readFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 
 const HOME = homedir()
 const DB = process.env.DB ?? `${HOME}/.cache/cowork-scratch/p2/cowork.db`
@@ -78,7 +78,8 @@ try {
   await a.waitForSelector('[data-testid=thread-panel]')
   ok('posting a mention opens a thread on that post')
   const sess = await a.textContent('[data-testid=session-line]')
-  expect(sess.includes('@reviewer') && sess.includes('opencode') && sess.includes('started by Alex'), 'session line: agent, harness command, who started it: ' + sess.replace(/\s+/g, ' ').trim())
+  expect(sess.includes('@reviewer') && sess.includes('opencode acp') && !sess.includes('/.opencode/bin/') && sess.includes('started by Alex'), 'session line: agent, short harness command, who started it: ' + sess.replace(/\s+/g, ' ').trim())
+  expect((await a.getAttribute('[data-testid=session-command]', 'title')).includes('/opencode'), 'the full harness command is in the tooltip')
   await a.waitForSelector('[data-testid=thread-panel] [data-post]:has-text("reviewer")', { timeout: LONG })
   await a.waitForFunction(() => /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? ''), null, { timeout: LONG })
   const first = await a.evaluate(() => [...document.querySelectorAll('[data-testid=thread-panel] [data-post]')].map(e => e.textContent).join('\n'))
@@ -139,6 +140,8 @@ try {
   await r.waitForSelector('[data-testid=waiting-runner]', { state: 'detached', timeout: 60000 })
   await r.waitForFunction((n) => document.querySelectorAll('[data-testid=thread-panel] [data-post]').length > n + 1, before, { timeout: LONG })
   ok('the runner came back and the waiting mention was answered')
+  expect(/thread \d+: loaded session /.test(runner.log), 'the restarted runner loaded the thread\'s saved harness session (session/load)')
+  expect(existsSync(`${OC}/config/cowork-runner`) && readdirSync(`${OC}/config/cowork-runner`).some(f => f.startsWith('sessions-')), 'the runner keeps session ids in its saved state')
   await r.waitForFunction(() => /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? ''), null, { timeout: LONG })
 
   // --- 10. admin over agents ---
@@ -154,6 +157,14 @@ try {
   a.on('dialog', d => d.accept())
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-people]')
   await shot(a, 'people-agents')
+  await a.click('[data-testid=agents-list] [data-testid=edit-agent]')
+  await a.waitForSelector('[name=instructions]')
+  expect((await a.inputValue('[name=instructions]')).startsWith('You are reviewer'), 'the edit dialog shows the agent\'s instructions')
+  await a.fill('[name=about]', 'Reviews the checkout app, read only'); await shot(a, 'edit-agent')
+  await a.click('[data-testid=save-agent]'); await a.waitForSelector('[data-testid=agent-saved]')
+  expect(sql("select about from agents").includes('read only'), 'Alex edited the agent; the change is saved')
+  await a.keyboard.press('Escape')
+  await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-people]')
   await a.click('[data-agents-list] [data-testid=remove-agent], [data-testid=agents-list] [data-testid=remove-agent]')
   await a.waitForSelector('[data-testid=agents-list] [data-agent=reviewer]', { state: 'detached' })
   ok('Alex removes reviewer entirely')

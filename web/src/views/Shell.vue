@@ -13,6 +13,7 @@ import CreateChannel from '../components/modals/CreateChannel.vue'
 import ChannelSettings from '../components/modals/ChannelSettings.vue'
 import InvitePeople from '../components/modals/InvitePeople.vue'
 import InviteAgent from '../components/modals/InviteAgent.vue'
+import EditAgent from '../components/modals/EditAgent.vue'
 import People from '../components/modals/People.vue'
 
 const route = useRoute(), router = useRouter()
@@ -86,6 +87,7 @@ async function send(text: string) {
     <ChannelSettings v-if="store.modal?.name === 'channel-settings'" :channel-id="store.modal.props.id" />
     <InvitePeople v-if="store.modal?.name === 'invite-people'" />
     <InviteAgent v-if="store.modal?.name === 'invite-agent'" />
+    <EditAgent v-if="store.modal?.name === 'edit-agent'" :agent-id="store.modal.props.id" />
     <People v-if="store.modal?.name === 'people'" />
   </div>
 </template>

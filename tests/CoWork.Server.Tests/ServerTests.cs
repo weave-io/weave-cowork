@@ -121,4 +121,27 @@ public class InviteTests
         using var c = app.Sql();
         Assert.Equal("member", c.ExecuteScalar<string>("SELECT role FROM people WHERE member_id=@id", new { id = rosa.Id }));
     }
+
+    [Fact]
+    public async Task An_agent_can_be_edited_by_its_owner_or_an_admin_but_not_by_others()
+    {
+        using var app = new TestApp();
+        var alex = await app.Setup(); var rosa = await app.Join(alex, "rosa", "Rosa"); var sam = await app.Join(alex, "sam", "Sam");
+        var made = await (await rosa.Http.PostAsJsonAsync("/api/agents", new { handle = "reviewer", about = "a", instructions = "secret plan", harnessCommand = "opencode acp", workspace = "/w" })).Content.ReadFromJsonAsync<JsonElement>();
+        var id = made.GetProperty("agentId").GetInt64();
+        Assert.Equal("reviewer", made.GetProperty("handle").GetString());
+        var body = new { displayName = "Reviewer", about = "new about", instructions = "new instructions", harnessCommand = "/usr/bin/opencode acp --flag \"two words\"", workspace = "/w2" };
+        Assert.Equal(HttpStatusCode.Forbidden, (await sam.Http.PutAsJsonAsync($"/api/agents/{id}", body)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await sam.Http.GetAsync($"/api/agents/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await rosa.Http.PutAsJsonAsync($"/api/agents/{id}", body with { workspace = " " })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await rosa.Http.PutAsJsonAsync($"/api/agents/{id}", body)).StatusCode);       // the owner
+        Assert.Equal(HttpStatusCode.OK, (await alex.Http.PutAsJsonAsync($"/api/agents/{id}", body with { about = "by admin" })).StatusCode);   // an admin
+        var now = await alex.Http.GetFromJsonAsync<JsonElement>($"/api/agents/{id}");
+        Assert.Equal(("by admin", "new instructions", "/w2", "Reviewer"), (now.GetProperty("about").GetString(), now.GetProperty("instructions").GetString(), now.GetProperty("workspace").GetString(), now.GetProperty("displayName").GetString()));
+        Assert.Equal("/usr/bin/opencode acp --flag \"two words\"", now.GetProperty("harnessCommand").GetString());
+        using var c = app.Sql();
+        Assert.Equal("[\"/usr/bin/opencode\",\"acp\",\"--flag\",\"two words\"]", c.ExecuteScalar<string>("SELECT harness_command FROM agents WHERE member_id=" + id));
+        var boot = await rosa.Http.GetStringAsync("/api/bootstrap");
+        Assert.DoesNotContain("new instructions", boot);        // instructions only go to the owner and admins
+    }
 }

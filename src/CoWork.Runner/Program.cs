@@ -52,7 +52,9 @@ static class Cli
         var links = new List<ServerLink>();
         foreach (var a in agents)
         {
-            var link = new ServerLink(a, host);
+            var stateDir = Path.GetDirectoryName(config.Path)!;
+            var key = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(a.Server.TrimEnd('/')));
+            var link = new ServerLink(a, host, sessions: new SessionStore(Path.Combine(stateDir, $"sessions-{Convert.ToHexString(key)[..8].ToLowerInvariant()}-{a.AgentId}.json")));
             var agent = a;
             link.Revoked += () => { Console.WriteLine($"[{agent.Handle}] the server removed this agent's access; forgetting it."); config.Remove(agent); _ = link.DisposeAsync(); };
             links.Add(link);

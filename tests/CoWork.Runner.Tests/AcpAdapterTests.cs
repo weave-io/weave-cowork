@@ -26,6 +26,13 @@ public class AcpMappingTests
     }
 
     [Fact]
+    public void A_tool_call_with_no_locations_is_still_described()
+    {
+        var e = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c","title":"bash","locations":[],"rawInput":{"command":"ls"}}""")).First();
+        Assert.Equal("bash ls", e.Title);
+    }
+
+    [Fact]
     public void Tool_calls_start_then_end_and_thoughts_are_ignored()
     {
         var start = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c1","title":"Read a.txt","kind":"read","status":"in_progress"}""")).Single();
@@ -96,6 +103,41 @@ public class AcpAdapterTests
         await adapter2.Deliver(Msg(4, "PERMISSION please"));
         await deny.WaitTurnEnd(4);
         Assert.Contains(deny.Events, e => e.Kind == StreamKinds.Text && e.Text!.Contains("cancelled"));
+    }
+
+    static string StorePath() => Path.Combine(Path.GetTempPath(), $"cw-{Guid.NewGuid():N}", "sessions.json");
+
+    [Fact]
+    public async Task A_restarted_runner_loads_each_threads_saved_session_without_replaying_it()
+    {
+        var path = StorePath();
+        var first = new Sink();
+        await using (var a1 = new AcpAdapter(first, new SessionStore(path))) await a1.Deliver(Msg(1, "ECHO before"));
+        var firstText = first.Events.Single(e => e.Kind == StreamKinds.Text).Text!;
+        Assert.Contains("Be brief.", firstText);
+        var savedId = new SessionStore(path).Get(1);
+        Assert.NotNull(savedId);
+
+        var second = new Sink();                                  // a "restart": a new adapter and a new harness process, the same state file
+        await using (var a2 = new AcpAdapter(second, new SessionStore(path))) await a2.Deliver(Msg(1, "ECHO after"));
+        await second.WaitTurnEnd(1);
+        var text = Assert.Single(second.Events, e => e.Kind == StreamKinds.Text).Text!;     // the harness's REPLAYED chunk was dropped
+        Assert.Contains("LOADED:" + savedId, text);
+        Assert.DoesNotContain("Be brief.", text);                  // it's the same session: no instructions again
+        Assert.Equal(savedId, new SessionStore(path).Get(1));
+    }
+
+    [Fact]
+    public async Task If_a_saved_session_will_not_load_a_new_one_starts_and_is_saved()
+    {
+        var path = StorePath();
+        new SessionStore(path).Set(1, "bad-session");
+        var sink = new Sink();
+        await using (var a = new AcpAdapter(sink, new SessionStore(path))) await a.Deliver(Msg(1, "ECHO hi"));
+        var text = Assert.Single(sink.Events, e => e.Kind == StreamKinds.Text).Text!;
+        Assert.Contains("Be brief.", text);
+        Assert.DoesNotContain("LOADED", text);
+        Assert.NotEqual("bad-session", new SessionStore(path).Get(1));
     }
 
     [Fact]

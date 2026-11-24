@@ -15,10 +15,10 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
     public event Action? Revoked;
     public Action<string> Log = Console.WriteLine;
 
-    public ServerLink(SavedAgent agent, string host, Func<HttpMessageHandler>? handler = null)
+    public ServerLink(SavedAgent agent, string host, Func<HttpMessageHandler>? handler = null, SessionStore? sessions = null)
     {
         _agent = agent; _host = host;
-        _adapter = new AcpAdapter(this) { Log = m => Log($"[{agent.Handle}] {m}") };
+        _adapter = new AcpAdapter(this, sessions) { Log = m => Log($"[{agent.Handle}] {m}") };
         _hub = new HubConnectionBuilder()
             .WithUrl(agent.Server.TrimEnd('/') + "/hubs/runner", o =>
             {

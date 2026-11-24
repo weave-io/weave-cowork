@@ -43,6 +43,7 @@ public sealed class AcpAgentProcess : IAsyncDisposable
             lock (agent._stderr) { agent._stderr.AppendLine(e.Data); if (agent._stderr.Length > 8192) agent._stderr.Remove(0, agent._stderr.Length - 8192); }
         };
         p.BeginErrorReadLine();
+        client.Closed += e => { if (e is not null) lock (agent._stderr) agent._stderr.AppendLine("reader stopped: " + e); };
         client.Start();
         return agent;
     }

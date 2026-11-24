@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { put, del, post, ApiError } from '../../api'
-import { store, closeModal, loadBootstrap, memberById } from '../../store'
+import { store, closeModal, loadBootstrap, memberById, openModal } from '../../store'
 import Modal from '../ui/Modal.vue'
 import Button from '../ui/Button.vue'
 import Avatar from '../ui/Avatar.vue'
@@ -37,6 +37,7 @@ const canAdminAgent = (ownerId: number | null) => store.isAdmin || ownerId === s
         <Avatar :member="m" size="sm" status /><span class="font-medium">{{ m.displayName }}</span><AgentBadge />
         <span class="text-muted text-xs">owned by {{ memberById(m.ownerId ?? 0)?.displayName }} · {{ m.online ? 'online' : m.connected ? 'offline' : 'not connected' }}</span>
         <span v-if="canAdminAgent(m.ownerId)" class="ml-auto flex gap-1.5">
+          <Button small data-testid="edit-agent" @click="openModal('edit-agent', { id: m.id })">Edit</Button>
           <Button v-if="m.connected" small data-testid="disconnect-agent" @click="run(() => post(`/agents/${m.id}/disconnect`), `Disconnect ${m.displayName}? Its runner's token stops working.`)">Disconnect</Button>
           <Button small variant="danger" data-testid="remove-agent" @click="run(() => del(`/agents/${m.id}`), `Remove ${m.displayName} entirely?`)">Remove</Button>
         </span>

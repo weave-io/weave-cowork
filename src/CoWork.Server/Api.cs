@@ -17,6 +17,7 @@ public record ChannelBody(string? Name, string? Topic, bool? IsPrivate);
 public record PostBody(string Body, long? ThreadId);
 public record AnswerBody(string? OptionId);
 public record RoleBody(string Role);
+public record AgentEditBody(string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace);
 public record AgentBody(string Handle, string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace);
 
 public static partial class Api

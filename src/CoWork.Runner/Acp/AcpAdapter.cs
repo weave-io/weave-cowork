@@ -28,9 +28,12 @@ public sealed class AcpAdapter : IAsyncDisposable
     private readonly System.Threading.Channels.Channel<StreamEvent> _outbox = System.Threading.Channels.Channel.CreateUnbounded<StreamEvent>();
     private readonly Task _pump;
 
-    public AcpAdapter(IRunnerSink sink)
+    private readonly SessionStore? _store;
+    private bool _canLoad;
+
+    public AcpAdapter(IRunnerSink sink, SessionStore? store = null)
     {
-        _sink = sink;
+        _sink = sink; _store = store;
         _pump = Task.Run(async () =>
         {
             await foreach (var e in _outbox.Reader.ReadAllAsync())
@@ -46,8 +49,7 @@ public sealed class AcpAdapter : IAsyncDisposable
         try
         {
             var proc = await EnsureProcess(m);
-            var first = !_sessions.ContainsKey(m.ThreadId);
-            var sessionId = await EnsureSession(proc, m);
+            var (sessionId, first) = await EnsureSession(proc, m);
             // the agent's instructions go in the first prompt of each session, before the first message
             var text = first && !string.IsNullOrWhiteSpace(m.Instructions) ? $"{m.Instructions.Trim()}\n\n{m.Text}" : m.Text;
             var result = await proc.Client.Request("session/prompt", new JsonObject
@@ -61,7 +63,7 @@ public sealed class AcpAdapter : IAsyncDisposable
         {
             var why = e.Message;
             var err = _proc?.Stderr;
-            if (!string.IsNullOrEmpty(err) && (_proc is null || !_proc.IsRunning)) why += " " + err[^Math.Min(err.Length, 300)..];
+            if (!string.IsNullOrEmpty(err)) why += " " + err[^Math.Min(err.Length, 300)..];
             Emit(new StreamEvent(m.ThreadId, StreamKinds.Error, why));
         }
         finally
@@ -84,20 +86,38 @@ public sealed class AcpAdapter : IAsyncDisposable
             Log?.Invoke($"started {string.Join(' ', m.HarnessCommand)} (pid {p.ProcessId})");
             p.Client.OnNotification = OnNotification;
             p.Client.OnRequest = OnRequest;
-            await p.Client.Request("initialize", new JsonObject { ["protocolVersion"] = 1, ["clientCapabilities"] = new JsonObject(), ["clientInfo"] = new JsonObject { ["name"] = "cowork-runner", ["version"] = "0.1" } });
+            var init = await p.Client.Request("initialize", new JsonObject { ["protocolVersion"] = 1, ["clientCapabilities"] = new JsonObject(), ["clientInfo"] = new JsonObject { ["name"] = "cowork-runner", ["version"] = "0.1" } });
+            _canLoad = (bool?)init?["agentCapabilities"]?["loadSession"] == true;
             _proc = p;
             return p;
         }
         finally { _spawn.Release(); }
     }
 
-    private async Task<string> EnsureSession(AcpAgentProcess proc, DeliverMessage m)
+    /// <summary>The thread's ACP session: the one in memory, else the one saved before a restart (session/load, when the harness
+    /// supports it), else a new one. Returns whether the session is new (so the agent's instructions still need to go in).</summary>
+    private async Task<(string Id, bool IsNew)> EnsureSession(AcpAgentProcess proc, DeliverMessage m)
     {
-        if (_sessions.TryGetValue(m.ThreadId, out var existing)) return existing;
-        var res = await proc.Client.Request("session/new", new JsonObject { ["cwd"] = Path.GetFullPath(m.Workspace), ["mcpServers"] = new JsonArray() });
+        if (_sessions.TryGetValue(m.ThreadId, out var existing)) return (existing, false);
+        var cwd = Path.GetFullPath(m.Workspace);
+        var saved = _store?.Get(m.ThreadId);
+        if (saved is not null && _canLoad)
+        {
+            try
+            {
+                // the harness replays the old conversation as session/update; the session isn't registered yet, so those are dropped
+                await proc.Client.Request("session/load", new JsonObject { ["sessionId"] = saved, ["cwd"] = cwd, ["mcpServers"] = new JsonArray() });
+                _sessions[m.ThreadId] = saved; _threads[saved] = m.ThreadId;
+                Log?.Invoke($"thread {m.ThreadId}: loaded session {saved}");
+                return (saved, false);
+            }
+            catch (Exception e) { Log?.Invoke($"thread {m.ThreadId}: couldn't load session {saved} ({e.Message}); starting a new one"); }
+        }
+        var res = await proc.Client.Request("session/new", new JsonObject { ["cwd"] = cwd, ["mcpServers"] = new JsonArray() });
         var id = (string?)res?["sessionId"] ?? throw new InvalidOperationException("The harness didn't open a session.");
         _sessions[m.ThreadId] = id; _threads[id] = m.ThreadId;
-        return id;
+        _store?.Set(m.ThreadId, id);
+        return (id, true);
     }
 
     // ---- agent → us ----
@@ -108,7 +128,8 @@ public sealed class AcpAdapter : IAsyncDisposable
         var sid = (string?)p["sessionId"];
         if (sid is null || !_threads.TryGetValue(sid, out var thread)) return;
         var u = p["update"]; if (u is null) return;
-        foreach (var e in Map(thread, u)) Emit(e);
+        try { foreach (var e in Map(thread, u)) Emit(e); }
+        catch (Exception ex) { Log?.Invoke($"thread {thread}: couldn't read an update ({ex.Message}); skipped"); }     // one odd update must not stop the session
     }
 
     /// <summary>session/update → stream events. Only what a thread shows: the agent's words and its tool calls.</summary>
@@ -135,7 +156,7 @@ public sealed class AcpAdapter : IAsyncDisposable
     public static string? Describe(JsonNode u)
     {
         var title = (string?)u["title"];
-        string? detail = (string?)u["locations"]?[0]?["path"];
+        string? detail = u["locations"] is JsonArray { Count: > 0 } locs ? (locs[0]?["path"] as JsonValue)?.GetValue<string>() : null;
         if (detail is null && u["rawInput"] is JsonObject raw)
             foreach (var k in new[] { "filePath", "path", "pattern", "command", "query", "url" })
                 if (raw[k] is JsonValue v && v.TryGetValue<string>(out var sv) && !string.IsNullOrWhiteSpace(sv)) { detail = sv; break; }

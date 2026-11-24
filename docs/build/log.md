@@ -78,7 +78,17 @@ Journey steps 1–6 are `tests/live/phase1.mjs` (24 checks, a fresh server) and 
 Run them in order against fresh servers to repeat. Tests: 17 server, 7 runner, 9 web, all passing.
 
 ## Known rough edges
-- A runner restart starts each thread's session afresh (no `session/load`).
-- The agent can't be edited after it's created (remove and re-invite).
 - People have no presence indicator or unread counts; the agent has online / offline.
-- The long harness command wraps awkwardly in the thread's session line on narrow screens.
+
+## Brief 2, Part A: polish
+
+All six fixes, one commit. Checked: unit tests (11 runner, 18 server, 9 web build), `tests/live/phase1.mjs` and `phase2.mjs` (now 29 checks) on a scratch server on 5883 with a real runner and real OpenCode 2.4.1.
+
+1. The invite dialog names the agent ("where reviewer should work"); the server now returns `handle` with the one-time code.
+2. The waiting line is one paragraph under the command.
+3. Inter and JetBrains Mono are bundled (`@fontsource-variable/*`, no CDN).
+4. The session line shows `opencode acp`; the full command is the tooltip.
+5. The runner saves thread → harness session id in `sessions-<server hash>-<agentId>.json` beside `agents.json` (0600). After a restart it `session/load`s the saved id when the harness says `loadSession: true`, else (or if loading fails) `session/new`. The load replays history as `session/update`; the session is only registered after the load returns, so the replay is dropped. A loaded session doesn't get the instructions again. Live: the restarted runner logged "loaded session" for the thread.
+6. Agents are editable by owner or admin (`GET/PUT /api/agents/{id}`, `EditAgent.vue`, from People & agents and the member list). The instructions aren't in the member list sent to everyone; only the edit endpoint returns them. Changes apply to new threads; existing sessions keep theirs.
+
+**Found while live-checking, fixed:** a tool call whose `locations` is an empty array threw inside the ACP read loop (`locs[0]` out of range). That killed the loop, so the turn ended with "The harness closed the connection" and the runner needed a restart. `Describe` now checks the array, and one odd update is skipped and logged instead of stopping the session. The harness's stderr and the reader's exception now go into the error notice.

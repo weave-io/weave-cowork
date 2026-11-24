@@ -46,7 +46,34 @@ public static partial class Api
                 tx.Commit();
             }
             await rt.ToAll("bootstrap-changed");
-            return Results.Ok(CodeResponse(ctx, id, code));
+            return Results.Ok(CodeResponse(ctx, id, code, handle));
+        });
+
+        // an agent's settings, for its owner or an admin (the instructions aren't in the member list)
+        authed.MapGet("/agents/{id:long}", (long id, HttpContext ctx, Db db) =>
+        {
+            using var c = db.Open();
+            if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
+            var m = Q.Member(c, id)!;
+            return Results.Ok(new { id, handle = m.Handle, displayName = m.DisplayName, about = m.About ?? "", instructions = m.Instructions ?? "",
+                harnessCommand = string.Join(' ', JsonSerializer.Deserialize<string[]>(m.HarnessCommand!)!.Select(a => a.Any(char.IsWhiteSpace) ? $"\"{a}\"" : a)), workspace = m.Workspace });
+        });
+
+        // edit an agent; new threads use the new settings, running sessions keep theirs
+        authed.MapPut("/agents/{id:long}", async (long id, AgentEditBody b, HttpContext ctx, Db db, Realtime rt) =>
+        {
+            var cmd = ParseCommand(b.HarnessCommand ?? "");
+            if (cmd.Length == 0) return Err(400, "Add the harness command.");
+            if (string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
+            using (var c = db.Open())
+            {
+                if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
+                c.Execute("UPDATE agents SET about=@about, instructions=@ins, harness_command=@cmd, workspace=@ws WHERE member_id=@id",
+                    new { about = b.About ?? "", ins = b.Instructions ?? "", cmd = JsonSerializer.Serialize(cmd), ws = b.Workspace.Trim(), id });
+                if (!string.IsNullOrWhiteSpace(b.DisplayName)) c.Execute("UPDATE members SET display_name=@n WHERE id=@id", new { n = b.DisplayName.Trim(), id });
+            }
+            await rt.ToAll("bootstrap-changed");
+            return Results.Ok(new { ok = true });
         });
 
         // a fresh one-time code for an agent whose runner needs to (re)connect
@@ -56,7 +83,7 @@ public static partial class Api
             if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
             var code = Tokens.NewCode();
             c.Execute("UPDATE agents SET code_hash=@h, code_expires=@exp WHERE member_id=@id", new { h = Tokens.Hash(code), exp = Db.Now() + 10 * 60_000, id });
-            return Results.Ok(CodeResponse(ctx, id, code));
+            return Results.Ok(CodeResponse(ctx, id, code, Q.Member(c, id)!.Handle));
         });
 
         authed.MapPost("/agents/{id:long}/disconnect", async (long id, HttpContext ctx, Db db, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> hub) =>
@@ -96,8 +123,8 @@ public static partial class Api
         });
     }
 
-    static object CodeResponse(HttpContext ctx, long id, string code) =>
-        new { agentId = id, code, expiresInMinutes = 10, command = $"cowork-runner connect {ctx.Request.Scheme}://{ctx.Request.Host} --code {code}" };
+    static object CodeResponse(HttpContext ctx, long id, string code, string? handle = null) =>
+        new { agentId = id, handle, code, expiresInMinutes = 10, command = $"cowork-runner connect {ctx.Request.Scheme}://{ctx.Request.Host} --code {code}" };
 
     static bool CanAdminAgent(Microsoft.Data.Sqlite.SqliteConnection c, long agentId, long me)
     {
