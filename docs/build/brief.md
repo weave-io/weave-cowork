@@ -6,24 +6,56 @@ The user wants **the smallest working prototype to test in the morning**: a serv
 sign in, a real agent takes part, and threads are harness sessions. Smallest means: no feature beyond the demo
 sentences below. Everything else goes on the Later list at the bottom.
 
-## Phase 1: the spine (people, channels, live posts)
+## The user journey (this is the acceptance test)
 
-**Demo:** on a fresh server, the first visitor creates the admin account (Alex) and the server's name ("Lumen Labs").
-Alex creates `#checkout-app`, copies an invite link and opens it in a second browser, where Rosa makes an account.
-Both see the channel; whatever one posts appears for the other at once.
+The user will walk through exactly this in the morning, on a server they host. Every step must work in the real app,
+and the final live check must walk all of it with Playwright (Alex and Rosa in two browser contexts, a real runner).
+
+1. **Set up.** Alex opens a fresh server and is asked to set it up: server name ("Lumen Labs"), his username,
+   display name and password. He's the first **admin**. He lands in the app with a `#general` channel.
+2. **Sign in and out.** Alex signs out and back in. A wrong password says so.
+3. **Create channels.** Alex creates `#checkout-app` with a topic, and a private `#leads` channel.
+4. **Invite people.** Alex opens "Invite people", gets a link (expires in 7 days, can be used 10 times), and can see
+   and revoke the links he made. Rosa opens the link in another browser, signs up (username, display name,
+   password) and lands in Lumen Labs as a **member**. A revoked or expired link says so instead.
+5. **Run channels.** In each channel's settings, an admin (or the channel's creator) can rename it, change its topic,
+   add or remove people and agents, and delete it. Public channels: every person in the server can see and join them.
+   Private channels: only the people and agents added. Rosa doesn't see `#leads` until Alex adds her. A member can't
+   delete a channel they didn't create. Admins can make another person an admin in "People" (server settings), and
+   remove a person from the server.
+6. **Post and start threads.** Alex and Rosa post in `#checkout-app` and see each other's posts at once. Either can
+   start a thread on any post ("Reply in thread"), and the thread shows under the post as "N replies".
+7. **An agent joins.** Alex opens "Invite an agent": name `reviewer`, about, instructions, harness command (default
+   `opencode acp`), workspace folder. He gets a one-time code and the exact command to run. He runs
+   `cowork-runner connect <server> --code …` and the dialog shows "reviewer is connected". He picks which channels
+   reviewer joins (`#checkout-app`). reviewer appears in the member list as an agent, owned by Alex, online.
+8. **The agent takes part.** Alex posts "@reviewer what does this repository do?". A thread opens on that post (the
+   thread is a harness session) and reviewer's answer streams in, with tool calls as compact rows. Rosa replies in
+   the thread "@reviewer and what tests does it have?"; reviewer answers in the same session and knows Rosa asked.
+   If reviewer asks permission for something, only Alex sees Allow / Deny; Rosa sees "reviewer is waiting for Alex".
+9. **The agent goes offline.** The runner stops: reviewer shows offline, a new mention waits in the thread ("waiting
+   for reviewer's runner"), and it's answered when the runner comes back.
+10. **Admin over agents.** Alex can remove reviewer from a channel, and remove (or disconnect) the agent entirely,
+    which cuts off its runner token.
+
+## Phase 1: the spine (people, channels, live posts, threads)
+
+**Demo:** journey steps 1–6.
 
 - Server: ASP.NET Core 10 minimal APIs, cookie auth, SQLite (Dapper, numbered `.sql` migrations), SignalR hub
   `/hubs/app` for browsers (join a channel's group only if a member; events: post created/updated, thread updated).
 - Accounts: username + display name + password (`PasswordHasher<T>`). First-run setup when there are no people.
   Invite links: admin creates one (expiry 7 days, max uses); `/invite/{code}` lets a new person make an account.
-- Channels: text channels in one default category; any signed-in person can create one and post.
+- Roles: admin and member at the server level. Channels: public or private, with a creator and members; settings to
+  rename, set the topic, manage members and delete (admin or creator). Every API and hub call checks this.
+- Threads for people: any post can start a thread; replies in the panel; "N replies" under the post.
 - Web: Vue 3 + Vite + TS + Tailwind. Screens: setup, sign in, invite sign-up, the app shell from the mockup
   (servers rail can be one static icon, channel list, feed, composer, member list). Dark and light from theme tokens.
 - The server serves the built web app from `wwwroot` and falls back to `index.html` for client routes.
 
 ## Phase 2: a real agent in a thread (the point of the prototype)
 
-**Demo:** Alex opens "Invite an agent", names it `reviewer`, gives instructions, picks the harness command
+**Demo:** journey steps 7–10. In detail: Alex opens "Invite an agent", names it `reviewer`, gives instructions, picks the harness command
 (default `opencode acp`) and a workspace folder, and gets a one-time code and the command to run. On the same
 machine he runs `cowork-runner connect http://localhost:5880 --code K7QF-2M9X`; reviewer shows as online in the member
 list. In `#checkout-app` Alex posts "@reviewer what does this repository do?". A thread opens under the post, and
