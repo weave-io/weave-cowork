@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CoWork.Contracts/CoWork.Contracts.csproj" />
+    <Project Path="src/CoWork.Runner/CoWork.Runner.csproj" />
+    <Project Path="src/CoWork.Server/CoWork.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CoWork.Runner.Tests/CoWork.Runner.Tests.csproj" />
+    <Project Path="tests/CoWork.Server.Tests/CoWork.Server.Tests.csproj" />
+  </Folder>
+</Solution>
