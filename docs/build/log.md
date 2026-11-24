@@ -134,3 +134,9 @@ One container stack built with `podman compose -p cwp --profile voice up -d --bu
 
 - Rootless podman here can't `compose down` or `restart` (netns permission error); `exec rm` of the DB + `podman stop` + `podman start` is how the database was reset between phases.
 - Flaky-test fix: the fake microphone beeps on and off, so `phase4` records when a tile lights (a MutationObserver) instead of polling for the attribute.
+
+## Brief 2: independent check, round 2
+
+The independent check (README quick start, `.env` from `.env.example`, compose with the `voice` profile on :5880) failed two places; both fixed and `run2.sh` now passes phase1, phase2 (29 checks) and phase4 on fresh stacks.
+- **Runner didn't show offline when stopped.** The runner handled only Ctrl+C and `ProcessExit`, so SIGTERM ended the process without closing its hub connection, and behind the container port proxy the server didn't notice until SignalR's 30 s timeout. Now SIGTERM is handled (`PosixSignalRegistration`) and the links are disposed cleanly, and the runner hub has a 3 s keep-alive / 10 s client timeout (runner client keep-alive 3 s), so even a SIGKILL shows offline within ~10 s. The hard-kill path is by configuration; I checked the SIGTERM path live, not SIGKILL.
+- **Voice quick start didn't connect.** `use_external_ip` defaulted to true, which announces an address that isn't reachable on one machine. The default is now `false` (compose, `.env.example`, README say when to turn it on). A failed join now times out after 20 s and says what to check, instead of hanging on "Joining…".
