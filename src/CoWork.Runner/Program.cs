@@ -47,10 +47,12 @@ static class Cli
         var agents = config.Load();
         if (agents.Count == 0) { Console.Error.WriteLine("No agents saved here yet. Use: cowork-runner connect <server> --code XXXX-XXXX"); return 1; }
         using var stop = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => stop.Cancel();
+        // The handlers can fire after Serve returned and disposed stop (ProcessExit always does): cancelling then is a no-op.
+        void Stop() { try { stop.Cancel(); } catch (ObjectDisposedException) { } }
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; Stop(); };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Stop();
         // SIGTERM: stop serving and close the connections properly, so the server sees the runner leave at once
-        using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Cancel(); });
+        using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; Stop(); });
         var links = new List<ServerLink>();
         foreach (var a in agents)
         {
