@@ -127,3 +127,10 @@ No LiveKit SDK on the server. Unit test checks the signature, claims and base64u
 
 **Not done / limits:** making a voice channel private doesn't kick people already in the call; agents in voice, video and screen sharing
 stay on the Later list. Mute state shown to others is LiveKit's track mute; speaking uses LiveKit's level threshold.
+
+## Brief 2: final check
+
+One container stack built with `podman compose -p cwp --profile voice up -d --build` from a clean clone of `main` (cowork on 5883, LiveKit 1.13.11 on 5885/5886/5887, `LIVEKIT_USE_EXTERNAL_IP=false`): `phase1.mjs` (24 checks), `phase2.mjs` (real runner, real OpenCode 2.4.1) and `phase4.mjs` (voice, 16 checks; the no-voice check ran earlier against a scratch server) all passed, each against a freshly emptied database. Then the containers, network and volume were removed by their `cwp` label.
+
+- Rootless podman here can't `compose down` or `restart` (netns permission error); `exec rm` of the DB + `podman stop` + `podman start` is how the database was reset between phases.
+- Flaky-test fix: the fake microphone beeps on and off, so `phase4` records when a tile lights (a MutationObserver) instead of polling for the attribute.

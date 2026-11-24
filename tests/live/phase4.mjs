@@ -51,8 +51,14 @@ try {
   await a.waitForSelector('[data-testid=voice-tile][data-member=rosa][data-hearing=true]', { timeout: 30000 })
   await r.waitForSelector('[data-testid=voice-tile][data-member=alex][data-hearing=true]', { timeout: 30000 })
   ok("each browser is subscribed to the other's audio track")
-  await a.waitForSelector('[data-testid=voice-tile][data-member=rosa][data-speaking=true]', { timeout: 30000 })
-  await r.waitForSelector('[data-testid=voice-tile][data-member=alex][data-speaking=true]', { timeout: 30000 })
+  // the fake microphone beeps on and off, so record the moment a tile lights instead of polling for it
+  for (const p of [a, r]) await p.evaluate(() => {
+    window.__spoke = {}
+    const mark = () => document.querySelectorAll('[data-testid=voice-tile][data-speaking=true]').forEach(e => { window.__spoke[e.dataset.member] = true })
+    new MutationObserver(mark).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-speaking'] }); mark()
+  })
+  await a.waitForFunction(() => window.__spoke.rosa, null, { timeout: 45000 })
+  await r.waitForFunction(() => window.__spoke.alex, null, { timeout: 45000 })
   ok("the speaking ring lights on the other person's tile (fake microphone)")
   await shot(a, 'call-alex'); await shot(r, 'call-rosa')
 
