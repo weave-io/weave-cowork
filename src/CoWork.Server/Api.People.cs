@@ -23,7 +23,7 @@ public static partial class Api
             return Results.Ok(new { ok = true });
         });
 
-        authed.MapDelete("/people/{id:long}", async (long id, HttpContext ctx, Db db, Realtime rt) =>
+        authed.MapDelete("/people/{id:long}", async (long id, HttpContext ctx, Db db, Realtime rt, VoicePresence voice) =>
         {
             var agentsToDrop = new List<long>();
             using (var c = db.Open())
@@ -39,6 +39,7 @@ public static partial class Api
                 agentsToDrop = c.Query<long>("SELECT member_id FROM agents WHERE owner_id=@id", new { id }, tx).ToList();
                 tx.Commit();
             }
+            voice.RemoveMember(id);
             foreach (var a in agentsToDrop) await RemoveAgent(a, db, rt);
             await rt.Refresh(id);
             await rt.ToAll("bootstrap-changed");

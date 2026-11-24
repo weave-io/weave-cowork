@@ -5,11 +5,11 @@ import { homedir } from 'node:os'
 export const BASE = process.env.BASE ?? 'http://127.0.0.1:5881'
 export const SHOTS = new URL('../../docs/screens/', import.meta.url).pathname
 export const TIMEOUT = 20000
-export async function launch() {
-  return chromium.launch({ headless: true, executablePath: process.env.CHROME, args: ['--no-sandbox'] })
+export async function launch(extraArgs = []) {
+  return chromium.launch({ headless: true, executablePath: process.env.CHROME, args: ['--no-sandbox', ...extraArgs] })
 }
-export async function person(browser) {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+export async function person(browser, opts = {}) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light', ...opts })
   const page = await ctx.newPage()
   page.setDefaultTimeout(TIMEOUT)
   page.on('pageerror', e => console.log('PAGE ERROR', e.message))

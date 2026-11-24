@@ -22,6 +22,7 @@ public static partial class Api
             {
                 var me = Me(ctx);                      // the author is the caller, never the body
                 if (!Access.CanSee(c, id, me)) return Err(404, "No such channel.");
+                if (Q.Channel(c, id)!.Kind == "voice") return Err(400, "Voice channels have no posts.");
                 var body = (b.Body ?? "").Trim();
                 if (body.Length == 0) return Err(400, "Write something first.");
                 if (body.Length > 8000) return Err(400, "That's too long (8,000 characters at most).");

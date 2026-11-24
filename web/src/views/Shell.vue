@@ -7,6 +7,7 @@ import Sidebar from '../components/Sidebar.vue'
 import PostItem from '../components/PostItem.vue'
 import Composer from '../components/Composer.vue'
 import ThreadPanel from '../components/ThreadPanel.vue'
+import VoiceRoom from '../components/VoiceRoom.vue'
 import MemberList from '../components/MemberList.vue'
 import Modal from '../components/ui/Modal.vue'
 import CreateChannel from '../components/modals/CreateChannel.vue'
@@ -65,17 +66,18 @@ async function send(text: string) {
     <main class="bg-panel flex flex-col min-w-0 min-h-0">
       <template v-if="currentChannel">
         <header class="h-[52px] shrink-0 border-b border-line flex items-center gap-2.5 px-4 min-w-0">
-          <h2 class="m-0 text-[15px] font-semibold whitespace-nowrap" data-testid="channel-title">{{ currentChannel.isPrivate ? '🔒' : '#' }} {{ currentChannel.name }}</h2>
+          <h2 class="m-0 text-[15px] font-semibold whitespace-nowrap" data-testid="channel-title">{{ currentChannel.kind === 'voice' ? '🔊' : currentChannel.isPrivate ? '🔒' : '#' }} {{ currentChannel.name }}</h2>
           <span v-if="currentChannel.topic" class="text-muted text-[13px] truncate border-l border-line pl-2.5" data-testid="channel-topic">{{ currentChannel.topic }}</span>
           <span class="ml-auto flex gap-1.5">
             <button v-if="currentChannel.canManage" class="border border-line bg-raised rounded-btn px-2.5 py-1 text-[13px] cursor-pointer hover:bg-hover" data-testid="channel-settings" @click="openModal('channel-settings', { id: currentChannel.id })">Settings</button>
           </span>
         </header>
-        <div ref="scroller" class="flex-1 min-h-0 overflow-auto px-2 pt-2.5 pb-1.5" data-testid="feed">
+        <VoiceRoom v-if="currentChannel.kind === 'voice'" :channel-id="currentChannel.id" />
+        <div v-else ref="scroller" class="flex-1 min-h-0 overflow-auto px-2 pt-2.5 pb-1.5" data-testid="feed">
           <p v-if="!posts.length && !store.loadingFeed" class="text-muted text-center mt-10">No posts yet. Say something to #{{ currentChannel.name }}.</p>
           <PostItem v-for="p in posts" :key="p.id" :post="p" @open-thread="openT" />
         </div>
-        <Composer :placeholder="`Message #${currentChannel.name}`" @send="send" />
+        <Composer v-if="currentChannel.kind !== 'voice'" :placeholder="`Message #${currentChannel.name}`" @send="send" />
       </template>
       <div v-else class="flex-1 grid place-items-center text-muted">Pick a channel, or create one with +.</div>
     </main>

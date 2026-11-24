@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { store, me, openModal, signOut } from '../store'
+import { store, me, openModal, signOut, memberById } from '../store'
+import { voice, leaveVoice, toggleMute } from '../voice'
 import Avatar from './ui/Avatar.vue'
 
 defineProps<{ channelId: number | null }>()
@@ -31,10 +32,25 @@ function pick(name: string) { menu.value = false; openModal(name) }
         CHANNELS
         <button class="w-5 h-5 grid place-items-center rounded text-muted hover:bg-hover hover:text-ink bg-transparent border-0 cursor-pointer text-base leading-none" aria-label="Create channel" data-testid="create-channel" @click="openModal('create-channel')">+</button>
       </div>
-      <button v-for="c in store.channels" :key="c.id" class="flex items-center gap-2 w-full border-0 text-left px-2 py-1.5 rounded-btn cursor-pointer transition-colors"
-        :class="c.id === channelId ? 'bg-accent-dim text-ink font-semibold' : 'bg-transparent text-muted hover:bg-hover hover:text-ink'" :data-channel="c.name" @click="emit('go', c.id)">
-        <span class="w-4 text-center opacity-80">{{ c.isPrivate ? '🔒' : '#' }}</span><span class="truncate">{{ c.name }}</span>
-      </button>
+      <template v-for="c in store.channels" :key="c.id">
+        <button class="flex items-center gap-2 w-full border-0 text-left px-2 py-1.5 rounded-btn cursor-pointer transition-colors"
+          :class="c.id === channelId ? 'bg-accent-dim text-ink font-semibold' : 'bg-transparent text-muted hover:bg-hover hover:text-ink'" :data-channel="c.name" :data-kind="c.kind" @click="emit('go', c.id)">
+          <span class="w-4 text-center opacity-80">{{ c.kind === 'voice' ? '🔊' : c.isPrivate ? '🔒' : '#' }}</span><span class="truncate">{{ c.name }}</span>
+          <span v-if="c.kind === 'voice' && c.isPrivate" class="ml-auto text-xs opacity-70">🔒</span>
+        </button>
+        <ul v-if="c.kind === 'voice' && store.voicePresence[c.id]?.length" class="list-none m-0 mb-1 pl-7 pr-2" :data-voice-members="c.name">
+          <li v-for="id in store.voicePresence[c.id]" :key="id" class="flex items-center gap-2 py-0.5 text-[12.5px] text-muted" :data-voice-member="memberById(id)?.handle">
+            <Avatar :member="memberById(id)" size="xs" /><span class="truncate">{{ memberById(id)?.displayName }}</span>
+          </li>
+        </ul>
+      </template>
+    </div>
+    <div v-if="voice.status === 'connected' && voice.channelId != null" class="border-t border-line px-3 py-2 flex items-center gap-2 text-[12.5px]" data-testid="voice-bar">
+      <i class="w-2 h-2 rounded-full bg-online inline-block" /><span class="truncate font-medium">{{ store.channels.find(c => c.id === voice.channelId)?.name }}</span>
+      <span class="ml-auto flex gap-1">
+        <button class="px-2 h-6 rounded-btn text-muted hover:bg-hover bg-transparent border border-line cursor-pointer text-xs" @click="toggleMute">{{ voice.muted ? 'Unmute' : 'Mute' }}</button>
+        <button class="px-2 h-6 rounded-btn text-danger-ink hover:bg-hover bg-transparent border border-line cursor-pointer text-xs" @click="leaveVoice()">Leave</button>
+      </span>
     </div>
     <div class="border-t border-line px-3 py-2.5 flex items-center gap-2.5 text-[13px]">
       <Avatar :member="me" size="sm" />

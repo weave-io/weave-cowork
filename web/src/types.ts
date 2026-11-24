@@ -4,7 +4,7 @@ export interface Member {
   harnessCommand: string[] | null; workspace: string | null; runnerHost: string | null; connected: boolean
 }
 export interface Channel {
-  id: number; name: string; topic: string; isPrivate: boolean; creatorId: number; memberIds: number[]; canManage: boolean
+  id: number; name: string; kind: 'text' | 'voice'; topic: string; isPrivate: boolean; creatorId: number; memberIds: number[]; canManage: boolean
 }
 export interface Post {
   id: number; channelId: number; threadId: number | null; authorId: number; body: string

@@ -7,6 +7,7 @@ public static partial class Api
 {
     static void MapChannels(RouteGroupBuilder authed)
     {
+        MapVoice(authed);
         authed.MapPost("/channels", async (ChannelBody b, HttpContext ctx, Db db, Realtime rt) =>
         {
             var me = Me(ctx);
@@ -16,8 +17,10 @@ public static partial class Api
                 var name = NormaliseChannel(b.Name);
                 if (!ChannelRx.IsMatch(name)) return Err(400, "Channel names are lowercase letters, numbers, - and _.");
                 if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM channels WHERE name=@name", new { name }) > 0) return Err(409, "There's already a channel with that name.");
-                id = c.ExecuteScalar<long>("INSERT INTO channels(name, topic, is_private, creator_id, created_at) VALUES (@name,@topic,@p,@me,@now); SELECT last_insert_rowid();",
-                    new { name, topic = (b.Topic ?? "").Trim(), p = b.IsPrivate == true, me, now = Db.Now() });
+                var kind = b.Kind ?? "text";
+                if (kind is not ("text" or "voice")) return Err(400, "A channel is text or voice.");
+                id = c.ExecuteScalar<long>("INSERT INTO channels(name, topic, is_private, kind, creator_id, created_at) VALUES (@name,@topic,@p,@kind,@me,@now); SELECT last_insert_rowid();",
+                    new { name, kind, topic = (b.Topic ?? "").Trim(), p = b.IsPrivate == true, me, now = Db.Now() });
                 c.Execute("INSERT INTO channel_members VALUES (@id,@me)", new { id, me });
             }
             await rt.RefreshAll();
@@ -47,7 +50,7 @@ public static partial class Api
             return Results.Ok(new { ok = true });
         });
 
-        authed.MapDelete("/channels/{id:long}", async (long id, HttpContext ctx, Db db, Realtime rt) =>
+        authed.MapDelete("/channels/{id:long}", async (long id, HttpContext ctx, Db db, Realtime rt, VoicePresence voice) =>
         {
             using (var c = db.Open())
             {
@@ -63,6 +66,7 @@ public static partial class Api
                 c.Execute("DELETE FROM channels WHERE id=@id", new { id }, tx);
                 tx.Commit();
             }
+            voice.ClearChannel(id);
             await rt.RefreshAll();
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(new { ok = true });

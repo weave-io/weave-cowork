@@ -11,7 +11,9 @@ public sealed class AppHub : Hub
 {
     private readonly Realtime _rt;
     private readonly Db _db;
-    public AppHub(Realtime rt, Db db) { _rt = rt; _db = db; }
+    private readonly VoicePresence _voice;
+    private readonly VoiceOptions _vo;
+    public AppHub(Realtime rt, Db db, VoicePresence voice, VoiceOptions vo) { _rt = rt; _db = db; _voice = voice; _vo = vo; }
 
     public static long MemberId(ClaimsPrincipal u) => long.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
@@ -21,11 +23,29 @@ public sealed class AppHub : Hub
         await base.OnConnectedAsync();
     }
 
-    public override Task OnDisconnectedAsync(Exception? exception)
+    public override async Task OnDisconnectedAsync(Exception? exception)
     {
         _rt.Disconnected(MemberId(Context.User!), Context.ConnectionId);
-        return base.OnDisconnectedAsync(exception);
+        await Announce(_voice.Leave(Context.ConnectionId));
+        await base.OnDisconnectedAsync(exception);
     }
+
+    /// <summary>The browser says it joined a voice channel's room. Refused unless the caller may see a voice channel on a server with voice.</summary>
+    public async Task JoinVoice(long channelId)
+    {
+        var me = MemberId(Context.User!);
+        using (var c = _db.Open())
+        {
+            if (!_vo.Enabled) throw new HubException("Voice isn't set up on this server.");
+            if (!Access.CanSee(c, channelId, me) || Q.Channel(c, channelId)!.Kind != "voice") throw new HubException("You can't join that channel.");
+        }
+        await Announce(_voice.Join(Context.ConnectionId, channelId, me));
+    }
+
+    public async Task LeaveVoice() => await Announce(_voice.Leave(Context.ConnectionId));
+
+    private Task Announce(IEnumerable<long> channels) =>
+        Task.WhenAll(channels.Select(ch => _rt.ToChannel(ch, "voice-presence", new { channelId = ch, memberIds = _voice.Members(ch) })));
 
     /// <summary>Ask to hear a channel. Refused unless the caller may see it.</summary>
     public async Task Subscribe(long channelId)

@@ -1,6 +1,10 @@
 # Weave CoWork, self-hosted.
 #   docker compose -f deploy/docker-compose.yml up -d --build      (podman compose works too)
 # Then open http://localhost:5880: the first person to arrive sets the server up and becomes its admin.
+#
+# Voice channels (optional): copy deploy/.env.example to deploy/.env, set the LiveKit key and secret, and start with the
+# "voice" profile:   docker compose -f deploy/docker-compose.yml --profile voice up -d --build
+# Without them, voice channels say "Voice isn't set up on this server" and everything else works as usual.
 
 services:
   cowork:
@@ -10,11 +14,37 @@ services:
     image: weave-cowork:local
     restart: unless-stopped
     ports:
-      - "5880:5880"
+      - "${COWORK_PORT:-5880}:5880"
     volumes:
       - cowork-data:/data          # the SQLite database lives here
     environment:
       COWORK_DATA: /data
+      # voice: the same key and secret LiveKit below is started with; LIVEKIT_URL is where browsers reach LiveKit
+      # (ws://host:7880, or wss://livekit.example.com behind a proxy). Empty: the web app uses its own host on port 7880.
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+
+  # LiveKit, the media server behind voice channels. Host networking is what LiveKit recommends for Docker: calls use
+  # one UDP port (and a TCP fallback), and the ICE addresses it announces are then the machine's own. Linux only.
+  #   7880/tcp  signalling (WebSocket)       7881/tcp  media over TCP, the fallback       7882/udp  media over UDP
+  # Open 7881/tcp and 7882/udp on the firewall; 7880 too unless a reverse proxy fronts it (see the README).
+  # The config is the LIVEKIT_CONFIG below; change the ports with LIVEKIT_PORT / LIVEKIT_TCP_PORT / LIVEKIT_UDP_PORT.
+  livekit:
+    profiles: ["voice"]
+    image: docker.io/livekit/livekit-server:v1.13.11
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-cowork}: ${LIVEKIT_API_SECRET:-}"
+      LIVEKIT_CONFIG: |
+        port: ${LIVEKIT_PORT:-7880}
+        rtc:
+          tcp_port: ${LIVEKIT_TCP_PORT:-7881}
+          udp_port: ${LIVEKIT_UDP_PORT:-7882}
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+        logging:
+          level: info
 
   # TLS with Caddy: uncomment, put your domain in Caddyfile.example, point DNS at this machine, and drop the
   # "ports" entry on the cowork service above so only Caddy is reachable.

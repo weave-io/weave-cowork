@@ -4,6 +4,7 @@ A self-hosted Discord for people and agents: text channels, people who sign in, 
 harness, and **threads that are harness sessions**. Post "@reviewer what does this repository do?" and a thread opens on
 that post; reviewer (OpenCode, Claude Code, anything that speaks ACP) answers in it, with its tool calls as compact rows.
 A teammate replies in the same thread and the agent knows who is asking. Permission requests go to the agent's owner only.
+Voice channels (self-hosted LiveKit) let people talk in a room.
 
 This is the smallest working prototype. The design is in `mockups/cowork/` (`index.html` the click-through, `plan.html`
 the architecture); the rules for building it are in `AGENTS.md`; the build log is `docs/build/log.md`.
@@ -16,7 +17,7 @@ the architecture); the rules for building it are in `AGENTS.md`; the build log i
 | `src/CoWork.Runner` | `cowork-runner`: connects out to a server and runs agents' harness sessions over ACP |
 | `src/CoWork.Contracts` | what the server and the runner say to each other |
 | `web/` | Vue 3 + Vite + TypeScript + Tailwind, built into the server's `wwwroot` |
-| `deploy/` | Dockerfile, docker-compose.yml, a Caddy example |
+| `deploy/` | Dockerfile, docker-compose.yml (with an optional LiveKit service), a Caddy example |
 
 ## Run it locally
 
@@ -31,7 +32,8 @@ Open http://localhost:5880. The first person to arrive sets the server up (name,
 its admin. For web development run `bun run dev` in `web/` as well: Vite on :5173 proxies `/api` and `/hubs` to :5880.
 
 Configuration (environment variables): `COWORK_DATA` (folder for the database, default `./data`), `COWORK_DB` (full
-path of the database file), `ASPNETCORE_URLS` (default `http://localhost:5880`).
+path of the database file), `ASPNETCORE_URLS` (default `http://localhost:5880`), and for voice `LIVEKIT_API_KEY`,
+`LIVEKIT_API_SECRET` and `LIVEKIT_URL` (see Voice channels).
 
 Tests: `dotnet test` (server, routing, runner and the ACP mapping, with a fake ACP agent) and `cd web && bun run test`.
 Live checks with Playwright (two browsers, a real runner and OpenCode) are in `tests/live/`.
@@ -45,6 +47,42 @@ docker compose -f deploy/docker-compose.yml up -d --build      # or: podman comp
 The server listens on port 5880; its SQLite file is on the `cowork-data` volume. Open it, set it up, invite people.
 For HTTPS put it behind a reverse proxy: `deploy/docker-compose.yml` has a commented Caddy service and
 `deploy/Caddyfile.example` has the two lines it needs. SignalR needs WebSockets, which Caddy passes through.
+
+## Voice channels
+
+Create a channel with **🔊 Voice** selected. People join a room from the browser; each person's tile shows who is talking, and
+the channel list shows who is in each voice channel without joining. Voice channels are created, renamed, made private
+and deleted like text channels. They have no posts. Audio runs through [LiveKit](https://livekit.io), which you host
+yourself; CoWork only hands members a short-lived room token (an HS256 JWT it signs itself with the API secret, one room per
+channel, only for people who can see the channel). Without LiveKit, a voice channel says "Voice isn't set up on this
+server" and nothing else changes.
+
+Turn it on with the compose file:
+
+```bash
+cp deploy/.env.example deploy/.env        # set LIVEKIT_API_SECRET to a long random string (openssl rand -hex 24)
+docker compose -f deploy/docker-compose.yml --profile voice up -d --build
+```
+
+Ports, all on the machine that runs the `livekit` service (it uses host networking, as LiveKit recommends, so Linux only):
+
+| Port | What | Open it? |
+|---|---|---|
+| 7880/tcp | signalling (WebSocket) | yes, or put a reverse proxy in front (below) |
+| 7881/tcp | media over TCP, the fallback when UDP is blocked | yes |
+| 7882/udp | media over UDP: one port for every call | yes |
+
+Change them with `LIVEKIT_PORT`, `LIVEKIT_TCP_PORT` and `LIVEKIT_UDP_PORT` in `deploy/.env`. Browsers need a secure page to
+use the microphone: HTTPS, or `http://localhost`.
+
+**Behind a reverse proxy.** The proxy can carry the web app and LiveKit's signalling, not the media. Proxy a hostname
+such as `livekit.example.com` to port 7880 (`deploy/Caddyfile.example` has it; WebSockets pass through) and set
+`LIVEKIT_URL=wss://livekit.example.com` in `deploy/.env`. 7881/tcp and 7882/udp must still be reachable directly on the
+LiveKit machine. If you leave `LIVEKIT_URL` empty, the web app connects to `ws://<the page's host>:7880`, which is right
+for a LAN or a test but not for an HTTPS page (browsers block `ws://` there). Set `LIVEKIT_USE_EXTERNAL_IP=false` on a
+LAN without internet; on a VPS the default (`true`) lets LiveKit find the public address.
+
+Not built: agents in voice (transcripts, raising a hand, text-to-speech), video and screen sharing.
 
 ## Invite people
 
@@ -70,6 +108,10 @@ An agent is a harness command running on a machine you control (its **runner**).
    thread go to the agents already in it. One turn at a time per thread and agent; later messages queue. If the runner is
    offline the thread says so and the message goes out when it's back.
 
+If the runner restarts, each thread's harness session is loaded again (ACP `session/load`) when the harness supports it,
+so the agent remembers the thread; otherwise it starts afresh. The agent's owner or an admin can edit its about, instructions,
+harness command and workspace under **People and agents** (new threads use the changes).
+
 The harness runs with the runner's environment. To keep an agent's config, data and credentials apart from your own,
 start the runner with its own `HOME` and `XDG_*` variables.
 
@@ -84,6 +126,5 @@ agent leaves the server and its token is gone). The runner is told, and forgets 
 OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; hosted runners in containers; agent tools over MCP
 (`cowork_read_channel`, `cowork_start_thread`, …); agents starting threads; resolving threads; reactions; roles and
 channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
-layout; resuming a harness session after the runner restarts (a restarted runner starts the thread's session afresh);
-editing an agent after it's created; sharing agents across servers; agents in voice. See the "Later" list in
+layout; sharing agents across servers; agents in voice. See the "Later" list in
 `docs/build/brief.md`.

@@ -2,3 +2,9 @@
 cowork.example.com {
 	reverse_proxy cowork:5880
 }
+
+# Voice: LiveKit's signalling WebSocket can sit behind the proxy too (set LIVEKIT_URL=wss://livekit.example.com).
+# Media does not go through it: 7881/tcp and 7882/udp must be open on the machine itself.
+livekit.example.com {
+	reverse_proxy 127.0.0.1:7880
+}

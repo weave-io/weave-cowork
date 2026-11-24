@@ -14,11 +14,16 @@ namespace CoWork.Server.Tests;
 public sealed class TestApp : WebApplicationFactory<Program>
 {
     public string DbPath { get; }
-    public TestApp()
+    public const string VoiceKey = "testkey", VoiceSecret = "test-secret-test-secret-test-secret-1234";
+    public TestApp(bool voice = false)
     {
         DbPath = Path.Combine(Path.GetTempPath(), $"cowork-test-{Guid.NewGuid():N}.db");
         Environment.SetEnvironmentVariable("COWORK_DB", DbPath);
+        Environment.SetEnvironmentVariable("LIVEKIT_API_KEY", voice ? VoiceKey : null);
+        Environment.SetEnvironmentVariable("LIVEKIT_API_SECRET", voice ? VoiceSecret : null);
+        Environment.SetEnvironmentVariable("LIVEKIT_URL", voice ? "ws://livekit.test:7880" : null);
         _ = Server;
+        Environment.SetEnvironmentVariable("LIVEKIT_API_KEY", null); Environment.SetEnvironmentVariable("LIVEKIT_API_SECRET", null); Environment.SetEnvironmentVariable("LIVEKIT_URL", null);
     }
 
     public SqliteConnection Sql() { var c = new SqliteConnection($"Data Source={DbPath}"); c.Open(); return c; }
@@ -67,6 +72,12 @@ public sealed class Person
     public async Task<long> Channel(string name, bool priv = false)
     {
         var r = await Http.PostAsJsonAsync("/api/channels", new { name, isPrivate = priv });
+        r.EnsureSuccessStatusCode();
+        return (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+    }
+    public async Task<long> VoiceChannel(string name, bool priv = false)
+    {
+        var r = await Http.PostAsJsonAsync("/api/channels", new { name, isPrivate = priv, kind = "voice" });
         r.EnsureSuccessStatusCode();
         return (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
     }

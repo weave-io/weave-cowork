@@ -15,6 +15,8 @@ var db = new Db(dbPath);
 db.Migrate();
 builder.Services.AddSingleton(db);
 builder.Services.AddSingleton<Realtime>();
+builder.Services.AddSingleton<VoicePresence>();
+builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
 builder.Services.AddSingleton<RunnerRegistry>();
 builder.Services.AddSingleton<Dispatcher>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();

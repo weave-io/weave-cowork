@@ -13,6 +13,8 @@ export const store = reactive({
   channels: [] as Channel[],
   feed: { channelId: null, posts: [], thread: null } as FeedState,
   loadingFeed: false,
+  voice: { enabled: false, url: null as string | null },
+  voicePresence: {} as Record<number, number[]>,
   live: false,
   modal: null as null | { name: string; props?: any },
 })
@@ -40,6 +42,8 @@ export async function loadBootstrap() {
   store.isAdmin = b.isAdmin
   store.members = b.members
   store.channels = b.channels
+  store.voice = b.voice ?? { enabled: false, url: null }
+  store.voicePresence = b.voicePresence ?? {}
 }
 
 export async function signedIn() {
@@ -48,7 +52,12 @@ export async function signedIn() {
   startHub()
 }
 
+/** voice.ts registers this so signing out leaves the room first */
+export let leaveVoiceHook: (() => Promise<void>) | null = null
+export const setLeaveVoiceHook = (f: () => Promise<void>) => { leaveVoiceHook = f }
+
 export async function signOut() {
+  await leaveVoiceHook?.()
   await post('/auth/logout')
   await hub?.stop(); hub = null
   store.phase = 'signin'
@@ -84,6 +93,10 @@ async function reloadFeed() {
 }
 
 let hub: signalR.HubConnection | null = null
+const onReconnect: Array<() => void> = []
+/** Call a hub method (used by voice to report joins and leaves). */
+export const hubInvoke = (method: string, ...args: unknown[]) => hub ? hub.invoke(method, ...args) : Promise.reject(new Error('not connected'))
+export const afterReconnect = (f: () => void) => { onReconnect.push(f) }
 let pending: ReturnType<typeof setTimeout> | null = null
 
 function startHub() {
@@ -91,11 +104,12 @@ function startHub() {
   hub = new signalR.HubConnectionBuilder().withUrl('/hubs/app').withAutomaticReconnect([0, 1000, 3000, 5000, 10000]).build()
   for (const evt of ['post-created', 'post-updated', 'post-delta', 'thread-updated'])
     hub.on(evt, (p: any) => applyEvent(store.feed, evt, p))
+  hub.on('voice-presence', (p: { channelId: number; memberIds: number[] }) => { store.voicePresence = { ...store.voicePresence, [p.channelId]: p.memberIds } })
   hub.on('bootstrap-changed', () => {
     if (pending) return
     pending = setTimeout(async () => { pending = null; try { await loadBootstrap() } catch { /* signed out */ } }, 120)
   })
-  hub.onreconnected(() => { store.live = true; reloadFeed().catch(() => {}) })
+  hub.onreconnected(() => { store.live = true; reloadFeed().catch(() => {}); for (const f of onReconnect) f() })
   hub.onreconnecting(() => { store.live = false })
   hub.onclose(() => { store.live = false })
   hub.start().then(() => { store.live = true }).catch(() => { store.live = false })

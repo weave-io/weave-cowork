@@ -67,9 +67,7 @@ Compose has no healthcheck for the same reason.
 
 ## Phase 4: voice channels
 
-**Not started.** The brief makes it optional ("only if 1–3 are done"), it isn't part of the journey, and a prototype for the
-morning is better with the journey solid. It stays on the Later list: LiveKit in compose, HS256 room tokens from the server,
-`livekit-client` in the web app.
+Built in brief 2, Part B: see the end of this log.
 
 ## Final check
 
@@ -92,3 +90,40 @@ All six fixes, one commit. Checked: unit tests (11 runner, 18 server, 9 web buil
 6. Agents are editable by owner or admin (`GET/PUT /api/agents/{id}`, `EditAgent.vue`, from People & agents and the member list). The instructions aren't in the member list sent to everyone; only the edit endpoint returns them. Changes apply to new threads; existing sessions keep theirs.
 
 **Found while live-checking, fixed:** a tool call whose `locations` is an empty array threw inside the ACP read loop (`locs[0]` out of range). That killed the loop, so the turn ended with "The harness closed the connection" and the runner needed a restart. `Describe` now checks the array, and one odd update is skipped and logged instead of stopping the session. The harness's stderr and the reader's exception now go into the error notice.
+
+## Brief 2, Part B: voice channels
+
+**Works:** channels have a `kind` (text | voice; migration 002). A voice channel is created (🔊 Voice in the create dialog), renamed,
+made private and deleted like a text channel; it has no posts or composer (the server refuses posts to it). Joining a voice channel:
+the browser asks `POST /api/channels/{id}/voice/token` (503 "Voice isn't set up on this server" unless `LIVEKIT_API_KEY` and
+`LIVEKIT_API_SECRET` are set; 404 if the person can't see the channel; 400 if it isn't voice), connects to LiveKit with `livekit-client`,
+publishes the microphone, then tells the server over the hub (`JoinVoice`) so the roster is pushed (`voice-presence`) to everyone who can
+see the channel. The sidebar shows who is in each voice channel under it, live, without joining. Tiles with a speaking ring (LiveKit's
+active-speaker detection), mute and leave; a call continues while you browse other channels (bar at the bottom of the sidebar).
+
+**Token:** `LiveKitToken.Create` in `Voice.cs`, written by hand: HS256 JWT, `iss` = API key, `sub` = member id, `name` = display name,
+`video` = {room: `channel-<id>`, roomJoin, canPublish, canSubscribe, canPublishData}, `nbf`/`exp` (1 hour: it's only needed to connect).
+No LiveKit SDK on the server. Unit test checks the signature, claims and base64url.
+
+**Checked:**
+- 22 server tests (4 new voice tests: token claims and signature, 503 / 404 / 400 / 401, presence over real hub connections incl. a dropped
+  connection leaving, bootstrap with voice on and off).
+- `tests/live/phase4.mjs` (18 checks): two Chromium contexts with fake microphones against a real LiveKit 1.13.11 container: both tiles
+  appear, each browser has the other's audio track subscribed (`data-hearing`), the speaking ring lights, mute shows for both, both channel
+  lists show both people live, leave, closing a tab drops the person, rename / private / delete, and a second server with no LiveKit
+  settings shows "Voice isn't set up on this server" with the app otherwise unaffected.
+
+**Decisions:**
+- Presence is tied to the hub connection (join and leave are hub calls), so a closed tab leaves by itself and the server needs no LiveKit
+  webhooks or API. A person in two tabs counts once; one connection is in at most one room.
+- `LIVEKIT_URL` (public address of LiveKit) is optional; without it the web app uses `ws(s)://<page host>:7880`.
+- Compose: `livekit` is under the `voice` profile so the default `docker compose up` is exactly what Phase 3 shipped. It uses host
+  networking (LiveKit's own recommendation; a bridge network announces container IPs browsers can't reach) and is configured inline with
+  `LIVEKIT_CONFIG` (ports, one UDP port 7882, TCP fallback 7881, `use_external_ip`) and `LIVEKIT_KEYS` from the same env vars as the
+  server. Image pinned to `v1.13.11`. `COWORK_PORT` moves the web port.
+- `livekit-client` is loaded on first join (dynamic import), so the main bundle stays at ~215 kB.
+- A LiveKit room keeps a participant for ~20 s after its browser dies, so re-running phase4 against the same LiveKit with the same ids
+  shows ghost tiles. The live-check script's helper restarts LiveKit between runs; this is the test's problem, not the product's.
+
+**Not done / limits:** making a voice channel private doesn't kick people already in the call; agents in voice, video and screen sharing
+stay on the Later list. Mute state shown to others is LiveKit's track mute; speaking uses LiveKit's level threshold.

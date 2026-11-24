@@ -8,3 +8,4 @@ src/CoWork.Server/wwwroot/
 *.db-wal
 .cowork/
 publish/
+deploy/.env

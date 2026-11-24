@@ -29,6 +29,7 @@ public class ChannelRow
     public string Name { get; set; } = "";
     public string Topic { get; set; } = "";
     public bool IsPrivate { get; set; }
+    public string Kind { get; set; } = "text";
     public long CreatorId { get; set; }
     public long CreatedAt { get; set; }
 }

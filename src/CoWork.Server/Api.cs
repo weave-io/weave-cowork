@@ -13,7 +13,7 @@ public record SetupBody(string ServerName, string Username, string DisplayName, 
 public record LoginBody(string Username, string Password);
 public record SignupBody(string Username, string DisplayName, string Password);
 public record InviteBody(int? MaxUses, int? ExpiresInDays);
-public record ChannelBody(string? Name, string? Topic, bool? IsPrivate);
+public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? Kind = null);
 public record PostBody(string Body, long? ThreadId);
 public record AnswerBody(string? OptionId);
 public record RoleBody(string Role);
@@ -128,7 +128,7 @@ public static partial class Api
         });
 
         // ---- everything below needs a signed-in person ----
-        authed.MapGet("/bootstrap", (HttpContext ctx, Db db, RunnerRegistry runners) =>
+        authed.MapGet("/bootstrap", (HttpContext ctx, Db db, RunnerRegistry runners, VoicePresence voice, VoiceOptions vo) =>
         {
             var me = Me(ctx);
             using var c = db.Open();
@@ -137,11 +137,13 @@ public static partial class Api
             var visible = Access.VisibleChannelIds(c, me).ToHashSet();
             var channels = c.Query<ChannelRow>("SELECT * FROM channels ORDER BY name").Where(ch => visible.Contains(ch.Id)).Select(ch => new
             {
-                id = ch.Id, name = ch.Name, topic = ch.Topic, isPrivate = ch.IsPrivate, creatorId = ch.CreatorId,
+                id = ch.Id, name = ch.Name, kind = ch.Kind, topic = ch.Topic, isPrivate = ch.IsPrivate, creatorId = ch.CreatorId,
                 memberIds = c.Query<long>("SELECT member_id FROM channel_members WHERE channel_id=@id", new { id = ch.Id }).ToList(),
                 canManage = Access.CanManage(c, ch, me),
             }).ToList();
-            return Results.Ok(new { server = new { name = server }, meId = me, isAdmin = Access.IsAdmin(c, me), members, channels });
+            var presence = voice.Snapshot().Where(kv => visible.Contains(kv.Key)).ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+            return Results.Ok(new { server = new { name = server }, meId = me, isAdmin = Access.IsAdmin(c, me), members, channels,
+                voice = new { enabled = vo.Enabled, url = vo.Url }, voicePresence = presence });
         });
 
         // ---- invite links (admin) ----
