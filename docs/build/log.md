@@ -49,3 +49,36 @@ mention → thread → delivery, reply → same session, queueing, offline, stre
 - If the runner dies mid-turn the turn is marked failed and the thread gets a notice; the message isn't re-sent.
 - Ordering: the ACP client handles notifications and responses in arrival order, and the adapter sends events to the server
   through a single queue, so a `turnEnded` can never overtake the last text.
+
+## Phase 3: self-host it
+
+**Works:** `deploy/Dockerfile` (bun builds `web/`, `dotnet publish` the server, runs as non-root uid 10001), `deploy/docker-compose.yml`
+(port 5880, SQLite on the `cowork-data` volume, commented Caddy service and `deploy/Caddyfile.example`),
+`scripts/publish-runner.sh` (single-file self-contained runner; linux-x64 built and run here, osx-arm64 and win-x64 are the
+same command with another runtime id), `README.md`.
+
+**Checked:** from a clean tree, `podman compose -f deploy/docker-compose.yml up -d --build` started the container (non-root), and
+`tests/live/phase2.mjs` (two browsers, a runner on the host, real OpenCode 2) passed all 24 checks against it on port 5880,
+which covers setup, sign-up through an invite, the agent, threads, permissions, offline and removal. Then I removed the
+container, network and volume.
+
+**Decisions:** the image has no curl or wget (a smaller image); check it with `podman exec … dotnet` or from the host.
+Compose has no healthcheck for the same reason.
+
+## Phase 4: voice channels
+
+**Not started.** The brief makes it optional ("only if 1–3 are done"), it isn't part of the journey, and a prototype for the
+morning is better with the journey solid. It stays on the Later list: LiveKit in compose, HS256 room tokens from the server,
+`livekit-client` in the web app.
+
+## Final check
+
+Journey steps 1–6 are `tests/live/phase1.mjs` (24 checks, a fresh server) and steps 1 (setup) to 10 are
+`tests/live/phase2.mjs` (24 checks, a fresh server, real runner, real OpenCode 2), the latter against the container build.
+Run them in order against fresh servers to repeat. Tests: 17 server, 7 runner, 9 web, all passing.
+
+## Known rough edges
+- A runner restart starts each thread's session afresh (no `session/load`).
+- The agent can't be edited after it's created (remove and re-invite).
+- People have no presence indicator or unread counts; the agent has online / offline.
+- The long harness command wraps awkwardly in the thread's session line on narrow screens.
