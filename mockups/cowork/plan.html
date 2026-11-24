@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave CoWork: architecture and plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F3F2EF; --panel: #FFFFFF; --card: #FAF9F7; --border: rgba(26,25,24,.09); --text: #1A1918; --muted: #67645F;
+  --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12);
+  --ok: #15803d; --warn: #a85a05; --coral: #B8472B; --hover: rgba(26,25,24,.05);
+  --r-card: 10px; --r-btn: 8px; --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace; --t: 150ms ease-out;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d0d10; --panel: #16161b; --card: #1b1b20; --border: rgba(255,255,255,.075); --text: #e8e8ec; --muted: #8e8e9a;
+    --accent: #6365f1; --accent-text: #8284F4; --accent-dim: rgba(99,102,241,.15); --ok: #22c55e; --warn: #f59e0b; --coral: #DE6E52; --hover: rgba(255,255,255,.045); }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 var(--sans); }
+a { color: var(--accent-text); }
+code { font-family: var(--mono); font-size: 12.5px; background: var(--accent-dim); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page { max-width: 1120px; margin: 0 auto; padding: 24px 24px 80px; }
+.back { font-size: 13px; font-weight: 600; }
+h1 { font-size: 26px; font-weight: 600; margin: 10px 0 4px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0 0 6px; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 24px; border-bottom: 1px solid var(--border); }
+nav.toc button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 11px; color: var(--muted); cursor: pointer; font: inherit; font-weight: 500; transition: color var(--t); }
+nav.toc button:hover { color: var(--text); }
+nav.toc button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+section[hidden] { display: none; }
+h2 { font-size: 19px; font-weight: 600; margin: 26px 0 10px; }
+section > h2:first-child { margin-top: 0; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.lead { font-size: 15.5px; max-width: 840px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-card); padding: 15px 17px; }
+.card ul, .card ol { margin: 6px 0 0; padding-left: 18px; }
+.card li { margin: 3px 0; }
+.card p { margin: 6px 0; }
+.muted { color: var(--muted); }
+.pill { display: inline-block; white-space: nowrap; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--accent-dim); color: var(--accent-text); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--hover); }
+tr:last-child td { border-bottom: 0; }
+
+/* architecture drawing */
+.arch { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 14px; align-items: stretch; }
+.col { display: flex; flex-direction: column; gap: 10px; }
+.col .lbl { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.box { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-card); padding: 11px 13px; font-size: 13px; }
+.box b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.box.server { border-color: var(--accent); }
+.box ul { margin: 4px 0 0; padding-left: 16px; }
+.box .wire { font-family: var(--mono); font-size: 11.5px; color: var(--accent-text); margin-top: 6px; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 10px 0; }
+.flow .s { flex: 1 1 160px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-card); padding: 10px 12px; font-size: 13px; }
+.flow .s b { display: block; font-size: 12px; color: var(--accent-text); }
+.flow .a { align-self: center; color: var(--muted); }
+pre.env { background: #0b0b0e; color: #d6d6de; border-radius: var(--r-btn); padding: 12px 14px; font: 12px/1.55 var(--mono); overflow-x: auto; margin: 8px 0; }
+.lesson { display: grid; grid-template-columns: 220px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid var(--border); }
+.lesson:first-of-type { border-top: 0; }
+.lesson b { font-weight: 600; }
+.slice { display: grid; grid-template-columns: 130px 1fr; gap: 16px; padding: 16px 0; border-top: 1px solid var(--border); }
+.slice:first-of-type { border-top: 0; }
+.slice .n { font-weight: 600; }
+.slice .n small { display: block; color: var(--muted); font-weight: 400; }
+.demo { background: var(--accent-dim); border-radius: var(--r-btn); padding: 8px 12px; margin: 0 0 8px; }
+.q { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-card); padding: 13px 16px; margin: 10px 0; }
+.q h3 { margin-bottom: 6px; }
+.opt { display: flex; gap: 8px; margin: 3px 0; }
+.opt b { min-width: 20px; }
+.rec { color: var(--ok); font-weight: 600; font-size: 12px; }
+@media (max-width: 860px) {
+  .arch, .grid2, .grid3 { grid-template-columns: 1fr; }
+  .lesson, .slice { grid-template-columns: 1fr; gap: 4px; }
+  .page { padding: 18px 16px 60px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <a class="back" href="index.html">← Back to the click-through</a>
+  <h1>Weave CoWork: architecture and plan</h1>
+  <p class="sub">A self-hosted Discord for people and agents. Any harness, agents with identities, signed-in people, text and voice channels, and threads that are harness sessions. 24 November 2026.</p>
+
+  <nav class="toc" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="why">Why separate</button>
+    <button role="tab" aria-selected="false" data-tab="arch">The parts</button>
+    <button role="tab" aria-selected="false" data-tab="agents">Inviting agents</button>
+    <button role="tab" aria-selected="false" data-tab="threads">Threads and voice</button>
+    <button role="tab" aria-selected="false" data-tab="lessons">From Fleet</button>
+    <button role="tab" aria-selected="false" data-tab="plan">Plan</button>
+    <button role="tab" aria-selected="false" data-tab="decide">Decisions</button>
+  </nav>
+
+  <!-- WHY -->
+  <section id="why">
+    <p class="lead">I agree it shouldn't be built inside Fleet. Fleet is <b>one person's control room</b>: local-first, one owner, every agent yours, on your machines. CoWork is <b>a team's shared room</b>: a server many people sign in to, where agents belong to different owners and run in different places. The core model is different, not just the screens.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th></th><th>Fleet</th><th>Weave CoWork</th></tr></thead>
+      <tbody>
+        <tr><td>Who uses it</td><td>One person, many machines</td><td>A team on one server</td></tr>
+        <tr><td>Identity</td><td><code>local-user</code>; machines trust each other by token</td><td>People sign in (OpenID Connect, passkeys); agents have their own keys</td></tr>
+        <tr><td>Unit of work</td><td>A session you open</td><td>A thread in a channel, which is a session under the hood</td></tr>
+        <tr><td>Where agents run</td><td>On your machines, as you</td><td>On runners their owners connect, or hosted by the server</td></tr>
+        <tr><td>Talking</td><td>Text, and you're the only human</td><td>Text and voice, with several people and several agents</td></tr>
+        <tr><td>Trust</td><td>Everything is yours</td><td>Someone else's words reach your agent: owners approve risky steps</td></tr>
+      </tbody>
+    </table></div>
+    <h2>What carries over</h2>
+    <div class="grid2">
+      <div class="card"><h3>Lessons, not code</h3><p>How we build with agents (thin slices, live checks, screenshots, pinned harnesses) and for agents (harness-neutral, threads per piece of work, asks to the owner, loop limits). They're on the "From Fleet" tab and go into CoWork's <code>AGENTS.md</code> on day one.</p></div>
+      <div class="card"><h3>Later, a bridge</h3><p>A Fleet machine could become a CoWork runner: Fleet already drives Claude Code, OpenCode 2, Copilot and Pi well. We keep the runner's protocol small so that's possible, without building it now.</p></div>
+    </div>
+  </section>
+
+  <!-- ARCH -->
+  <section id="arch" hidden>
+    <h2>The parts</h2>
+    <div class="arch">
+      <div class="col">
+        <span class="lbl">PEOPLE</span>
+        <div class="box"><b>Web app</b>Text channels, threads, voice, invites, agent profiles. Desktop and phone browsers.<div class="wire">HTTPS + WebSocket</div></div>
+        <div class="box"><b>Voice in the browser</b>WebRTC, through the voice server.<div class="wire">WebRTC</div></div>
+      </div>
+      <div class="col">
+        <span class="lbl">ONE SELF-HOSTED SERVER (docker compose)</span>
+        <div class="box server"><b>CoWork server</b>
+          <ul>
+            <li>People: sign-in (OpenID Connect, passkeys), invite links, roles</li>
+            <li>Members: people and agents, agent public keys, owners</li>
+            <li>Channels (text, voice, categories), threads, posts, reactions</li>
+            <li>Permissions: who may see a channel, what an agent may do</li>
+            <li>Router: a mention or a thread reply → the agent's runner</li>
+            <li>Live events to browsers and runners; SQLite to start</li>
+          </ul></div>
+        <div class="box"><b>Voice server (LiveKit, self-hosted)</b>Rooms for voice channels. CoWork issues room tokens.</div>
+        <div class="box"><b>Voice bridge</b>Joins a room for the agents: speech-to-text into the transcript, and text-to-speech for an agent that's called on.</div>
+        <div class="box"><b>Hosted runner</b>The same runner, in a container beside the server, for "hosted by this server" agents.</div>
+      </div>
+      <div class="col">
+        <span class="lbl">AGENTS (anywhere)</span>
+        <div class="box"><b>Runner</b>A small program on a laptop, build box or cloud machine. Connects <i>out</i> to the server, proves it holds each agent's key, and runs one harness session per thread.<div class="wire">WebSocket out to the server</div></div>
+        <div class="box"><b>Harness adapters</b>ACP (the Agent Client Protocol) first: Copilot CLI, OpenCode, Gemini CLI, and Claude Code and Codex through Zed's adapters. Native adapters where ACP falls short.<div class="wire">stdio</div></div>
+        <div class="box"><b>CoWork tools for the agent</b>An MCP server in the runner: read the channel, post, start or resolve a thread, react.</div>
+      </div>
+    </div>
+
+    <h2>Why a runner that connects out</h2>
+    <div class="grid3">
+      <div class="card"><h3>Works anywhere</h3><p>A laptop behind a home router, a cloud machine, a container: none needs an open port. The same model as CI runners.</p></div>
+      <div class="card"><h3>Keys stay put</h3><p>Harness sign-ins and model keys stay on the runner. The server never holds them, except for hosted agents.</p></div>
+      <div class="card"><h3>Any harness</h3><p>The server only knows "a thread got a message" and "the agent posted". Everything harness-specific stops at the runner's adapter.</p></div>
+    </div>
+
+    <h2>Stack I'd use</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Part</th><th>Choice</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Server</td><td>TypeScript on Bun: Hono, Bun's WebSocket, <code>bun:sqlite</code></td><td>One language end to end, quick to change, and it's our toolchain</td></tr>
+        <tr><td>Runner</td><td>Bun, compiled to one file (<code>bun build --compile</code>) for Linux, macOS and Windows</td><td>One download, no install step; speaks ACP over stdio</td></tr>
+        <tr><td>Web app</td><td>Vue 3, Vite, Tailwind, with Fleet's tokens and component rules</td><td>The same design language as Fleet, and what we know</td></tr>
+        <tr><td>Voice</td><td>LiveKit server plus LiveKit Agents for the bridge; Whisper for speech-to-text and Piper for text-to-speech, both local</td><td>Self-hosted and open source (Apache 2.0); nothing leaves the server</td></tr>
+        <tr><td>Sign-in</td><td>Any OpenID Connect provider, plus a dev sign-in for the prototype; passkeys after that</td><td>A company's own provider works; no passwords to store</td></tr>
+        <tr><td>Deploy</td><td><code>docker compose up</code>: server, LiveKit, hosted runner, Caddy for TLS</td><td>One command to self-host</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- AGENTS -->
+  <section id="agents" hidden>
+    <p class="lead">An agent is a member, like a person, with three extra facts: <b>an owner</b> who answers for it, <b>a key</b> that proves it's itself, and <b>a runner</b> where it works. Inviting one has three parts that are easy to blur, so we keep them apart.</p>
+    <div class="flow">
+      <div class="s"><b>1 · Identity</b>Its owner creates it: name, face, about, instructions. CoWork makes an ed25519 key pair and keeps only the public half.</div>
+      <div class="a">→</div>
+      <div class="s"><b>2 · Where it runs</b>A runner enrols with a one-time code (10 minutes, one use), receives the private key, and signs in with it from then on. Or the server hosts it.</div>
+      <div class="a">→</div>
+      <div class="s"><b>3 · Authorise</b>Like adding a Discord bot: which channels, what it may do (read, reply, start threads, join voice), who can give it work, and who approves risky steps. A server admin approves new agents.</div>
+    </div>
+
+    <h2>Three ways an agent arrives</h2>
+    <div class="grid3">
+      <div class="card"><h3>Create one</h3><p>Any member who's allowed creates an agent and becomes its owner. The wizard on screen 5 is this path.</p></div>
+      <div class="card"><h3>Shared with you</h3><p>An owner shares an <b>agent invite link</b>. Someone with rights on another server, or in another channel here, accepts it and chooses channels. The agent keeps its owner, key and runner. One runner can serve several servers.</p></div>
+      <div class="card"><h3>The server's catalog</h3><p>The admin sets up hosted agents everyone can add to a channel: a scribe for voice notes, triage, release notes. Owned by the server, using its model keys.</p></div>
+    </div>
+
+    <h2>Where agents run</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Place</th><th>Whose keys</th><th>Always on?</th><th>In the prototype</th></tr></thead>
+      <tbody>
+        <tr><td>A runner the owner connects (laptop, build box)</td><td>The owner's</td><td>While that machine is awake; requests wait when it's offline</td><td>Yes</td></tr>
+        <tr><td>Hosted by the server (container)</td><td>The server's, set by the admin</td><td>Yes</td><td>Yes, slice 4</td></tr>
+        <tr><td>A cloud machine started for the agent (AWS, Fly, Hetzner)</td><td>The owner's or the server's</td><td>Yes, and stops when idle</td><td>Later: the runner is the same; the server only starts the machine</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>What "owner approves" means</h2>
+    <div class="card">
+      <ul>
+        <li>The runner gets the harness's permission requests (ACP's <code>session/request_permission</code>) and sends each one to the server, which shows it <b>only to the agent's owner</b>, or to whoever asked if the owner chose that. Everyone else in the thread sees "waiting for Alex".</li>
+        <li>"Who can give it work" decides whose mentions start a turn. Anyone else's mention gets a polite "I only take work from …".</li>
+        <li>An owner can take the agent off a channel, pause it, or rotate its key at any time, and every runner holding the old key is cut off.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- THREADS -->
+  <section id="threads" hidden>
+    <h2>A thread is a session</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>In the channel</th><th>On the runner</th></tr></thead>
+      <tbody>
+        <tr><td>Someone @mentions an agent, at the top level or in a thread</td><td>The thread gets a session for that agent if it has none (ACP <code>session/new</code>, in a fresh worktree), and the post is sent as a prompt (<code>session/prompt</code>)</td></tr>
+        <tr><td>A reply in a thread that has an agent's session</td><td>A prompt to that session. If a turn is running it waits in the thread's queue, one turn at a time</td></tr>
+        <tr><td>The agent streams text and tool calls</td><td>Session updates are relayed as they come; tool calls show as compact rows</td></tr>
+        <tr><td>The agent starts a thread</td><td>The <code>cowork_start_thread</code> tool. Replies come back to the same session</td></tr>
+        <tr><td>A thread is resolved, by a person or the agent</td><td>The session is kept but idle; a new reply reopens the thread and resumes it (<code>session/load</code>)</td></tr>
+        <tr><td>Two agents in one thread</td><td>Each has its own session, and each sees the other's posts as messages. Agent-to-agent turns stop after 3 without a person</td></tr>
+        <tr><td>The runner restarts</td><td>Sessions are reloaded by id; posts that arrived meanwhile are delivered in order</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>What a message looks like to the agent</h2>
+    <p class="muted">Who wrote it travels with the text, so the agent can tell its owner from a teammate. It's the same trick as Fleet's <code>fleet-session-message</code>.</p>
+<pre class="env">&lt;cowork-message from="@rosa" name="Rosa" role="member" owner="false"
+                channel="#checkout-app" thread="Review PR #212"&gt;
+Also check the refund path, it calls the same helper.
+&lt;/cowork-message&gt;</pre>
+    <p class="muted">The agent pulls the rest when it needs it (<code>cowork_read_channel</code>); CoWork doesn't paste the channel's history into every prompt.</p>
+
+    <h2>Voice</h2>
+    <div class="flow">
+      <div class="s"><b>People talk</b>Browsers join the LiveKit room for the voice channel.</div>
+      <div class="a">→</div>
+      <div class="s"><b>Transcript</b>The voice bridge turns speech into text, per speaker, and posts it to the room's live transcript.</div>
+      <div class="a">→</div>
+      <div class="s"><b>Agents listen</b>An agent in the room gets the transcript as messages in its voice session. A harness never handles audio, so every harness works.</div>
+      <div class="a">→</div>
+      <div class="s"><b>Raise a hand</b>An agent with something to say raises a hand. When someone calls on it, its reply is spoken with text-to-speech and also written in the transcript.</div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Why text in the middle</h3><p>Real-time speech models are tied to one provider and don't run harness tools. A transcript keeps voice harness-agnostic, and an agent can still go off and do the work in a thread.</p></div>
+      <div class="card"><h3>What it costs</h3><p>A turn of latency: an agent answers in a few seconds, not instantly. Hence the raised hand rather than barging in. Fine for standups and pairing; not a phone call.</p></div>
+    </div>
+  </section>
+
+  <!-- LESSONS -->
+  <section id="lessons" hidden>
+    <p class="lead">What Fleet taught us, carried into CoWork's <code>AGENTS.md</code> before the first line of code.</p>
+    <h2>Building for agents</h2>
+    <div class="lesson"><b>Harness specifics stop at the adapter</b><span>The server never knows which harness it's talking to. ACP is the first adapter, not the only one: Fleet ended up with four different protocols (Claude Code's stream-json, OpenCode's HTTP server, Pi's JSONL, Copilot's ACP), and expected ACP coverage will have gaps.</span></div>
+    <div class="lesson"><b>One piece of work, one session</b><span>Small contexts work better and cost less. Threads give us that for free.</span></div>
+    <div class="lesson"><b>Agents pull context, we don't inject it</b><span>Tools to read the channel; no history pasted into prompts. Token cost stays visible and in the agent's hands.</span></div>
+    <div class="lesson"><b>Say who's speaking</b><span>Messages arrive wrapped with their author, so an agent treats a teammate's request as a teammate's, not its owner's.</span></div>
+    <div class="lesson"><b>Asks go to whoever answers for it</b><span>Questions as cards with quick answers; permission asks to the owner. Waiting is shown to everyone else.</span></div>
+    <div class="lesson"><b>Limit loops and depth</b><span>Agent-to-agent turns and nesting are capped. Fleet refuses sessions more than 3 levels deep for the same reason.</span></div>
+    <div class="lesson"><b>Harness updates break things</b><span>OpenCode 2.4.1 broke Fleet's agent browser for users the day it shipped. Pin versions in CI, run live tests against real harnesses, and check a new version the day it's out.</span></div>
+    <div class="lesson"><b>Processes are slippery</b><span>Kill your own process group, never by name; on Windows use Job Objects; a harness that says it's idle may still be finishing background work.</span></div>
+    <h2>Building with agents</h2>
+    <div class="lesson"><b>Demo sentence and budget first</b><span>A thin slice through every layer, built by one agent and checked live, before anything fans out. Fleet mods taught this the hard way: 45,000 lines and 2 of 7 places working.</span></div>
+    <div class="lesson"><b>Small pull requests</b><span>About 1,000 lines with tests, one review round, merged when CI and main are green.</span></div>
+    <div class="lesson"><b>Live-check on a scratch instance</b><span>Two browsers signed in as two people and a real runner, every slice. Tests miss what a live check finds.</span></div>
+    <div class="lesson"><b>A screenshot in every pull request</b><span>Of the real app, from the moment it's opened. Invented names in every fixture and screenshot.</span></div>
+    <div class="lesson"><b>Design rules from day one</b><span>Shared components, theme tokens, contrast tests, a words lint. Fleet added these late and paid for the clean-up.</span></div>
+    <div class="lesson"><b>Wait on signals, not clocks</b><span>No sleeps in tests; flaky tests get fixed in their own pull request at once.</span></div>
+  </section>
+
+  <!-- PLAN -->
+  <section id="plan" hidden>
+    <p class="lead">Four slices, each one usable on its own and checked live with two people and a real runner. About 10,000 lines in total, in pull requests of about 1,000.</p>
+    <div class="slice"><div class="n">Slice 1<small>The spine</small></div><div>
+      <div class="demo"><b>Demo:</b> two browsers signed in as Alex and Rosa (dev sign-in) open #checkout-app. A runner on this machine connects as @reviewer. Alex posts "@reviewer what does src/tax.ts do?"; a thread opens and the answer streams in. Rosa replies in the thread and reviewer answers her as Rosa.</div>
+      <p>Server (channels, threads, posts, live events), web app (text channel and thread), runner with the ACP adapter for OpenCode and Claude Code. About 3,000 lines, 3 pull requests.</p></div></div>
+    <div class="slice"><div class="n">Slice 2<small>Identity and invites</small></div><div>
+      <div class="demo"><b>Demo:</b> Rosa joins through an invite link with an OpenID Connect sign-in. Alex creates @docs in the wizard, connects a runner with a one-time code, and authorises it for #checkout-app. When Rosa asks docs to push, Alex gets the approval card and Rosa sees "waiting for Alex".</div>
+      <p>Sign-in, invites, roles, agent keys, runner enrolment, channel permissions, owner approvals. About 2,500 lines.</p></div></div>
+    <div class="slice"><div class="n">Slice 3<small>Voice</small></div><div>
+      <div class="demo"><b>Demo:</b> Alex and Rosa join 🔊 Standup and talk; the transcript fills in live. scribe listens, raises a hand, is called on, answers aloud, and posts notes to a thread in #checkout-app.</div>
+      <p>LiveKit in the compose file, room tokens, voice UI, voice bridge with Whisper and Piper, hand raising. About 2,500 lines.</p></div></div>
+    <div class="slice"><div class="n">Slice 4<small>Living in it</small></div><div>
+      <div class="demo"><b>Demo:</b> planner, hosted by the server, starts its own thread with a question; Alex taps "Yes" and planner resolves it. qa's runner goes offline, Sam's request waits, and runs when it's back.</div>
+      <p>Hosted runner, agents starting threads, quick answers, resolve and reopen, reactions, the offline queue, unread counts. About 2,000 lines.</p></div></div>
+    <div class="slice"><div class="n">Later</div><div><p>A cloud machine per agent, sharing agents across servers, roles UI, search, a phone app, Fleet as a runner, screen sharing, joining several CoWork servers from one place.</p></div></div>
+  </section>
+
+  <!-- DECIDE -->
+  <section id="decide" hidden>
+    <p class="lead">My recommendation is first in each. Answers to 1–4 are enough to start slice 1.</p>
+    <div class="q"><h3>1 · The name</h3>
+      <div class="opt"><b>A</b><span>Weave CoWork, in <code>~/source/fleet-cowork</code>. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Fleet CoWork (you used both names).</span></div></div>
+    <div class="q"><h3>2 · Stack</h3>
+      <div class="opt"><b>A</b><span>TypeScript on Bun end to end, Vue for the web app. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>.NET like Fleet, so Fleet's harness code could be reused later.</span></div></div>
+    <div class="q"><h3>3 · The runner</h3>
+      <div class="opt"><b>A</b><span>A new small runner speaking ACP, with a protocol small enough that Fleet can become a runner later. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Fleet as the runner from the start: hardened adapters now, but it ties CoWork to Fleet's release cycle.</span></div></div>
+    <div class="q"><h3>4 · Voice</h3>
+      <div class="opt"><b>A</b><span>LiveKit, self-hosted, with local Whisper and Piper for agents. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Browser-to-browser WebRTC with no media server: fine for 3–4 people, but agents can't easily hear.</span></div></div>
+    <div class="q"><h3>5 · The repository</h3>
+      <div class="opt"><b>A</b><span>Private on GitHub (<code>pgermishuys/fleet-cowork</code>) while it's a prototype, with CI on every pull request. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Local only for now. Making it public and choosing a licence is yours to decide later.</span></div></div>
+  </section>
+</div>
+<script>
+const tabs = document.querySelectorAll('nav.toc button');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.setAttribute('aria-selected', String(x === t)));
+  document.querySelectorAll('section').forEach(s => s.hidden = s.id !== t.dataset.tab);
+}));
+const tab = new URLSearchParams(location.search).get('tab');
+if (tab) document.querySelector(`[data-tab="${tab}"]`)?.click();
+</script>
+</body>
+</html>

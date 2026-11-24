@@ -1,0 +1,10 @@
+bin/
+obj/
+node_modules/
+web/dist/
+src/CoWork.Server/wwwroot/
+*.db
+*.db-shm
+*.db-wal
+.cowork/
+publish/

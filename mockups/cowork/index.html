@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave CoWork: click-through mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F3F2EF; --rail: #E9E7E3; --side: #FFFFFF; --panel: #FFFFFF; --card: #FAF9F7; --raised: #FFFFFF;
+  --border: rgba(26,25,24,.09); --text: #1A1918; --muted: #67645F; --faint: #8b8780;
+  --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12);
+  --online: #16a34a; --online-text: #15803d; --away: #d97706; --away-text: #a85a05; --offline: #a8a49d;
+  --danger: #dc2626; --danger-text: #B92323; --agent: #5B6EC7; --agent-text: #4D5EA9;
+  --alex: #D95A3A; --sam: #0f9b8e; --rosa: #b4479a; --hover: rgba(26,25,24,.05);
+  --r-btn: 8px; --r-card: 10px; --r-panel: 12px; --t: 150ms ease-out;
+  --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d0d10; --rail: #09090b; --side: #121216; --panel: #16161b; --card: #1b1b20; --raised: #202027;
+    --border: rgba(255,255,255,.075); --text: #e8e8ec; --muted: #8e8e9a; --faint: #6c6c78;
+    --accent: #6365f1; --accent-text: #8284F4; --accent-dim: rgba(99,102,241,.15);
+    --online: #22c55e; --online-text: #22c55e; --away: #f59e0b; --away-text: #f59e0b; --offline: #5d5d68;
+    --danger: #ef4444; --danger-text: #EF5E5F; --agent: #6365f1; --agent-text: #8284F4; --hover: rgba(255,255,255,.045);
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+a { color: var(--accent-text); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+code { background: var(--accent-dim); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* walkthrough bar */
+.walk { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.walk .in { max-width: 1440px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.walk .brand { font-weight: 700; margin-right: 8px; display: flex; align-items: center; gap: 8px; }
+.walk .brand .logo { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--alex)); }
+.steps { display: flex; gap: 4px; flex-wrap: wrap; }
+.steps button { border: 1px solid transparent; background: none; padding: 5px 10px; border-radius: var(--r-btn); color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 500; transition: background var(--t), color var(--t); }
+.steps button:hover { color: var(--text); background: var(--hover); }
+.steps button[aria-current="true"] { background: var(--accent-dim); color: var(--accent-text); }
+.steps button b { font-weight: 600; margin-right: 4px; }
+.viewer { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.viewer .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-btn); padding: 2px; background: var(--panel); }
+.viewer .seg button { border: 0; background: none; padding: 3px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.viewer .seg button[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent-text); }
+body.viewer-rosa .as-alex, body.viewer-alex .as-rosa { display: none !important; }
+.waiting { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--r-btn); padding: 7px 10px; margin: 6px 0; }
+.walk .plan { margin-left: 12px; font-size: 13px; font-weight: 600; }
+.note { max-width: 1440px; margin: 0 auto; padding: 10px 16px 0; color: var(--muted); font-size: 13px; }
+.note b { color: var(--text); }
+.stage { max-width: 1440px; margin: 0 auto; padding: 10px 16px 40px; }
+.screen[hidden] { display: none; }
+
+/* app shell */
+.app { display: grid; grid-template-columns: 64px 244px minmax(0,1fr) 260px; height: 720px; border: 1px solid var(--border); border-radius: var(--r-panel); overflow: hidden; background: var(--panel); position: relative; }
+.app.with-thread { grid-template-columns: 64px 244px minmax(0,1fr) 420px; }
+.app { grid-template-rows: minmax(0, 1fr); }
+.app > * { min-height: 0; }
+.feed { min-height: 0; }
+#main-voice { grid-column: 3 / -1; grid-row: 1; }
+.spaces { background: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0; border-right: 1px solid var(--border); }
+.space { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 700; color: #fff; position: relative; cursor: pointer; border: 0; }
+.space.on::before { content: ""; position: absolute; left: -11px; top: 8px; bottom: 8px; width: 4px; border-radius: 0 4px 4px 0; background: var(--text); }
+.space.add { background: var(--card); color: var(--online-text); font-size: 20px; font-weight: 400; border: 1px solid var(--border); }
+.side { background: var(--side); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+.side .head { padding: 14px 14px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-weight: 700; }
+.side .scroll { flex: 1; overflow: auto; padding: 8px 8px; }
+.cat { font-size: 11px; font-weight: 700; color: var(--muted); padding: 12px 8px 4px; letter-spacing: .03em; display: flex; justify-content: space-between; }
+.ch { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; text-align: left; padding: 6px 8px; border-radius: var(--r-btn); color: var(--muted); cursor: pointer; transition: background var(--t), color var(--t); }
+.ch:hover { background: var(--hover); color: var(--text); }
+.ch.on { background: var(--accent-dim); color: var(--text); font-weight: 600; }
+.ch.unread { color: var(--text); font-weight: 600; }
+.ch .g { width: 16px; text-align: center; opacity: .8; }
+.ch .n { margin-left: auto; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 999px; }
+.vlist { padding: 2px 0 6px 30px; display: flex; flex-direction: column; gap: 3px; }
+.vlist .vm { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+.vlist .vm.speaking .av { box-shadow: 0 0 0 2px var(--online); }
+.me { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.me .ctl { margin-left: auto; display: flex; gap: 2px; }
+.icon-btn { width: 30px; height: 30px; display: grid; place-items: center; border: 0; background: none; border-radius: var(--r-btn); color: var(--muted); cursor: pointer; }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+
+.av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; flex: none; position: relative; }
+.av.xs { width: 20px; height: 20px; font-size: 10px; }
+.av.sm { width: 26px; height: 26px; font-size: 11px; }
+.av.agent { border-radius: 10px; background: var(--agent); }
+.av.xs.agent { border-radius: 6px; }
+.av.alex { background: var(--alex); } .av.sam { background: var(--sam); } .av.rosa { background: var(--rosa); }
+.av.scribe { background: #0e7490; } .av.planner { background: #7c3aed; } .av.qa { background: #0f766e; }
+.av .st { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; border: 2.5px solid var(--side); background: var(--online); }
+.av .st.away { background: var(--away); } .av .st.off { background: var(--offline); }
+.badge { font-size: 9.5px; font-weight: 700; letter-spacing: .03em; padding: 1px 5px; border-radius: 4px; background: var(--agent); color: #fff; }
+.owner-tag { font-size: 11px; color: var(--muted); }
+
+.main { display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+.topbar { height: 52px; flex: none; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 16px; min-width: 0; }
+.topbar h2 { font-size: 15px; margin: 0; white-space: nowrap; }
+.topbar .desc { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 1px solid var(--border); padding-left: 10px; }
+.topbar .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.feed { flex: 1; overflow: auto; padding: 10px 8px 6px; }
+.msg { display: grid; grid-template-columns: 40px minmax(0,1fr); gap: 12px; padding: 7px 10px; border-radius: var(--r-btn); }
+.msg:hover { background: var(--hover); }
+.msg .who { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.msg .who b { font-weight: 600; }
+.msg .who .t { color: var(--faint); font-size: 12px; }
+.msg p { margin: 2px 0; }
+.mention { background: var(--accent-dim); color: var(--accent-text); border-radius: 4px; padding: 0 3px; font-weight: 500; }
+.day { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; margin: 10px 10px; }
+.day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.threadcard { margin-top: 6px; border: 1px solid var(--border); background: var(--card); border-radius: var(--r-card); padding: 8px 12px; max-width: 560px; cursor: pointer; display: block; width: 100%; text-align: left; transition: border-color var(--t); }
+.threadcard:hover { border-color: var(--accent); }
+.threadcard .tt { font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.threadcard .ts { color: var(--muted); font-size: 12.5px; margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dotlive { width: 7px; height: 7px; border-radius: 50%; background: var(--online); display: inline-block; }
+@media (prefers-reduced-motion: no-preference) { .dotlive, .pulse { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { opacity: .35; } } }
+.sess { font-family: var(--mono); font-size: 11.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; background: var(--panel); }
+.reacts { display: flex; gap: 5px; margin-top: 5px; }
+.reacts span { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 0 8px; font-size: 12.5px; }
+.reacts span.mine { border-color: var(--accent); background: var(--accent-dim); }
+.composer { margin: 6px 16px 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); padding: 11px 14px; color: var(--faint); display: flex; gap: 10px; align-items: center; }
+.composer .grow { flex: 1; }
+.typing { font-size: 12px; color: var(--muted); padding: 0 18px; height: 18px; display: flex; align-items: center; gap: 6px; }
+
+.members { background: var(--side); border-left: 1px solid var(--border); overflow: auto; padding: 12px 8px; }
+.members .cat:first-child { padding-top: 2px; }
+.mem { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: var(--r-btn); width: 100%; background: none; border: 0; text-align: left; cursor: pointer; }
+.mem:hover { background: var(--hover); }
+.mem .nm { font-weight: 500; font-size: 13.5px; display: flex; align-items: center; gap: 6px; }
+.mem .sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mem.off { opacity: .55; }
+.mem > span:last-child { min-width: 0; }
+
+.btn { border: 1px solid var(--border); background: var(--raised); border-radius: var(--r-btn); padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background var(--t), border-color var(--t); white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.sm { padding: 3px 9px; font-size: 12.5px; }
+.btn.danger { color: var(--danger-text); }
+
+/* thread panel */
+.thread { background: var(--side); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+.thread .topbar { height: auto; padding: 10px 14px; flex-wrap: wrap; row-gap: 4px; }
+.thread .topbar h2 { white-space: normal; }
+.sessbar { width: 100%; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+.tool { border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--card); padding: 5px 9px; font-size: 12.5px; margin: 4px 0; display: flex; gap: 8px; align-items: center; }
+.tool .k { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.tool .ok { margin-left: auto; color: var(--online-text); font-size: 12px; }
+.ask { border: 1px solid color-mix(in srgb, var(--away) 50%, var(--border)); background: color-mix(in srgb, var(--away) 8%, transparent); border-radius: var(--r-card); padding: 9px 11px; margin: 6px 0; font-size: 13px; }
+.ask .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.ask .eyebrow { font-size: 11px; font-weight: 700; color: var(--away-text); letter-spacing: .03em; }
+.streaming::after { content: "▍"; color: var(--accent-text); }
+
+/* voice */
+.voice { flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 320px; min-height: 0; }
+.tiles { padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-content: start; overflow: auto; background: var(--bg); }
+.tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-panel); aspect-ratio: 16/10; display: grid; place-items: center; position: relative; transition: box-shadow var(--t); }
+.tile .av { width: 64px; height: 64px; font-size: 24px; }
+.tile .av.agent { border-radius: 18px; }
+.tile.speaking { box-shadow: 0 0 0 3px var(--online); }
+.tile .lab { position: absolute; left: 10px; bottom: 8px; font-size: 12.5px; font-weight: 600; display: flex; gap: 6px; align-items: center; background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 2px 8px; border-radius: 999px; }
+.tile .state { position: absolute; right: 10px; top: 8px; font-size: 11.5px; color: var(--muted); }
+.tile .hand { position: absolute; right: 10px; top: 8px; font-size: 12px; background: var(--accent-dim); color: var(--accent-text); padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+.wave { display: flex; gap: 2px; align-items: center; height: 14px; }
+.wave i { width: 3px; background: var(--online); border-radius: 2px; height: 5px; }
+@media (prefers-reduced-motion: no-preference) { .wave i { animation: w 0.9s ease-in-out infinite; } .wave i:nth-child(2) { animation-delay: .15s } .wave i:nth-child(3) { animation-delay: .3s } .wave i:nth-child(4) { animation-delay: .45s } @keyframes w { 50% { height: 14px; } } }
+.transcript { border-left: 1px solid var(--border); background: var(--side); display: flex; flex-direction: column; min-height: 0; }
+.transcript .h { padding: 10px 14px; border-bottom: 1px solid var(--border); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.transcript .lines { flex: 1; overflow: auto; padding: 8px 14px; font-size: 13px; }
+.line { margin: 7px 0; }
+.line b { font-weight: 600; }
+.line .t { color: var(--faint); font-size: 11.5px; margin-left: 4px; }
+.vctl { display: flex; justify-content: center; gap: 10px; padding: 12px; border-top: 1px solid var(--border); background: var(--panel); }
+.vctl .btn { border-radius: 999px; padding: 8px 16px; }
+
+/* join */
+.join { min-height: 720px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: var(--r-panel); background: radial-gradient(1200px 500px at 20% 0%, var(--accent-dim), transparent), var(--bg); padding: 24px 16px; }
+.joincard { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 28px; text-align: center; }
+.joincard .sp { width: 64px; height: 64px; border-radius: 20px; margin: 0 auto 12px; display: grid; place-items: center; font-weight: 800; font-size: 26px; color: #fff; background: linear-gradient(135deg, #f59e0b, var(--alex)); }
+.joincard h1 { font-size: 21px; margin: 4px 0; font-weight: 600; }
+.joincard .stats { color: var(--muted); font-size: 13px; display: flex; gap: 14px; justify-content: center; margin: 8px 0 20px; flex-wrap: wrap; }
+.joincard .stats span { display: inline-flex; align-items: center; gap: 5px; }
+.joincard .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.signin { display: flex; flex-direction: column; gap: 8px; }
+.signin .btn { padding: 10px; font-size: 14px; }
+.or { color: var(--faint); font-size: 12px; margin: 10px 0; display: flex; gap: 10px; align-items: center; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.field { text-align: left; margin-bottom: 10px; }
+.field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.input { width: 100%; border: 1px solid var(--border); background: var(--card); border-radius: var(--r-btn); padding: 9px 11px; color: var(--text); font: inherit; }
+.fine { font-size: 12px; color: var(--muted); margin-top: 14px; }
+
+/* modal (invite wizard) */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; z-index: 5; padding: 16px; }
+.scrim[hidden] { display: none; }
+.modal { width: min(640px, 100%); max-height: 100%; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.modal .mh { padding: 18px 22px 8px; }
+.modal .mh h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.modal .mh p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.wsteps { display: flex; gap: 6px; padding: 8px 22px 0; flex-wrap: wrap; }
+.wsteps span { font-size: 12px; color: var(--muted); padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); }
+.wsteps span.on { color: var(--accent-text); border-color: var(--accent); background: var(--accent-dim); }
+.wsteps span.done { color: var(--online-text); }
+.mb { padding: 14px 22px; }
+.mf { padding: 12px 22px 18px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--border); }
+.choice { display: grid; grid-template-columns: 34px 1fr; gap: 12px; border: 1px solid var(--border); border-radius: var(--r-card); padding: 12px 14px; margin-bottom: 8px; cursor: pointer; background: var(--card); width: 100%; text-align: left; transition: border-color var(--t); }
+.choice:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.choice.on { border-color: var(--accent); background: var(--accent-dim); }
+.choice .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--raised); border: 1px solid var(--border); display: grid; place-items: center; font-size: 16px; }
+.choice b { display: block; }
+.choice small { color: var(--muted); font-size: 12.5px; }
+.term { background: #0b0b0e; color: #d6d6de; border-radius: var(--r-btn); padding: 10px 12px; font-family: var(--mono); font-size: 12px; margin: 8px 0; overflow-x: auto; white-space: pre; }
+.term .c { color: #7d7d8a; }
+.term .okc { color: #4ade80; }
+.wait { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.harn { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.harn .choice { margin: 0; grid-template-columns: 1fr; }
+.harn .choice small { display: block; }
+.perm { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.perm:last-child { border-bottom: 0; }
+.perm input { margin-top: 3px; accent-color: var(--accent); }
+.perm small { display: block; color: var(--muted); font-size: 12px; }
+.sel { border: 1px solid var(--border); background: var(--card); border-radius: var(--r-btn); padding: 6px 10px; font: inherit; color: var(--text); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; background: var(--card); }
+.chip.on { border-color: var(--accent); background: var(--accent-dim); color: var(--accent-text); }
+
+/* profile card */
+.pcard { position: absolute; right: 270px; top: 60px; width: 340px; max-height: calc(100% - 72px); overflow: auto; background: var(--raised); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 16px 48px rgba(0,0,0,.3); overflow: hidden; z-index: 4; }
+.pcard .banner { height: 64px; background: linear-gradient(135deg, var(--agent), #0e7490); }
+.pcard .body { padding: 0 16px 16px; }
+.pcard .av { width: 72px; height: 72px; font-size: 28px; border-radius: 20px; border: 5px solid var(--raised); margin-top: -36px; }
+.pcard h4 { margin: 6px 0 0; font-size: 18px; display: flex; gap: 8px; align-items: center; }
+.pcard .h { color: var(--muted); font-size: 13px; }
+.pcard .sec { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px; font-size: 13px; }
+.pcard .sec .lbl { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .03em; margin-bottom: 4px; }
+.kv { display: grid; grid-template-columns: 92px 1fr; gap: 4px 10px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.fp { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+.explain { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+.explain div { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-card); padding: 12px 14px; font-size: 13px; color: var(--muted); }
+.explain b { color: var(--text); display: block; margin-bottom: 2px; }
+
+@media (max-width: 1180px) {
+  .app, .app.with-thread { grid-template-columns: 64px 220px minmax(0,1fr); }
+  .members { display: none; }
+  .app.with-thread .main { display: none; }
+  .app.with-thread .thread { grid-column: 3; }
+  .voice { grid-template-columns: 1fr; }
+  .transcript { display: none; }
+  .pcard { right: 16px; }
+}
+@media (max-width: 760px) {
+  .app, .app.with-thread { grid-template-columns: minmax(0,1fr); height: 680px; }
+  .spaces, .side { display: none; }
+  .app.with-thread .thread { grid-column: 1; }
+  #main-voice { grid-column: 1; }
+  .explain { grid-template-columns: 1fr; }
+  .harn { grid-template-columns: 1fr; }
+  .pcard { left: 12px; right: 12px; width: auto; }
+  .topbar .desc { display: none; }
+}
+</style>
+</head>
+<body class="viewer-alex">
+<div class="walk"><div class="in">
+  <span class="brand"><span class="logo"></span>Weave CoWork</span>
+  <nav class="steps" aria-label="Walkthrough">
+    <button data-go="join"><b>1</b>Join</button>
+    <button data-go="text" aria-current="true"><b>2</b>Text channel</button>
+    <button data-go="thread"><b>3</b>A thread is a session</button>
+    <button data-go="voice"><b>4</b>Voice channel</button>
+    <button data-go="invite"><b>5</b>Invite an agent</button>
+    <button data-go="profile"><b>6</b>An agent's identity</button>
+  </nav>
+  <span class="viewer">Viewing as <span class="seg"><button data-viewer="alex" aria-pressed="true">Alex</button><button data-viewer="rosa" aria-pressed="false">Rosa</button></span></span>
+  <a class="plan" href="plan.html">Architecture and plan →</a>
+</div></div>
+<p class="note" id="note"></p>
+
+<div class="stage">
+
+<!-- ============ 1 JOIN ============ -->
+<section class="screen" data-screen="join" hidden>
+  <div class="join">
+    <div class="joincard">
+      <div class="sp">L</div>
+      <div class="muted" style="font-size:13px">Alex invited you to</div>
+      <h1>Lumen Labs</h1>
+      <div class="stats">
+        <span><span class="dot" style="background:var(--online)"></span>3 people online</span>
+        <span><span class="dot" style="background:var(--agent)"></span>4 agents</span>
+        <span>cowork.lumen.dev</span>
+      </div>
+      <div class="signin">
+        <button class="btn" data-go="text">Continue with GitHub</button>
+        <button class="btn" data-go="text">Continue with Lumen SSO</button>
+      </div>
+      <div class="or">or</div>
+      <div class="field"><label for="em">Email</label><input id="em" class="input" value="rosa@lumen.dev"></div>
+      <button class="btn primary" style="width:100%;padding:10px" data-go="text">Sign in with a passkey</button>
+      <p class="fine">This server is run by Lumen Labs, not by Weave. Sign-in methods are the ones its admin turned on: any OpenID Connect provider, GitHub, or a passkey. The invite expires in 7 days and lets in one person.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2/3/6 THE APP ============ -->
+<section class="screen" data-screen="app">
+  <div class="app" id="app">
+    <nav class="spaces" aria-label="Servers">
+      <button class="space on" style="background:linear-gradient(135deg,#f59e0b,var(--alex))" title="Lumen Labs">L</button>
+      <button class="space" style="background:#334155" title="Side projects">S</button>
+      <button class="space add" title="Add a server">+</button>
+    </nav>
+
+    <aside class="side">
+      <div class="head"><span>Lumen Labs</span><button class="icon-btn" title="Server menu">⌄</button></div>
+      <div class="scroll">
+        <div class="cat"><span>TEXT CHANNELS</span><span>+</span></div>
+        <button class="ch" data-go="text"><span class="g">#</span>general</button>
+        <button class="ch on" id="ch-checkout" data-go="text"><span class="g">#</span>checkout-app</button>
+        <button class="ch unread"><span class="g">#</span>release<span class="n">2</span></button>
+        <button class="ch"><span class="g">#</span>incidents</button>
+        <div class="cat"><span>VOICE CHANNELS</span><span>+</span></div>
+        <button class="ch" id="ch-standup" data-go="voice"><span class="g">🔊</span>Standup</button>
+        <div class="vlist">
+          <span class="vm speaking"><span class="av xs alex">A</span>Alex</span>
+          <span class="vm"><span class="av xs sam">S</span>Sam</span>
+          <span class="vm"><span class="av xs agent scribe">✎</span>scribe <span class="badge">AGENT</span></span>
+        </div>
+        <button class="ch"><span class="g">🔊</span>Pairing</button>
+        <div class="cat"><span>AGENTS</span><span><button class="icon-btn" style="width:20px;height:20px" data-go="invite" title="Invite an agent">+</button></span></div>
+        <button class="ch" data-go="profile"><span class="av xs agent">R</span>reviewer</button>
+        <button class="ch"><span class="av xs agent planner">P</span>planner</button>
+      </div>
+      <div class="me">
+        <span class="av sm alex" id="me-av">A<span class="st"></span></span>
+        <span><b id="me-name">Alex</b><br><span class="muted" style="font-size:11.5px" id="me-handle">@alex · admin</span></span>
+        <span class="ctl"><button class="icon-btn" title="Mute">🎙</button><button class="icon-btn" title="Settings">⚙</button></span>
+      </div>
+    </aside>
+
+    <!-- text channel -->
+    <main class="main" id="main-text">
+      <div class="topbar">
+        <h2># checkout-app</h2>
+        <span class="desc">The checkout app. Agents here answer when @mentioned.</span>
+        <div class="right"><button class="btn sm" data-go="invite">Invite an agent</button><button class="icon-btn" title="Threads">🧵</button><button class="icon-btn" title="Members">👥</button></div>
+      </div>
+      <div class="feed">
+        <div class="day">Today</div>
+        <div class="msg">
+          <span class="av agent planner">P</span>
+          <div>
+            <div class="who"><b>planner</b><span class="badge">AGENT</span><span class="t">09:12</span></div>
+            <p>I've split "coupon codes at checkout" into 5 questions. I'll ask each in its own thread; answer when you can.</p>
+            <button class="threadcard" data-go="thread" data-thread="planner">
+              <div class="tt">🧵 Q3: when a coupon expires mid-checkout</div>
+              <div class="ts"><span class="av xs alex">A</span>Alex: Yes. · 2 replies · <span class="sess">OpenCode · hosted</span></div>
+            </button>
+          </div>
+        </div>
+        <div class="msg">
+          <span class="av alex">A</span>
+          <div>
+            <div class="who"><b>Alex</b><span class="t">09:40</span></div>
+            <p><span class="mention">@reviewer</span> can you look at PR #212 before lunch? The tax rounding change worries me.</p>
+            <button class="threadcard" data-go="thread" data-thread="reviewer">
+              <div class="tt">🧵 Review PR #212</div>
+              <div class="ts"><span class="dotlive"></span><b style="color:var(--text)">reviewer is working</b> · 4 replies · <span class="sess">Claude Code · Sonnet · build-01</span></div>
+            </button>
+          </div>
+        </div>
+        <div class="msg">
+          <span class="av sam">S</span>
+          <div>
+            <div class="who"><b>Sam</b><span class="t">10:02</span></div>
+            <p>Freezing main on Thursday for the release. <span class="mention">@qa</span> please run the full checkout suite on Wednesday night.</p>
+            <div class="reacts"><span class="mine">👍 3</span><span>🚀 1</span></div>
+          </div>
+        </div>
+        <div class="msg">
+          <span class="av agent qa">Q</span>
+          <div>
+            <div class="who"><b>qa</b><span class="badge">AGENT</span><span class="t">10:02</span></div>
+            <p>I'm offline right now (Sam's laptop is asleep). I've kept your request and will start when I'm back, or Sam can move me to a hosted runner.</p>
+          </div>
+        </div>
+        <div class="msg">
+          <span class="av rosa">R</span>
+          <div>
+            <div class="who"><b>Rosa</b><span class="t">10:15</span></div>
+            <p>Can someone summarise this morning's standup here? I missed it.</p>
+          </div>
+        </div>
+        <div class="msg">
+          <span class="av agent scribe">✎</span>
+          <div>
+            <div class="who"><b>scribe</b><span class="badge">AGENT</span><span class="t">10:15</span></div>
+            <p>From Standup (still going, 14 min so far): Alex is on the tax rounding fix, Sam is cutting the release branch on Thursday, and two decisions are still open. Full notes are in the thread.</p>
+            <button class="threadcard" data-go="voice">
+              <div class="tt">🧵 Standup notes, 24 Nov</div>
+              <div class="ts"><span class="dotlive"></span>live from 🔊 Standup · 6 replies</div>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="typing"><span class="pulse dotlive" style="background:var(--muted)"></span>planner is typing in a thread…</div>
+      <div class="composer"><span>＋</span><span class="grow">Message #checkout-app. @ to mention a person or an agent</span><span>😊</span></div>
+    </main>
+
+    <!-- members -->
+    <aside class="members" id="members">
+      <div class="cat"><span>PEOPLE · 3 ONLINE</span></div>
+      <button class="mem"><span class="av sm alex">A<span class="st"></span></span><span><span class="nm">Alex</span><span class="sub">in 🔊 Standup</span></span></button>
+      <button class="mem"><span class="av sm sam">S<span class="st"></span></span><span><span class="nm">Sam</span><span class="sub">in 🔊 Standup</span></span></button>
+      <button class="mem"><span class="av sm rosa">R<span class="st"></span></span><span><span class="nm">Rosa</span><span class="sub">online</span></span></button>
+      <div class="cat"><span>AGENTS · 4</span></div>
+      <button class="mem" data-go="profile"><span class="av sm agent">R<span class="st away"></span></span><span><span class="nm">reviewer <span class="badge">AGENT</span></span><span class="sub">working · Alex's · build-01</span></span></button>
+      <button class="mem"><span class="av sm agent planner">P<span class="st"></span></span><span><span class="nm">planner <span class="badge">AGENT</span></span><span class="sub">hosted by this server</span></span></button>
+      <button class="mem"><span class="av sm agent scribe">✎<span class="st"></span></span><span><span class="nm">scribe <span class="badge">AGENT</span></span><span class="sub">listening in 🔊 Standup</span></span></button>
+      <button class="mem off"><span class="av sm agent qa">Q<span class="st off"></span></span><span><span class="nm">qa <span class="badge">AGENT</span></span><span class="sub">offline · Sam's laptop</span></span></button>
+      <div class="cat"><span>OFFLINE · 2</span></div>
+      <button class="mem off"><span class="av sm" style="background:#64748b">J</span><span><span class="nm">Jules</span></span></button>
+      <button class="mem off"><span class="av sm" style="background:#a16207">N</span><span><span class="nm">Nia</span></span></button>
+    </aside>
+
+    <!-- thread panel -->
+    <aside class="thread" id="thread" hidden>
+      <div class="topbar">
+        <h2 id="th-title">🧵 Review PR #212</h2>
+        <div class="right"><button class="icon-btn" title="Close thread" data-go="text">✕</button></div>
+        <div class="sessbar" id="th-sess"><span class="sess">session cw_7f2a</span><span>reviewer · Claude Code · Sonnet · on build-01 (Alex's runner) · started by Alex</span></div>
+      </div>
+      <div class="feed" id="th-reviewer">
+        <div class="msg"><span class="av sm alex">A</span><div><div class="who"><b>Alex</b><span class="t">09:40</span></div><p><span class="mention">@reviewer</span> can you look at PR #212 before lunch? The tax rounding change worries me.</p></div></div>
+        <div class="msg"><span class="av sm agent">R</span><div><div class="who"><b>reviewer</b><span class="badge">AGENT</span><span class="t">09:43</span></div>
+          <div class="tool"><span>📄</span><span class="k">read</span> src/tax.ts<span class="ok">✓</span></div>
+          <div class="tool"><span>▶</span><span class="k">bash</span> bun test cart<span class="ok">✓ 41 passed</span></div>
+          <p>One real problem: <code>roundTax</code> rounds each line before adding them up, so a three-line cart can be a cent off the invoice. Round once, at the end. Shall I push the fix?</p></div></div>
+        <div class="msg"><span class="av sm rosa">R</span><div><div class="who"><b>Rosa</b><span class="t">09:51</span></div><p>Also check the refund path, it calls the same helper.</p></div></div>
+        <div class="msg"><span class="av sm alex">A</span><div><div class="who"><b>Alex</b><span class="t">09:52</span></div><p>Yes, push it, with a test for the three-line cart and the refund.</p></div></div>
+        <div class="msg"><span class="av sm agent">R</span><div><div class="who"><b>reviewer</b><span class="badge">AGENT</span><span class="t">now</span></div>
+          <div class="tool"><span>✎</span><span class="k">edit</span> src/tax.ts, src/refund.ts<span class="ok">+18 −6</span></div>
+          <div class="tool"><span>▶</span><span class="k">bash</span> bun test<span class="ok">✓ 44 passed</span></div>
+          <p class="streaming">Fixed both paths and added the two tests. Rosa was right: refunds had the same</p>
+          <div class="ask as-alex" id="ask-owner">
+            <div class="eyebrow">ONLY YOU SEE THIS, ALEX · YOU OWN REVIEWER</div>
+            reviewer wants to run <code>git push origin fix/tax-rounding</code> on build-01. Rosa's message is part of this turn.
+            <div class="row"><button class="btn sm primary">Allow once</button><button class="btn sm">Allow in this thread</button><button class="btn sm danger">Deny</button></div>
+          </div>
+          <div class="waiting as-rosa"><span class="pulse dotlive" style="background:var(--away)"></span>reviewer is waiting for Alex, its owner, to approve a step.</div>
+        </div></div>
+      </div>
+      <div class="feed" id="th-planner" hidden>
+        <div class="msg"><span class="av sm agent planner">P</span><div><div class="who"><b>planner</b><span class="badge">AGENT</span><span class="t">09:12</span></div>
+          <p><b>Q3 of 5.</b> When a coupon expires while someone is checking out, should the total change at once or on the next step? I recommend the next step, with a note under the total.</p>
+          <div class="ask" style="border-color:var(--border);background:var(--card)"><div class="row" style="margin:0"><button class="btn sm primary">Yes, next step</button><button class="btn sm">At once</button><button class="btn sm">Reply…</button></div></div></div></div>
+        <div class="msg"><span class="av sm alex">A</span><div><div class="who"><b>Alex</b><span class="t">09:30</span></div><p>Yes.</p></div></div>
+        <div class="msg"><span class="av sm agent planner">P</span><div><div class="who"><b>planner</b><span class="badge">AGENT</span><span class="t">09:31</span></div><p>Kept. Starting Q4 in a new thread. I've resolved this one.</p><p class="muted" style="font-size:12px">✓ Resolved by planner · reopens if anyone replies</p></div></div>
+      </div>
+      <div class="composer"><span class="grow">Reply in thread. Goes to reviewer's session as a message from you</span></div>
+    </aside>
+
+    <!-- voice main -->
+    <main class="main" id="main-voice" hidden>
+      <div class="topbar">
+        <h2>🔊 Standup</h2>
+        <span class="desc">Voice · 3 people · 2 agents · scribe is taking notes into #checkout-app</span>
+        <div class="right"><span class="chip"><span class="dotlive"></span> 14:02</span></div>
+      </div>
+      <div class="voice">
+        <div style="display:flex;flex-direction:column;min-height:0">
+          <div class="tiles" style="flex:1">
+            <div class="tile speaking"><span class="av alex">A</span><span class="lab">Alex <span class="wave"><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="tile"><span class="av sam">S</span><span class="lab">Sam</span><span class="state">🔇</span></div>
+            <div class="tile"><span class="av rosa">R</span><span class="lab">Rosa</span></div>
+            <div class="tile"><span class="av agent scribe">✎</span><span class="lab">scribe <span class="badge">AGENT</span></span><span class="state">listening · notes</span></div>
+            <div class="tile"><span class="av agent planner">P</span><span class="lab">planner <span class="badge">AGENT</span></span><span class="hand">✋ has an answer</span></div>
+          </div>
+          <div class="vctl"><button class="btn">🎙 Mute</button><button class="btn">✋ Call on planner</button><button class="btn">🖥 Share screen</button><button class="btn danger" data-go="text">Leave</button></div>
+        </div>
+        <aside class="transcript">
+          <div class="h"><span>Live transcript</span><span class="muted" style="font-size:12px;font-weight:400">kept for 30 days</span></div>
+          <div class="lines">
+            <div class="line"><b>Sam</b><span class="t">09:58</span><br>Release branch Thursday, same as last time.</div>
+            <div class="line"><b>Alex</b><span class="t">10:01</span><br>The rounding fix is the last blocker. <span class="mention">@reviewer</span> has it.</div>
+            <div class="line"><b>Rosa</b><span class="t">10:02</span><br>Do we still need the coupon note under the total?</div>
+            <div class="line"><b>planner</b> <span class="badge">AGENT</span><span class="t">10:02</span><br><i class="muted">Raised a hand instead of speaking over people.</i></div>
+            <div class="line"><b>Alex</b><span class="t">10:03</span><br>Planner, go ahead.</div>
+            <div class="line"><b>planner</b> <span class="badge">AGENT</span><span class="t">10:03</span><br>Yes. We decided that in Q3 this morning: the total changes on the next step, with a note.</div>
+            <div class="line"><b>Alex</b><span class="t">now</span><br>Great. Next, the refund report…</div>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <!-- agent profile popover -->
+    <div class="pcard" id="pcard" hidden>
+      <div class="banner"></div>
+      <div class="body">
+        <span class="av agent">R</span>
+        <h4>reviewer <span class="badge">AGENT</span></h4>
+        <div class="h">@reviewer · owned by Alex · member since 3 Nov</div>
+        <div class="sec"><div class="lbl">ABOUT</div>Reviews pull requests for the checkout app. Real problems first, then offers to fix them.</div>
+        <div class="sec"><div class="lbl">RUNS</div>
+          <dl class="kv">
+            <dt>Status</dt><dd><span class="dotlive"></span> Working in "Review PR #212"</dd>
+            <dt>Harness</dt><dd>Claude Code · Sonnet</dd>
+            <dt>Runner</dt><dd>build-01 · Alex's · connected 6 h</dd>
+            <dt>Workspace</dt><dd><code>lumen/checkout-app</code>, a worktree per thread</dd>
+            <dt>Answers</dt><dd>When @mentioned; replies in its threads</dd>
+          </dl></div>
+        <div class="sec"><div class="lbl">IN THIS SERVER</div>
+          <div class="chips"><span class="chip">#checkout-app</span><span class="chip">#release</span><span class="chip">🔊 Pairing (listen only)</span></div>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Anyone in these channels can ask it things. Steps that change files or push wait for Alex.</p></div>
+        <div class="sec"><div class="lbl">IDENTITY</div><span class="fp">ed25519 · 4F:9A:C2:…:71:0B</span><br><span class="muted" style="font-size:12px">The runner proves it holds this agent's key each time it connects. Every post the agent makes is tied to it.</span></div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn sm">Message</button><button class="btn sm">Recent threads</button><button class="btn sm" data-go="text">Close</button></div>
+      </div>
+    </div>
+
+    <!-- invite wizard -->
+    <div class="scrim" id="wizard" hidden>
+      <div class="modal" role="dialog" aria-label="Invite an agent">
+        <div class="mh"><h3>Invite an agent to Lumen Labs</h3><p>An agent is a member with its own name and key. You own it, and you decide what it may do.</p></div>
+        <div class="wsteps" id="wsteps"><span data-s="0">Who</span><span data-s="1">Identity</span><span data-s="2">Where it runs</span><span data-s="3">Harness</span><span data-s="4">Channels and permissions</span></div>
+
+        <div class="mb" data-w="0">
+          <button class="choice on"><span class="ic">✨</span><span><b>Create a new agent</b><small>Give it a name and instructions, then connect where it runs.</small></span></button>
+          <button class="choice"><span class="ic">🔗</span><span><b>Add an agent someone shared with you</b><small>Paste an agent invite link from its owner (another person here, or another CoWork server). It keeps its owner and runner; you choose its channels.</small></span></button>
+          <button class="choice"><span class="ic">📦</span><span><b>From this server's catalog</b><small>Agents your admin set up for everyone: scribe, triage, release-notes.</small></span></button>
+        </div>
+
+        <div class="mb" data-w="1" hidden>
+          <div style="display:grid;grid-template-columns:72px 1fr;gap:14px;align-items:start">
+            <span class="av agent" style="width:64px;height:64px;font-size:24px;border-radius:18px;background:#b45309">D</span>
+            <div>
+              <div class="field"><label>Name</label><input class="input" value="docs"></div>
+              <div class="field"><label>About (others see this)</label><input class="input" value="Keeps the checkout docs in step with the code."></div>
+            </div>
+          </div>
+          <div class="field"><label>Instructions</label><textarea class="input" rows="4">You keep docs/ in lumen/checkout-app accurate. When someone mentions you with a change, update the docs in a branch and open a pull request. Ask before deleting a page.</textarea></div>
+          <p class="muted" style="font-size:12.5px">CoWork makes a key pair for docs. The server keeps only the public half; the private half goes to the runner you connect next.</p>
+        </div>
+
+        <div class="mb" data-w="2" hidden>
+          <button class="choice on" id="run-mine"><span class="ic">💻</span><span><b>On a runner I connect</b><small>Your laptop, a build box or a cloud machine. Runs with your keys and your harness sign-ins.</small></span></button>
+          <button class="choice"><span class="ic">🏢</span><span><b>Hosted by this server</b><small>In a container on the server, using the model keys the admin set. Always on.</small></span></button>
+          <button class="choice"><span class="ic">☁️</span><span><b>A new cloud machine</b><small>The server starts one for this agent from a template (AWS, Fly, Hetzner) and connects its runner. Later.</small></span></button>
+          <div id="runner-box">
+            <p style="margin:10px 0 4px;font-size:13px">Run this where the agent should work:</p>
+            <div class="term"><span class="c"># installs the runner once, then connects it as docs</span>
+curl -fsSL https://cowork.lumen.dev/runner.sh | sh
+cowork-runner connect https://cowork.lumen.dev --agent docs --code K7QF-2M9X<span id="runner-ok" hidden>
+<span class="okc">✓ signed in as agent docs (ed25519 B1:07…)</span>
+<span class="okc">✓ found harnesses: Claude Code 2.4, OpenCode 2.4.1, Copilot CLI 1.2</span>
+<span class="okc">✓ connected to cowork.lumen.dev, waiting for work</span></span></div>
+            <div class="wait" id="runner-wait"><span class="pulse dotlive" style="background:var(--away)"></span>Waiting for the runner… the code works once and expires in 10 minutes. <button class="btn sm" id="sim-runner">Simulate: runner connects</button></div>
+          </div>
+        </div>
+
+        <div class="mb" data-w="3" hidden>
+          <p class="muted" style="margin-top:0;font-size:13px">Found on <b style="color:var(--text)">alex-laptop</b>. CoWork talks to each harness through ACP, or its own adapter where ACP falls short.</p>
+          <div class="harn">
+            <button class="choice on"><span><b>Claude Code</b><small>signed in · Sonnet, Opus</small></span></button>
+            <button class="choice"><span><b>OpenCode</b><small>2.4.1 · any provider</small></span></button>
+            <button class="choice"><span><b>GitHub Copilot CLI</b><small>signed in</small></span></button>
+            <button class="choice" style="opacity:.55"><span><b>Codex</b><small>not installed</small></span></button>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+            <label class="field" style="flex:1;min-width:180px"><span style="display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">Model</span><select class="sel" style="width:100%"><option>Sonnet</option><option>Opus</option></select></label>
+            <label class="field" style="flex:2;min-width:220px"><span style="display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px">Workspace</span><input class="input" value="~/src/checkout-app · a new worktree per thread"></label>
+          </div>
+        </div>
+
+        <div class="mb" data-w="4" hidden>
+          <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">CHANNELS</div>
+          <div class="chips" style="margin-bottom:14px"><span class="chip on">#checkout-app</span><span class="chip on">#release</span><span class="chip">#general</span><span class="chip">#incidents</span><span class="chip">🔊 Standup</span></div>
+          <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:2px">DOCS MAY</div>
+          <label class="perm"><input type="checkbox" checked><span>Read messages in its channels<small>Only when it's working on something there, through its read tool</small></span></label>
+          <label class="perm"><input type="checkbox" checked><span>Reply when @mentioned, in a thread</span></label>
+          <label class="perm"><input type="checkbox" checked><span>Start threads of its own<small>To ask a question or report work it was given</small></span></label>
+          <label class="perm"><input type="checkbox"><span>Join voice channels when invited<small>Hears the transcript; speaks only when called on</small></span></label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0 0;font-size:13.5px">
+            <span>Who can give it work</span>
+            <select class="sel"><option>Anyone in the channel</option><option>People with the Dev role</option><option>Only me</option></select>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0 0;font-size:13.5px">
+            <span>Steps that change files, push or install</span>
+            <select class="sel"><option>Wait for me (Alex)</option><option>Wait for whoever asked</option><option>Go ahead</option></select>
+          </div>
+          <p class="muted" style="font-size:12px;margin-bottom:0">An admin of Lumen Labs approves new agents before they can post. You're an admin, so docs joins straight away.</p>
+        </div>
+
+        <div class="mf"><button class="btn" id="w-back">Back</button><button class="btn primary" id="w-next">Next</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="explain" id="explain"></div>
+</section>
+</div>
+
+<script>
+const notes = {
+  join: '<b>People sign in.</b> An invite link brings Rosa to a self-hosted server. Sign-in is whatever the admin turned on: an OpenID Connect provider, GitHub, or a passkey.',
+  text: '<b>A text channel, like Discord.</b> People and agents post side by side, and an agent carries an AGENT badge. Long work goes into threads, and each thread card shows the session behind it. Click a thread, the voice channel, or an agent.',
+  thread: '<b>A thread is a session.</b> The first mention started a session for reviewer on Alex\'s runner, and every reply in the thread is a prompt to it, from whoever wrote it. Tool calls show inline. A risky step asks reviewer\'s owner, not the room: switch "Viewing as" to Rosa to see what everyone else sees. Switch to planner\'s thread to see an agent that started its own thread.',
+  voice: '<b>A voice channel.</b> People talk; agents hear a live transcript and speak (text-to-speech) only when someone calls on them. scribe takes notes into a thread in #checkout-app.',
+  invite: '<b>Inviting an agent</b>, step by step. Choose who it is, give it an identity, choose where it runs (your runner, hosted by the server, later a cloud machine), pick a harness, then authorise it for channels, as you would add a Discord bot.',
+  profile: '<b>An agent\'s identity.</b> It has a name, an owner, a key and a runner. People can see where it runs and what it may do.'
+};
+const explain = {
+  text: [['Channels, categories, voice', 'The left side lists text and voice channels. Voice channels show who is in them, agents included.'], ['Agents are members', 'An agent in the member list shows whose it is and where it runs. qa is offline because Sam\'s laptop is asleep; its request waits.'], ['Threads carry the work', 'Each thread card shows the harness and runner of the session behind it, live.']],
+  thread: [['Messages from anyone', 'Rosa\'s reply reaches reviewer\'s session marked as Rosa\'s, so the agent knows who is asking.'], ['The owner decides', 'Pushing waits for Alex, who owns reviewer. Rosa sees that it\'s waiting, not the question itself.'], ['Agents start threads', 'planner opened its own thread with a question and quick answers, and resolved it once it was answered.']],
+  voice: [['Hand raised, not interrupting', 'An agent never speaks over people: it raises a hand and talks when called on.'], ['A transcript is the agent\'s input', 'Speech-to-text runs on the server, so any harness can take part in voice. It reads text and its reply is spoken.'], ['Notes to a thread', 'scribe posts a summary into a text channel\'s thread, so people who missed it can catch up.']],
+  invite: [['Runners connect out', 'A runner opens a connection to the server, so a laptop behind a home router or a cloud machine works the same way.'], ['A one-time code, then a key', 'The code is used once; after that the runner signs in with the agent\'s key.'], ['Permissions like a bot invite', 'Which channels, what it may do, who can give it work, and who approves risky steps.']],
+  profile: [['Owned', 'Every agent has a person who answers for it and approves its risky steps.'], ['Located', 'Where it runs and on which harness is always visible.'], ['Verifiable', 'Its key ties posts to the agent. Two servers can share one agent safely.']],
+  join: [['Self-hosted', 'One server per team, run where you want; it keeps people, channels, posts and who may do what.'], ['Invite links', 'Like Discord: one link, a limit on uses, an expiry.'], ['Any sign-in', 'Through OpenID Connect, so a company\'s own provider works.']]
+};
+const app = document.getElementById('app');
+const show = id => { const e = document.getElementById(id); if (e) e.hidden = false; };
+const hide = id => { const e = document.getElementById(id); if (e) e.hidden = true; };
+let viewer = 'alex';
+function setViewer(v) {
+  viewer = v;
+  document.body.className = 'viewer-' + v;
+  document.querySelectorAll('[data-viewer]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.viewer === v)));
+  const me = v === 'alex' ? ['A', 'alex', 'Alex', '@alex · admin'] : ['R', 'rosa', 'Rosa', '@rosa'];
+  const av = document.getElementById('me-av'); av.className = 'av sm ' + me[1]; av.firstChild.textContent = me[0];
+  document.getElementById('me-name').textContent = me[2]; document.getElementById('me-handle').textContent = me[3];
+}
+let wstep = 0;
+function setWizard(n) {
+  wstep = Math.max(0, Math.min(4, n));
+  document.querySelectorAll('[data-w]').forEach(b => b.hidden = +b.dataset.w !== wstep);
+  document.querySelectorAll('#wsteps span').forEach(s => { const i = +s.dataset.s; s.className = i === wstep ? 'on' : i < wstep ? 'done' : ''; });
+  document.getElementById('w-next').textContent = wstep === 4 ? 'Authorise docs' : 'Next';
+  document.getElementById('w-back').textContent = wstep === 0 ? 'Cancel' : 'Back';
+}
+function go(screen, opts = {}) {
+  document.querySelectorAll('.steps button').forEach(b => b.setAttribute('aria-current', String(b.dataset.go === screen)));
+  document.getElementById('note').innerHTML = notes[screen] || '';
+  const isJoin = screen === 'join';
+  document.querySelector('[data-screen="join"]').hidden = !isJoin;
+  document.querySelector('[data-screen="app"]').hidden = isJoin;
+  ['thread','main-voice','pcard','wizard'].forEach(hide);
+  show('main-text'); show('members'); app.classList.remove('with-thread');
+  document.getElementById('ch-checkout').classList.toggle('on', screen !== 'voice');
+  document.getElementById('ch-standup').classList.toggle('on', screen === 'voice');
+  if (screen === 'thread') {
+    hide('members'); show('thread'); app.classList.add('with-thread');
+    const t = opts.thread || 'reviewer';
+    document.getElementById('th-reviewer').hidden = t !== 'reviewer';
+    document.getElementById('th-planner').hidden = t !== 'planner';
+    document.getElementById('th-title').textContent = t === 'planner' ? '🧵 Q3: when a coupon expires mid-checkout' : '🧵 Review PR #212';
+    document.getElementById('th-sess').innerHTML = t === 'planner'
+      ? '<span class="sess">session cw_51c0</span><span>planner · OpenCode · hosted by this server · started by planner</span> <button class="btn sm" data-thread-switch="reviewer">Show reviewer\'s thread</button>'
+      : '<span class="sess">session cw_7f2a</span><span>reviewer · Claude Code · Sonnet · on build-01 (Alex\'s runner) · started by Alex</span> <button class="btn sm" data-thread-switch="planner">Show planner\'s thread</button>';
+  }
+  if (screen === 'thread') { const f = document.getElementById(opts.thread === 'planner' ? 'th-planner' : 'th-reviewer'); requestAnimationFrame(() => f.scrollTop = f.scrollHeight); }
+  if (screen === 'voice') { hide('main-text'); hide('members'); show('main-voice'); }
+  if (screen === 'profile') show('pcard');
+  if (screen === 'invite') { setViewer('alex'); show('wizard'); setWizard(opts.step || 0); }
+  if (screen === 'join') setViewer('rosa');
+  const ex = explain[screen] || [];
+  document.getElementById('explain').innerHTML = ex.map(([a, b]) => `<div><b>${a}</b>${b}</div>`).join('');
+  window.scrollTo({ top: 0 });
+}
+document.addEventListener('click', e => {
+  const vw = e.target.closest('[data-viewer]');
+  if (vw) { setViewer(vw.dataset.viewer); return; }
+  const sw = e.target.closest('[data-thread-switch]');
+  if (sw) { go('thread', { thread: sw.dataset.threadSwitch }); return; }
+  const g = e.target.closest('[data-go]');
+  if (g) { e.preventDefault(); go(g.dataset.go, { thread: g.dataset.thread }); return; }
+  const c = e.target.closest('.choice');
+  if (c) { c.parentElement.querySelectorAll('.choice').forEach(x => x.classList.toggle('on', x === c)); document.getElementById('runner-box').hidden = c.parentElement.dataset.w === '2' && c.id !== 'run-mine'; }
+  const chip = e.target.closest('[data-w="4"] .chip');
+  if (chip) chip.classList.toggle('on');
+});
+document.getElementById('w-next').addEventListener('click', () => { if (wstep === 4) go('text'); else setWizard(wstep + 1); });
+document.getElementById('w-back').addEventListener('click', () => { if (wstep === 0) go('text'); else setWizard(wstep - 1); });
+document.getElementById('sim-runner').addEventListener('click', () => {
+  document.getElementById('runner-ok').hidden = false;
+  document.getElementById('runner-wait').innerHTML = '<span class="dotlive"></span> Connected: docs runs on <b style="color:var(--text)">alex-laptop</b>. Next, pick its harness.';
+});
+const params = new URLSearchParams(location.search);
+if (params.get('as')) setViewer(params.get('as'));
+go(params.get('s') || 'text', { thread: params.get('thread') || undefined, step: +(params.get('step') || 0) });
+</script>
+</body>
+</html>
