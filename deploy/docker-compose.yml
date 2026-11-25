@@ -24,6 +24,9 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       LIVEKIT_URL: ${LIVEKIT_URL:-}
+      # artifacts on a host name of their own (optional; see README): where they're served from, and the app that may frame them
+      COWORK_ARTIFACT_ORIGIN: ${COWORK_ARTIFACT_ORIGIN:-}
+      COWORK_APP_ORIGIN: ${COWORK_APP_ORIGIN:-}
 
   # LiveKit, the media server behind voice channels. Host networking is what LiveKit recommends for Docker: calls use
   # one UDP port (and a TCP fallback), and the ICE addresses it announces are then the machine's own. Linux only.

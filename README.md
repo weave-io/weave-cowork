@@ -43,6 +43,12 @@ Configuration (environment variables): `COWORK_DATA` (folder for the database, d
 path of the database file), `ASPNETCORE_URLS` (default `http://localhost:5880`), and for voice `LIVEKIT_API_KEY`,
 `LIVEKIT_API_SECRET` and `LIVEKIT_URL` (see Voice channels).
 
+Artifacts (what agents show with `cowork_show`) keep their files under `COWORK_DATA/artifacts` (`COWORK_ARTIFACTS` to put them
+elsewhere). They are served from `/a/…` at short-lived signed addresses, in a sandboxed frame with a strict content policy, so a page
+an agent wrote has no cookies and can't call CoWork's API or reach any other host. For a second wall, give them a host name of their
+own: `COWORK_ARTIFACT_ORIGIN=https://artifacts.cowork.example` (pointing at the same server) and `COWORK_APP_ORIGIN=https://cowork.example.com`
+(the only page allowed to frame them); `/a/…` then answers only on that host name.
+
 Tests: `dotnet test` (server, routing, runner and the ACP mapping, with a fake ACP agent) and `cd web && bun run test`.
 Live checks with Playwright (two browsers, a real runner and OpenCode) are in `tests/live/`.
 

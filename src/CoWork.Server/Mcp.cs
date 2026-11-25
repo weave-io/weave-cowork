@@ -160,8 +160,8 @@ public sealed class Mcp
                 return ($"{who.Handle} can't read thread {threadId}: it isn't in a channel {who.Handle} takes part in.", true, new { threadId });
             sb.AppendLine($"Thread {threadId} in #{tch.Name}, oldest first:");
             sb.AppendLine($"[{When(root.CreatedAt)}] {Name(root.AuthorId)}: {root.Body}");
-            foreach (var p in c.Query<PostRow>(Q.PostSelect + " WHERE p.thread_id=@threadId AND p.kind IN ('text','outcome') ORDER BY p.id", new { threadId }))
-                sb.AppendLine($"[{When(p.CreatedAt)}] {Name(p.AuthorId)}: {(p.Kind == "outcome" ? "(outcome) " : "")}{p.Body}");
+            foreach (var p in c.Query<PostRow>(Q.PostSelect + " WHERE p.thread_id=@threadId AND p.kind IN ('text','outcome','artifact') ORDER BY p.id", new { threadId }))
+                sb.AppendLine($"[{When(p.CreatedAt)}] {Name(p.AuthorId)}: {p.Kind switch { "outcome" => "(outcome) " + p.Body, "artifact" => Shown(p), _ => p.Body }}");
             return (sb.ToString().TrimEnd(), false, new { threadId, channel = tch.Name });
         }
         var asked = ((string?)args["channel"])?.Trim().TrimStart('#').ToLowerInvariant();
@@ -179,6 +179,13 @@ public sealed class Mcp
             sb.AppendLine();
         }
         return (sb.ToString().TrimEnd(), false, new { channel = ch.Name, count = posts.Count });
+    }
+
+    /// <summary>An artifact's card, as a line of the thread: what was shown, which version, from where.</summary>
+    static string Shown(PostRow p)
+    {
+        var m = JsonNode.Parse(p.Meta ?? "{}");
+        return $"(showed “{p.Body}” v{(int?)m?["version"] ?? 1}, from {(string?)m?["path"]}; artifact {(long?)m?["artifactId"]})";
     }
 
     private (string, bool, object) SearchFor(Caller who, JsonObject args)

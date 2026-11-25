@@ -67,7 +67,7 @@ public sealed class Dispatcher
     /// <summary>AGENTS.md rule 4: say who's speaking (and, for a reply written under the canvas, what about).</summary>
     public static string Wrap(string handle, string name, bool owner, string channel, long threadId, string text, Quote? quote = null) =>
         $"<cowork-message from=\"@{Esc(handle)}\" name=\"{Esc(name)}\" owner=\"{(owner ? "true" : "false")}\" channel=\"#{Esc(channel)}\" thread=\"{threadId}\"" +
-        (quote is null ? "" : $" artifact=\"{Esc(quote.Title)}\" version=\"{quote.Version}\" path=\"{Esc(quote.Path)}\"") +
+        (quote is null ? "" : $" artifact=\"{Esc(quote.Title)}\" version=\"{quote.Version}\" path=\"{Esc(quote.Path)}\" about=\"a reply about the artifact you showed from {Esc(quote.Path)}; if you change it, call cowork_show with that path again so people see the new version\"") +
         $">{text.Replace("</cowork-message", "&lt;/cowork-message")}</cowork-message>";
     private static string Esc(string s) => s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 

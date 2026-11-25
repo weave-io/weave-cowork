@@ -161,7 +161,7 @@ public class ArtifactTests
         var replied = await reply.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(("Tax APIs compared", 1), (replied.GetProperty("meta").GetProperty("quote").GetProperty("title").GetString(), replied.GetProperty("meta").GetProperty("quote").GetProperty("version").GetInt32()));
         var heard = await box.NextDelivery();
-        Assert.Contains("artifact=\"Tax APIs compared\" version=\"1\" path=\"reports/tax-apis/index.html\">add the cost for 50,000 refunds a month</cowork-message>", heard.Text);
+        Assert.Contains("artifact=\"Tax APIs compared\" version=\"1\" path=\"reports/tax-apis/index.html\" about=\"a reply about the artifact you showed from reports/tax-apis/index.html; if you change it, call cowork_show with that path again so people see the new version\">add the cost for 50,000 refunds a month</cowork-message>", heard.Text);
         // a quote of an artifact from another thread is refused
         var elsewhere = (await w.Rosa.Post(w.Channel, "a note")).GetProperty("id").GetInt64();
         Assert.Equal(HttpStatusCode.BadRequest, (await w.Rosa.Http.PostAsJsonAsync($"/api/channels/{w.Channel}/posts", new { body = "this?", threadId = elsewhere, quote = new { artifactId = artifact, version = 1 } })).StatusCode);
@@ -181,6 +181,10 @@ public class ArtifactTests
         Assert.Equal(new[] { 2, 1 }, a.GetProperty("versions").EnumerateArray().Select(v => v.GetProperty("version").GetInt32()));
         Assert.Contains("50,000 refunds", await anon.GetStringAsync(a.GetProperty("versions")[0].GetProperty("url").GetString()));
         Assert.DoesNotContain("50,000 refunds", await anon.GetStringAsync(a.GetProperty("versions")[1].GetProperty("url").GetString()));
+        // reading the thread, an agent sees what was shown in it
+        var (read, _) = await Tool(w.App, token, "cowork_read_channel", new { threadId = thread });
+        Assert.Contains("researcher: (showed “Tax APIs compared” v1, from reports/tax-apis/index.html; artifact 1)", read);
+        Assert.Contains("researcher: (showed “Tax APIs compared” v2, from reports/tax-apis/index.html; artifact 1)", read);
         // the download: a page and its files as a zip
         var zip = await w.Rosa.Http.GetAsync($"/api/artifacts/{artifact}/versions/2/download");
         Assert.Equal("tax-apis-compared-v2.zip", zip.Content.Headers.ContentDisposition!.FileName?.Trim('"'));
@@ -291,5 +295,32 @@ public class ArtifactTests
         Assert.Equal(0, w.App.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM artifacts") + w.App.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM artifact_files"));
         Assert.Empty(Directory.EnumerateFiles(w.App.ArtifactsDir, "*", SearchOption.AllDirectories).Where(f => !Path.GetFileName(f).StartsWith('.')));
         Assert.Equal(HttpStatusCode.NotFound, (await w.Rosa.Http.GetAsync("/api/artifacts/1")).StatusCode);
+    }
+
+    [Fact]
+    public async Task With_an_artifact_origin_the_addresses_are_on_that_host_only_and_only_the_app_may_frame_them()
+    {
+        Environment.SetEnvironmentVariable("COWORK_ARTIFACT_ORIGIN", "https://artifacts.cowork.example");
+        Environment.SetEnvironmentVariable("COWORK_APP_ORIGIN", "https://cowork.lumen.example");
+        SandboxTests.World w;
+        try { w = await SandboxTests.Setup(); }
+        finally { Environment.SetEnvironmentVariable("COWORK_ARTIFACT_ORIGIN", null); Environment.SetEnvironmentVariable("COWORK_APP_ORIGIN", null); }
+        await using var _ = w;
+        var thread = (await w.Rosa.Post(w.Channel, "@researcher a report")).GetProperty("id").GetInt64();
+        var create = await w.Pool.Next<CreateSandbox>();
+        await w.Pool.Report(create.Spec.SandboxId, SandboxStates.Running);
+        await using var box = await FakeSandbox.Connect(w.App, create.Spec);
+        await box.NextDelivery();
+        Assert.False((await ShowPage(w, box, create.Spec.ThreadToken)).Error);
+        var url = (await w.Rosa.Http.GetFromJsonAsync<JsonElement>("/api/artifacts/1")).GetProperty("versions")[0].GetProperty("url").GetString()!;
+        Assert.StartsWith("https://artifacts.cowork.example/a/1-1-", url);
+        var path = new Uri(url).PathAndQuery;
+        var http = w.App.CreateClient();
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync(path)).StatusCode);          // not on the app's own host name
+        using var req = new HttpRequestMessage(HttpMethod.Get, path);
+        req.Headers.Host = "artifacts.cowork.example";
+        var res = await http.SendAsync(req);
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Contains("frame-ancestors https://cowork.lumen.example;", res.Headers.GetValues("Content-Security-Policy").Single());
     }
 }

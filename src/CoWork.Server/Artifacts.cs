@@ -200,8 +200,9 @@ public sealed class Artifacts
         ["description"] = "Show people something you made, as an artifact in this thread: an HTML page or report, a markdown document, an image or SVG, a CSV or JSON " +
             "table, or a PDF. Write the file in your workspace first, then call this with its path. A page can bring its CSS, scripts and images in the same " +
             "folder (at most 25 MB; it can't load anything from the internet or call any API, so keep everything it needs beside it). People get a card " +
-            "in the thread and read it beside the conversation. Calling it again with the same path publishes the next version. Use it whenever you " +
-            "produce a report, a document, a chart or a table people should look at, rather than pasting it into your answer.",
+            "in the thread and read it beside the conversation. Use it whenever you produce a report, a document, a chart or a table people should " +
+            "look at, rather than pasting it into your answer. People only see a change when you show it again: after you edit a file you showed, " +
+            "call cowork_show again with the same path, and they get the next version.",
         ["inputSchema"] = new JsonObject
         {
             ["type"] = "object",
@@ -334,7 +335,7 @@ public sealed class Artifacts
         });
         var text = $"Showing \"{finalTitle}\" (artifact {artifactId}, version {version}, {Size(size)}{(files.Count > 1 ? $", {files.Count} files" : "")}) in this thread. " +
             (open == "canvas" ? "It opens beside the thread for whoever started it; everyone else sees its card." : "People open it from its card.") +
-            " Call cowork_show again with the same path to publish the next version.";
+            " When you change it, call cowork_show again with the same path: that publishes the next version.";
         return (text, false, new { artifactId, version, path, title = finalTitle, kind, size, files = files.Count });
     }
 
@@ -414,7 +415,9 @@ public sealed class Artifacts
     {
         var frameAncestors = _opts.Origin is null ? "'self'" : _opts.AppOrigin ?? "*";
         var svg = type.StartsWith("image/svg", StringComparison.Ordinal);
-        r.Headers.ContentSecurityPolicy = svg
+        // a PDF opens in the browser's own viewer, which won't run in a sandboxed document; served as a PDF (nosniff), it can't become a page
+        if (type == "application/pdf") r.Headers.ContentSecurityPolicy = $"frame-ancestors {frameAncestors}";
+        else r.Headers.ContentSecurityPolicy = svg
             ? "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
             : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; " +
               $"media-src 'self' data: blob:; connect-src 'none'; worker-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors {frameAncestors}; sandbox allow-scripts";

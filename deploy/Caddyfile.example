@@ -3,6 +3,12 @@ cowork.example.com {
 	reverse_proxy cowork:5880
 }
 
+# Optional: artifacts on a host name of their own (set COWORK_ARTIFACT_ORIGIN=https://artifacts.cowork.example and
+# COWORK_APP_ORIGIN=https://cowork.example.com on the server). The same server answers; it serves only /a/… there.
+artifacts.cowork.example {
+	reverse_proxy cowork:5880
+}
+
 # Voice: LiveKit's signalling WebSocket can sit behind the proxy too (set LIVEKIT_URL=wss://livekit.example.com).
 # Media does not go through it: 7881/tcp and 7882/udp must be open on the machine itself.
 livekit.example.com {
