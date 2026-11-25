@@ -6,6 +6,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 export const BASE = process.env.BASE ?? 'http://127.0.0.1:5881'
 export const SHOTS = process.env.SHOTS_DIR ? process.env.SHOTS_DIR.replace(/\/?$/, '/') : new URL('../../docs/screens/', import.meta.url).pathname
 export const TIMEOUT = 20000
+/** The sandbox image the live checks' team templates run (decided 25 Nov 2026): never cowork-sandbox-opencode:2.4.1, the tag the user's
+ *  trial pool runs, which only its owner rebuilds. Build this one with TAG=cowork-sandbox-opencode:2.4.1-b9 deploy/sandbox/build.sh. */
+export const SANDBOX_IMAGE = process.env.COWORK_SANDBOX_IMAGE || 'cowork-sandbox-opencode:2.4.1-b9'
 export async function launch(extraArgs = []) {
   return chromium.launch({ headless: true, executablePath: process.env.CHROME, args: ['--no-sandbox', ...extraArgs] })
 }

@@ -88,6 +88,24 @@ public class EgressTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_refusal_is_reported_even_when_the_client_hangs_up_before_the_answer()
+    {
+        // a phase10 run had the pool log "refused example.com:443" and never tell the server: the client was gone, writing the 403 threw, and
+        // the report after it never ran. Ten clients that send CONNECT and hang up at once: every host is reported.
+        await using var p = Proxy();
+        for (var i = 0; i < 10; i++)
+        {
+            using var s = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            await s.ConnectAsync(new UnixDomainSocketEndPoint(Path.Combine(p.Folder, EgressProxy.ProxySocket)));
+            await s.SendAsync(Encoding.ASCII.GetBytes($"CONNECT gone{i}.example:443 HTTP/1.1\r\n\r\n"));
+            s.Close();
+        }
+        var end = DateTime.UtcNow.AddSeconds(10);
+        while (true) { lock (_refused) if (_refused.Count == 10) break; if (DateTime.UtcNow > end) break; await Task.Delay(20); }
+        lock (_refused) Assert.Equal(Enumerable.Range(0, 10).Select(i => $"gone{i}.example").ToHashSet(), _refused.Select(r => r.Host).ToHashSet());
+    }
+
+    [Fact]
     public async Task Allowed_once_opens_one_connection_and_for_the_thread_opens_it_for_good()
     {
         await using var p = Proxy();

@@ -119,12 +119,16 @@ public sealed class EgressProxy : IAsyncDisposable
         if (!Admit(host))
         {
             Log?.Invoke($"refused {host}:{port}");
-            await Reply(down, 403, $"CoWork: {host} isn't on this project's network list. Whoever started the thread has been asked to allow it; try again once they have.");
+            // the report goes first: a client that has already hung up makes the 403 throw, and the ask must still reach the server
+            var report = Task.CompletedTask;
             if (!_reported.TryGetValue(host, out var at) || DateTime.UtcNow - at > TimeSpan.FromMinutes(1))
             {
                 _reported[host] = DateTime.UtcNow;
-                try { await _refused(host, port); } catch (Exception e) { Log?.Invoke($"couldn't report {host}: {e.Message}"); }
+                report = Task.Run(async () => { try { await _refused(host, port); } catch (Exception e) { Log?.Invoke($"couldn't report {host}: {e.Message}"); } });
             }
+            try { await Reply(down, 403, $"CoWork: {host} isn't on this project's network list. Whoever started the thread has been asked to allow it; try again once they have."); }
+            catch (IOException) { Log?.Invoke($"{host}: the client hung up before the refusal reached it"); }
+            await report;
             return;
         }
         using var up = new TcpClient();

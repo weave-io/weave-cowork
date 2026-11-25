@@ -10,7 +10,7 @@
 // the phone: threads in the drawer, a thread fills the screen. A private channel's threads are only in its members' lists.
 // Starts its own server (default port 5885). Everything in podman carries the pool's label and is removed by it at the end.
 //   node tests/live/phase12.mjs          (screenshots go to docs/screens/brief8/)
-import { launch, person, expect, ok } from './lib.mjs'
+import { launch, person, expect, ok, SANDBOX_IMAGE } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { rmSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -24,7 +24,7 @@ const DB = `${DIR}/data/cowork.db`
 const SHOTS = process.env.SHOTS_DIR ?? `${REPO}/docs/screens/brief8/`
 const SERVER = `${REPO}/src/CoWork.Server/bin/Debug/net10.0/CoWork.Server.dll`
 const RUNNER = `${REPO}/src/CoWork.Runner/bin/Debug/net10.0/cowork-runner.dll`
-const IMAGE = 'cowork-sandbox-opencode:2.4.1'
+const IMAGE = SANDBOX_IMAGE              // never the trial's own tag (see lib.mjs)
 const LONG = 240000
 rmSync(DIR, { recursive: true, force: true }); mkdirSync(`${DIR}/data`, { recursive: true }); mkdirSync(SHOTS, { recursive: true })
 const sql = (q) => JSON.parse(execFileSync('python3', ['-I', '-c', 'import sqlite3,sys,json;c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute(sys.argv[2]).fetchall()))', DB, q]).toString())
@@ -33,7 +33,7 @@ const clean = (t) => (t ?? '').replace(/\s+/g, ' ').trim()
 const podman = (...a) => execFileSync('podman', a, { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: { ...process.env, GIT_AUTHOR_NAME: 'Alex', GIT_AUTHOR_EMAIL: 'alex@lumen.example', GIT_COMMITTER_NAME: 'Alex', GIT_COMMITTER_EMAIL: 'alex@lumen.example' } }).toString().trim()
 
-if (!podman('images', '-q', IMAGE)) { console.log(`FAILED: the image ${IMAGE} isn't built here. Run deploy/sandbox/build.sh first.`); process.exit(1) }
+if (!podman('images', '-q', IMAGE)) { console.log(`FAILED: the image ${IMAGE} isn't built here. Run TAG=${IMAGE} deploy/sandbox/build.sh first.`); process.exit(1) }
 const seed = `${DIR}/seed`; mkdirSync(`${seed}/src`, { recursive: true })
 git(seed, 'init', '-q', '-b', 'main')
 writeFileSync(`${seed}/README.md`, '# checkout-app\n\nCart, payment and order confirmation for the Lumen Labs web shop.\n')
@@ -102,7 +102,7 @@ try {
   await a.click('[data-testid=provider-copilot]'); await a.click('[data-testid=save-models]'); await a.waitForSelector('[data-testid=models-saved]')
   await a.fill('[name=idleSeconds]', '120'); await a.click('[data-testid=save-idle]'); await a.waitForSelector('[data-testid=idle-saved]')
   await a.keyboard.press('Escape')
-  await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]'); await a.click('[data-testid=runs-on-pool]')
+  await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]'); await a.click('[data-testid=runs-on-pool]'); await a.fill('[name=image]', IMAGE)
   await a.fill('[name=handle]', 'researcher'); await a.fill('[name=about]', 'Reads the code and the conversation, and finds out')
   await a.fill('[name=instructions]', 'You are researcher, on the Lumen Labs checkout app. Answer in one short sentence. Use your tools when asked to (read, webfetch, cowork_resolve_thread). Never ask questions back.')
   await a.click('[data-testid=create-agent]'); await a.waitForSelector('[data-testid=template-created]'); await a.keyboard.press('Escape')

@@ -8,7 +8,7 @@
 // thread's volume is deleted (no changes), and one with a changed file is kept.
 // Starts its own server (default port 5884). Everything in podman carries the pool's label and is removed by it at the end.
 //   node tests/live/phase11.mjs          (screenshots go to docs/screens/brief7/)
-import { launch, person, expect, ok, freshHarnessHome, MODEL } from './lib.mjs'
+import { launch, person, expect, ok, freshHarnessHome, MODEL, SANDBOX_IMAGE } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
@@ -23,7 +23,7 @@ const SHOTS = process.env.SHOTS_DIR ?? `${REPO}/docs/screens/brief7/`
 const SERVER = `${REPO}/src/CoWork.Server/bin/Debug/net10.0/CoWork.Server.dll`
 const RUNNER = `${REPO}/src/CoWork.Runner/bin/Debug/net10.0/cowork-runner.dll`
 const HARNESS = `${HOME}/.weave/harnesses/opencode2/.opencode/bin/opencode acp`
-const IMAGE = 'cowork-sandbox-opencode:2.4.1'
+const IMAGE = SANDBOX_IMAGE              // never the trial's own tag (see lib.mjs)
 const IDLE = 20, KEEP = 20
 const LONG = 240000
 rmSync(DIR, { recursive: true, force: true }); mkdirSync(`${DIR}/data`, { recursive: true }); mkdirSync(SHOTS, { recursive: true })
@@ -35,7 +35,7 @@ const clean = (t) => (t ?? '').replace(/\s+/g, ' ').trim()
 const podman = (...a) => execFileSync('podman', a, { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: { ...process.env, GIT_AUTHOR_NAME: 'Alex', GIT_AUTHOR_EMAIL: 'alex@lumen.example', GIT_COMMITTER_NAME: 'Alex', GIT_COMMITTER_EMAIL: 'alex@lumen.example' } }).toString().trim()
 
-if (!podman('images', '-q', IMAGE)) { console.log(`FAILED: the image ${IMAGE} isn't built here. Run deploy/sandbox/build.sh first.`); process.exit(1) }
+if (!podman('images', '-q', IMAGE)) { console.log(`FAILED: the image ${IMAGE} isn't built here. Run TAG=${IMAGE} deploy/sandbox/build.sh first.`); process.exit(1) }
 const seed = `${DIR}/seed`; mkdirSync(`${seed}/src`, { recursive: true })
 git(seed, 'init', '-q', '-b', 'main')
 writeFileSync(`${seed}/README.md`, '# checkout-app\n\nCart, payment and order confirmation for the Lumen Labs web shop.\n')
@@ -103,7 +103,7 @@ try {
   expect(sql("select value from settings where key='sandbox_retention_seconds'")[0][0] === String(KEEP), `Server settings: a done thread's volume is kept ${KEEP} seconds (short for the check)`)
   await shots(a, '22-server-settings-retention')
   await a.keyboard.press('Escape')
-  await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]'); await a.click('[data-testid=runs-on-pool]')
+  await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]'); await a.click('[data-testid=runs-on-pool]'); await a.fill('[name=image]', IMAGE)
   await a.fill('[name=handle]', 'researcher'); await a.fill('[name=about]', 'Reads the code and the conversation, and finds out')
   await a.fill('[name=instructions]', 'You are researcher, on the Lumen Labs checkout app. Answer in at most two short sentences. Use CoWork\'s tools (cowork_read_channel, cowork_search, cowork_resolve_thread) when asked to.')
   await a.click('[data-testid=create-agent]'); await a.waitForSelector('[data-testid=template-created]'); await a.keyboard.press('Escape')
