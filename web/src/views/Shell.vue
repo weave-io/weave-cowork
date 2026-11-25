@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { store, currentChannel, openChannel, openThread, openModal, closeModal } from '../store'
+import { store, currentChannel, openChannel, openThread, openModal, closeModal, markRead } from '../store'
 import { post } from '../api'
 import Sidebar from '../components/Sidebar.vue'
 import PostItem from '../components/PostItem.vue'
@@ -23,6 +23,9 @@ import InvitePeople from '../components/modals/InvitePeople.vue'
 import InviteAgent from '../components/modals/InviteAgent.vue'
 import EditAgent from '../components/modals/EditAgent.vue'
 import People from '../components/modals/People.vue'
+import Audit from '../components/modals/Audit.vue'
+import Mentions from '../components/modals/Mentions.vue'
+import AgentActivity from '../components/modals/AgentActivity.vue'
 
 const route = useRoute(), router = useRouter()
 const ids = computed(() => {
@@ -44,6 +47,9 @@ watch([ids, () => store.channels.length], async () => {
   await openChannel(want)
   await openThread(ids.value.thread).catch(() => router.replace(`/c/${want}`))
 }, { immediate: true })
+
+// a channel that is open is a channel that is read: when it has unread messages (it was just opened, or something arrived), say so
+watch(() => [store.feed.channelId, store.unread.channels[String(store.feed.channelId)] ?? 0] as const, ([id, n]) => { if (id != null && n > 0) markRead(id) }, { immediate: true })
 
 const posts = computed(() => store.feed.posts)
 watch(() => [posts.value.length, store.feed.channelId], async () => {
@@ -115,6 +121,9 @@ async function send(text: string) {
       <InviteAgent v-if="store.modal?.name === 'invite-agent'" />
       <EditAgent v-if="store.modal?.name === 'edit-agent'" :agent-id="store.modal.props.id" />
       <People v-if="store.modal?.name === 'people'" />
+      <Audit v-if="store.modal?.name === 'audit'" />
+      <Mentions v-if="store.modal?.name === 'mentions'" />
+      <AgentActivity v-if="store.modal?.name === 'agent-activity'" :agent-id="store.modal.props.id" />
       <SettingsDialog v-if="store.modal?.name === 'settings'" />
     </div>
   </TooltipProvider>

@@ -42,6 +42,7 @@ const canAdminAgent = (ownerId: number | null) => store.isAdmin || ownerId === s
         <MemberAvatar :member="m" size="sm" status /><span class="font-medium">{{ m.displayName }}</span><AgentBadge />
         <span class="flex items-center gap-1.5 text-xs text-muted"><StatusDot :state="m.online ? 'online' : 'offline'" />owned by {{ memberById(m.ownerId ?? 0)?.displayName }} · {{ m.online ? 'online' : m.connected ? 'offline' : 'not connected' }}</span>
         <span v-if="canAdminAgent(m.ownerId)" class="ml-auto flex gap-1.5">
+          <Button size="sm" variant="outline" data-testid="agent-activity" @click="openModal('agent-activity', { id: m.id })">Activity</Button>
           <Button size="sm" variant="outline" data-testid="edit-agent" @click="openModal('edit-agent', { id: m.id })">Edit</Button>
           <Button v-if="m.connected" size="sm" variant="outline" data-testid="disconnect-agent" @click="run(() => post(`/agents/${m.id}/disconnect`), { title: `Disconnect ${m.displayName}?`, body: 'Its runner’s token stops working.', confirmLabel: 'Disconnect' })">Disconnect</Button>
           <Button size="sm" variant="outline" class="text-error-text" data-testid="remove-agent" @click="run(() => del(`/agents/${m.id}`), { title: `Remove ${m.displayName}?`, body: 'The agent is removed from the server.', confirmLabel: 'Remove agent' })">Remove</Button>

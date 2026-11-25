@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Pencil, Plus } from 'lucide-vue-next'
+import { Activity, Pencil, Plus } from 'lucide-vue-next'
 import { store, currentChannel, channelMembers, memberById, openModal } from '../store'
 import { Button } from '@/components/ui/button'
 import MemberAvatar from './MemberAvatar.vue'
@@ -23,6 +23,7 @@ const agents = computed(() => members.value.filter(m => m.kind === 'agent'))
       <MemberAvatar :member="m" status />
       <span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 text-[13.5px] font-medium">{{ m.displayName }} <AgentBadge /></span>
         <span class="block truncate text-[11.5px] text-muted" data-testid="agent-sub">{{ m.online ? 'online' : 'offline' }} · owned by {{ memberById(m.ownerId ?? 0)?.displayName }}</span></span>
+      <Button variant="toolbar-icon" size="toolbar" data-testid="agent-activity-row" :aria-label="`${m.displayName}'s activity`" title="Activity" @click="openModal('agent-activity', { id: m.id })"><Activity :size="14" /></Button>
       <Button v-if="store.isAdmin || m.ownerId === store.meId" variant="toolbar-icon" size="toolbar" data-testid="edit-agent-row" :aria-label="`Edit ${m.displayName}`" title="Edit" @click="openModal('edit-agent', { id: m.id })"><Pencil :size="14" /></Button>
     </div>
     <p v-if="!agents.length" class="m-0 px-2 text-xs text-muted">No agents here yet.</p>

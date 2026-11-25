@@ -201,6 +201,7 @@ public static partial class Api
         MapPosts(authed);
         MapPeople(authed);
         MapAgents(api, authed);
+        MapViews(authed);
     }
 
     const string InviteSql = "SELECT i.id, ic.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.revoked FROM invite_codes ic JOIN invites i ON i.id=ic.invite_id WHERE ic.code=@code";

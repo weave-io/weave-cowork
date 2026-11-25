@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check } from 'lucide-vue-next'
+import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText } from 'lucide-vue-next'
 import { store, me, openModal, signOut, memberById } from '../store'
 import { voice, leaveVoice, toggleMute } from '../voice'
 import { selection, setTheme, themes, type ThemeSelection } from '../theme'
@@ -16,6 +16,7 @@ defineProps<{ channelId: number | null }>()
 const emit = defineEmits<{ go: [id: number] }>()
 const text = computed(() => store.channels.filter(c => c.kind !== 'voice'))
 const voices = computed(() => store.channels.filter(c => c.kind === 'voice'))
+const unreadIn = (id: number) => store.unread.channels[String(id)] ?? 0
 const themeLabel = computed(() => selection.value === 'system' ? 'System' : themes.find(t => t.id === selection.value)?.label)
 </script>
 <template>
@@ -30,17 +31,23 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
         <DropdownMenuItem v-if="store.isAdmin" data-testid="menu-invite-people" @select="openModal('invite-people')"><UserPlus />Invite people</DropdownMenuItem>
         <DropdownMenuItem data-testid="menu-invite-agent" @select="openModal('invite-agent')"><Bot />Invite an agent</DropdownMenuItem>
         <DropdownMenuItem data-testid="menu-people" @select="openModal('people')"><Users />{{ store.isAdmin ? 'People & agents' : 'People' }}</DropdownMenuItem>
+        <DropdownMenuItem v-if="store.isAdmin" data-testid="menu-audit" @select="openModal('audit')"><ScrollText />Audit</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
 
     <div class="thin-scrollbar min-h-0 flex-1 overflow-auto px-1 pb-2">
+      <button type="button" class="chan mt-1" :class="{ unread: store.unread.mentions > 0 }" data-testid="mentions" @click="openModal('mentions')">
+        <AtSign :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">Mentions</span>
+        <span v-if="store.unread.mentions > 0" class="count" data-testid="mentions-badge" :aria-label="`${store.unread.mentions} unread mentions`">{{ store.unread.mentions }}</span>
+      </button>
       <div class="flex items-center justify-between px-2.5 pt-3 pb-1">
         <span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Channels</span>
         <Button variant="toolbar-icon" size="toolbar" class="size-6" aria-label="Create channel" data-testid="create-channel" @click="openModal('create-channel')"><Plus :size="14" /></Button>
       </div>
-      <button v-for="c in text" :key="c.id" type="button" class="chan" :class="{ active: c.id === channelId }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
+      <button v-for="c in text" :key="c.id" type="button" class="chan" :class="{ active: c.id === channelId, unread: unreadIn(c.id) > 0 }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
         <Lock v-if="c.isPrivate" :size="14" class="shrink-0" aria-label="Private" /><Hash v-else :size="14" class="shrink-0" aria-hidden="true" />
         <span class="truncate">{{ c.name }}</span>
+        <span v-if="unreadIn(c.id) > 0" class="count" data-testid="unread-badge" :aria-label="`${unreadIn(c.id)} unread`">{{ unreadIn(c.id) > 99 ? '99+' : unreadIn(c.id) }}</span>
       </button>
 
       <div v-if="voices.length" class="px-2.5 pt-4 pb-1"><span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Voice channels</span></div>
@@ -95,5 +102,7 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
 .chan:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
 .chan.active { background: var(--accent-dim); color: var(--text); font-weight: 600; }
 .chan svg { color: var(--muted); }
+.chan.unread { color: var(--text); font-weight: 600; }
+.count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--accent-foreground, #fff); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .chan.active svg { color: var(--accent-text); }
 </style>

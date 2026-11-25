@@ -27,8 +27,9 @@ public sealed class Db
     }
 
     /// <summary>Applies numbered .sql migrations (embedded resources) that haven't run yet.</summary>
-    public void Migrate()
+    public IReadOnlyList<string> Migrate()
     {
+        var applied = new List<string>();
         using var c = Open();
         c.Execute("PRAGMA journal_mode=WAL");
         c.Execute("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)");
@@ -42,7 +43,9 @@ public sealed class Db
             c.Execute(r.ReadToEnd(), transaction: tx);
             c.Execute("INSERT INTO schema_migrations VALUES (@res, @now)", new { res, now = Now() }, tx);
             tx.Commit();
+            applied.Add(res);
         }
+        return applied;
     }
 
     public static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

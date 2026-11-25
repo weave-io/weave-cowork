@@ -19,12 +19,28 @@ export const store = reactive({
   /** the last event position this browser has seen: a reconnect asks for everything after it */
   position: 0,
   modal: null as null | { name: string; props?: any },
+  /** unread messages per channel and mentions not yet seen: from the server's `unread` projection */
+  unread: { channels: {} as Record<string, number>, mentions: 0 },
+  /** counts up when the server says a projection moved, so an open screen asks again */
+  viewsVersion: 0,
 })
 
 export const memberById = (id: number) => store.members.find(m => m.id === id)
 export const me = computed(() => memberById(store.meId))
 export const currentChannel = computed(() => store.channels.find(c => c.id === store.feed.channelId) ?? null)
 export const handles = computed(() => new Set(store.members.filter(m => !m.removed).map(m => m.handle.toLowerCase())))
+
+let unreadTimer: ReturnType<typeof setTimeout> | null = null
+export async function loadUnread() {
+  try { store.unread = await get('/unread') } catch { /* signed out */ }
+}
+/** Tell the server the person has read the channel they are looking at (it writes one event, and only if something is new). */
+let readTimer: ReturnType<typeof setTimeout> | null = null
+export function markRead(channelId: number | null) {
+  if (channelId == null || document.visibilityState === 'hidden') return
+  if (readTimer) clearTimeout(readTimer)
+  readTimer = setTimeout(async () => { readTimer = null; try { await post(`/channels/${channelId}/read`); await loadUnread() } catch { /* try again on the next change */ } }, 250)
+}
 
 export function openModal(name: string, props?: any) { store.modal = { name, props } }
 export function closeModal() { store.modal = null }
@@ -134,6 +150,11 @@ function startHub() {
   for (const evt of ['post-created', 'post-updated', 'post-deleted', 'post-delta', 'thread-updated'])
     hub.on(evt, (p: any) => applyLive(evt, p))
   hub.on('voice-presence', (p: { channelId: number; memberIds: number[] }) => { store.voicePresence = { ...store.voicePresence, [p.channelId]: p.memberIds } })
+  hub.on('views-changed', () => {
+    store.viewsVersion++
+    if (unreadTimer) return
+    unreadTimer = setTimeout(() => { unreadTimer = null; loadUnread() }, 120)
+  })
   hub.on('bootstrap-changed', () => {
     if (pending) return
     pending = setTimeout(async () => { pending = null; try { await loadBootstrap() } catch { /* signed out */ } }, 120)
@@ -143,11 +164,12 @@ function startHub() {
     catchingUp = false
     catchUp().catch(() => reloadFeed().catch(() => {}))
     loadBootstrap().catch(() => {})
+    loadUnread()
     for (const f of onReconnect) f()
   })
   hub.onreconnecting(() => { store.live = false })
   hub.onclose(() => { store.live = false })
-  hub.start().then(() => { store.live = true }).catch(() => { store.live = false })
+  hub.start().then(() => { store.live = true; loadUnread() }).catch(() => { store.live = false })
 }
 
 /** Who is in a channel: public channels include every person plus the agents added; private ones only those added. */

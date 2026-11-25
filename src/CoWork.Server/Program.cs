@@ -12,7 +12,7 @@ if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable(
     builder.WebHost.UseUrls("http://localhost:5880");
 
 var db = new Db(dbPath);
-db.Migrate();
+var migrated = db.Migrate();
 builder.Services.AddSingleton(db);
 builder.Services.AddSingleton<Realtime>();
 builder.Services.AddSingleton<VoicePresence>();
@@ -20,6 +20,11 @@ builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
 builder.Services.AddSingleton<IInlineProjection, DirectoryProjection>();        // projections run in this order, inside the transaction that appended the event
 builder.Services.AddSingleton<IInlineProjection, ThreadProjection>();
 builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
+builder.Services.AddSingleton<IAsyncProjection, AuditProjection>();          // async projections: after the commit, from a checkpoint, rebuildable from zero
+builder.Services.AddSingleton<IAsyncProjection, UnreadProjection>();
+builder.Services.AddSingleton<IAsyncProjection, ActivityProjection>();
+builder.Services.AddSingleton<ProjectionRunner>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectionRunner>());
 builder.Services.AddSingleton<LiveQueue>();
 builder.Services.AddSingleton<ThreadViews>();
 builder.Services.AddHostedService<LivePublisher>();
@@ -58,6 +63,10 @@ var app = builder.Build();
 
 // a server that kept its state in tables (before the events) is written down as events once, and checked, before anything else reads it
 LegacyImporter.Run(db, app.Services.GetRequiredService<IEventStore>(), m => app.Logger.LogInformation("{Message}", m));
+
+// a server that had people before the unread view existed: everything written so far counts as read, once
+if (migrated.Any(m => m.EndsWith("005_views.sql")) && db.Open().Using(c => c.ExecuteScalar<int>("SELECT COUNT(*) FROM people") > 0))
+    app.Services.GetRequiredService<IEventStore>().Append(new[] { new NewEvent("server", "UnreadBaselineSet", new { }) });
 
 // a turn that started and never ended was cut off by a crash or a restart: the thread says so
 app.Services.GetRequiredService<Dispatcher>().RecoverInterruptedTurns();
@@ -107,3 +116,5 @@ app.MapFallback(async ctx =>
 app.Run();
 
 public partial class Program { }
+
+static class DbExtensions { public static T Using<T>(this Microsoft.Data.Sqlite.SqliteConnection c, Func<Microsoft.Data.Sqlite.SqliteConnection, T> f) { using (c) return f(c); } }

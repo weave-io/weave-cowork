@@ -82,7 +82,8 @@ public class ImporterTests
                 // the tables are now written down as events, in order, each marked as imported, and the older events are kept aside
                 var types = c.Query<string>("SELECT type FROM events ORDER BY position").ToList();
                 Assert.Equal("ServerSetUp", types[0]);
-                Assert.Equal(0, c.ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE json_extract(data,'$.imported') IS NOT 1"));
+                Assert.Equal(0, c.ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE json_extract(data,'$.imported') IS NOT 1 AND type<>'UnreadBaselineSet'"));
+                Assert.Equal(1, c.ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='UnreadBaselineSet'"));       // round 3: what was written before the unread view counts as read, once (not imported: it is new)
                 Assert.Equal(1, c.ExecuteScalar<int>("SELECT MAX(schema) FROM events WHERE type IN ('ServerSetUp','MessagePosted')"));
                 Assert.Equal(38, c.ExecuteScalar<int>("SELECT COUNT(*) FROM legacy_events"));
                 Assert.Equal(0, c.ExecuteScalar<int>("SELECT COUNT(*) FROM sqlite_master WHERE name='legacy_deliveries'"));
