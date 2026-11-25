@@ -3,7 +3,7 @@
 import { chromium } from '/home/pgermishuys/source/crumb/node_modules/playwright/index.mjs'
 import { homedir } from 'node:os'
 export const BASE = process.env.BASE ?? 'http://127.0.0.1:5881'
-export const SHOTS = new URL('../../docs/screens/', import.meta.url).pathname
+export const SHOTS = process.env.SHOTS_DIR ? process.env.SHOTS_DIR.replace(/\/?$/, '/') : new URL('../../docs/screens/', import.meta.url).pathname
 export const TIMEOUT = 20000
 export async function launch(extraArgs = []) {
   return chromium.launch({ headless: true, executablePath: process.env.CHROME, args: ['--no-sandbox', ...extraArgs] })

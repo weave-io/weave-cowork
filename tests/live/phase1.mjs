@@ -16,7 +16,7 @@ expect(await a.textContent('[data-testid=channel-title]').then(t => t.includes('
 expect((await a.textContent('[data-testid=server-menu]')).includes('Lumen Labs'), 'server is named Lumen Labs')
 
 // 2. sign out / in, wrong password
-await a.click('[data-testid=sign-out]')
+await a.click('[data-testid=user-menu]'); await a.click('[data-testid=sign-out]')
 await a.getByRole('heading', { name: /Sign in to Lumen Labs/ }).waitFor()
 await a.fill('[name=username]', 'alex'); await a.fill('[name=password]', 'nope nope nope')
 await a.click('button[type=submit]')
@@ -34,10 +34,10 @@ await a.click('button:has-text("Create channel")')
 await a.waitForSelector('[data-testid=channel-title]:has-text("checkout-app")')
 expect((await a.textContent('[data-testid=channel-topic]')).includes('Cart, payment'), 'created #checkout-app with a topic')
 await a.click('[data-testid=create-channel]')
-await a.fill('[name=name]', 'leads'); await a.check('[name=private]')
+await a.fill('[name=name]', 'leads'); await a.click('[data-testid=private-switch]')
 await a.click('button:has-text("Create channel")')
 await a.waitForSelector('[data-channel=leads]')
-expect((await a.textContent('[data-channel=leads]')).includes('🔒'), 'created private #leads')
+expect(await a.locator('[data-channel=leads] [aria-label=Private]').count() === 1, 'created private #leads')
 
 // 4. invite
 await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-people]')
@@ -77,7 +77,7 @@ expect(await r.locator('[data-testid=channel-settings]').count() === 0, 'Rosa ha
 // 5. run channels
 await a.click('[data-channel=leads]')
 await a.click('[data-testid=channel-settings]')
-await a.selectOption('[data-testid=add-member]', { label: 'Rosa (@rosa)' })
+await a.click('[data-testid=add-member]'); await a.click('[role=option]:has-text("Rosa (@rosa)")')
 await a.click('button:has-text("Add"):not(:has-text("Add to"))')
 await r.waitForSelector('[data-channel=leads]')
 ok('adding Rosa to #leads makes it appear for her, live')
@@ -140,7 +140,7 @@ await dp.screenshot({ path: SHOTS + 'phase1-dark.png' })
 
 // last: delete a channel as admin
 await a.click('[data-channel=leads]'); await a.click('[data-testid=channel-settings]')
-await a.click('[data-testid=delete-channel]'); await a.click('[data-testid=confirm-delete]')
+await a.click('[data-testid=delete-channel]'); await a.click('[data-testid=confirm-action]')
 await a.waitForSelector('[data-channel=leads]', { state: 'detached' })
 ok('admin deletes #leads')
 await browser.close()

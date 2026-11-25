@@ -2,9 +2,10 @@
 import { onMounted, ref } from 'vue'
 import { get, put, ApiError } from '../../api'
 import { closeModal, loadBootstrap } from '../../store'
-import Modal from '../ui/Modal.vue'
-import Field from '../ui/Field.vue'
-import Button from '../ui/Button.vue'
+import AppDialog from '../AppDialog.vue'
+import Field from '../FormField.vue'
+import { Button } from '@/components/ui/button'
+import { ErrorNote } from '@/components/ui/error-note'
 
 const props = defineProps<{ agentId: number }>()
 const handle = ref(''), displayName = ref(''), about = ref(''), instructions = ref(''), harness = ref(''), workspace = ref('')
@@ -27,7 +28,7 @@ async function save() {
 }
 </script>
 <template>
-  <Modal :title="`Edit @${handle || 'agent'}`" wide @close="closeModal">
+  <AppDialog :title="`Edit @${handle || 'agent'}`" wide @close="closeModal">
     <form v-if="loaded" @submit.prevent="save">
       <p class="mt-0 text-[13px] text-muted">Changes apply to new threads. Threads that already have a session keep the settings they started with.</p>
       <Field name="displayName" label="Display name" v-model="displayName" />
@@ -35,10 +36,10 @@ async function save() {
       <Field name="instructions" label="Instructions" v-model="instructions" textarea />
       <Field name="harness" label="Harness command" v-model="harness" mono hint="Any ACP agent: opencode acp, copilot --acp, …" />
       <Field name="workspace" label="Workspace folder" v-model="workspace" mono hint="A folder on the runner's machine." />
-      <p v-if="error" role="alert" class="text-danger-ink text-[13px] mt-0">{{ error }}</p>
-      <p v-if="saved" class="text-[13px] mt-0" data-testid="agent-saved">Saved. New threads will use these settings.</p>
-      <div class="flex justify-end gap-2"><Button @click="closeModal">{{ saved ? 'Close' : 'Cancel' }}</Button><Button type="submit" variant="primary" data-testid="save-agent" :disabled="busy || !harness.trim() || !workspace.trim()">Save</Button></div>
+      <ErrorNote v-if="error" :message="error" class="mb-3" />
+      <p v-if="saved" class="mt-0 text-[13px] text-running-text" data-testid="agent-saved">Saved. New threads will use these settings.</p>
+      <div class="flex justify-end gap-2"><Button variant="outline" @click="closeModal">{{ saved ? 'Close' : 'Cancel' }}</Button><Button type="submit" data-testid="save-agent" :disabled="busy || !harness.trim() || !workspace.trim()">Save</Button></div>
     </form>
-    <p v-else-if="error" role="alert" class="text-danger-ink text-[13px]">{{ error }}</p>
-  </Modal>
+    <ErrorNote v-else-if="error" :message="error" />
+  </AppDialog>
 </template>

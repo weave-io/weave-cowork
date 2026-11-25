@@ -1,68 +1,99 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check } from 'lucide-vue-next'
 import { store, me, openModal, signOut, memberById } from '../store'
 import { voice, leaveVoice, toggleMute } from '../voice'
-import Avatar from './ui/Avatar.vue'
+import { selection, setTheme, themes, type ThemeSelection } from '../theme'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
+  DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import MemberAvatar from './MemberAvatar.vue'
+import StatusDot from './StatusDot.vue'
 
 defineProps<{ channelId: number | null }>()
 const emit = defineEmits<{ go: [id: number] }>()
-const menu = ref(false)
-function toggleTheme() {
-  const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.dataset.theme = dark ? 'light' : 'dark'
-  localStorage.setItem('theme', document.documentElement.dataset.theme!)
-}
-const saved = localStorage.getItem('theme'); if (saved) document.documentElement.dataset.theme = saved
-function pick(name: string) { menu.value = false; openModal(name) }
+const text = computed(() => store.channels.filter(c => c.kind !== 'voice'))
+const voices = computed(() => store.channels.filter(c => c.kind === 'voice'))
+const themeLabel = computed(() => selection.value === 'system' ? 'System' : themes.find(t => t.id === selection.value)?.label)
 </script>
 <template>
-  <nav class="bg-side border-r border-line flex flex-col min-w-0 min-h-0" aria-label="Channels">
-    <div class="relative">
-      <button class="w-full px-3.5 py-3.5 border-0 border-b border-line bg-transparent flex items-center justify-between font-bold cursor-pointer text-left" data-testid="server-menu" @click="menu = !menu">
-        <span class="truncate">{{ store.serverName }}</span><span class="text-muted text-xs">▾</span>
-      </button>
-      <div v-if="menu" class="absolute z-20 left-2 right-2 top-[52px] bg-raised border border-line rounded-card shadow-lg p-1" @click="menu = false">
-        <button v-if="store.isAdmin" class="menu-item" data-testid="menu-invite-people" @click="pick('invite-people')">Invite people</button>
-        <button class="menu-item" data-testid="menu-invite-agent" @click="pick('invite-agent')">Invite an agent</button>
-        <button class="menu-item" data-testid="menu-people" @click="pick('people')">{{ store.isAdmin ? 'People and agents' : 'People' }}</button>
-      </div>
-    </div>
-    <div class="flex-1 overflow-auto p-2">
-      <div class="flex justify-between items-center text-[11px] font-bold text-muted px-2 pt-3 pb-1 tracking-wide">
-        CHANNELS
-        <button class="w-5 h-5 grid place-items-center rounded text-muted hover:bg-hover hover:text-ink bg-transparent border-0 cursor-pointer text-base leading-none" aria-label="Create channel" data-testid="create-channel" @click="openModal('create-channel')">+</button>
-      </div>
-      <template v-for="c in store.channels" :key="c.id">
-        <button class="flex items-center gap-2 w-full border-0 text-left px-2 py-1.5 rounded-btn cursor-pointer transition-colors"
-          :class="c.id === channelId ? 'bg-accent-dim text-ink font-semibold' : 'bg-transparent text-muted hover:bg-hover hover:text-ink'" :data-channel="c.name" :data-kind="c.kind" @click="emit('go', c.id)">
-          <span class="w-4 text-center opacity-80">{{ c.kind === 'voice' ? '🔊' : c.isPrivate ? '🔒' : '#' }}</span><span class="truncate">{{ c.name }}</span>
-          <span v-if="c.kind === 'voice' && c.isPrivate" class="ml-auto text-xs opacity-70">🔒</span>
+  <nav class="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Channels">
+    <DropdownMenu>
+      <DropdownMenuTrigger as-child>
+        <button type="button" class="mx-1 mt-1 mb-1 flex h-10 items-center justify-between gap-2 rounded-btn border-0 bg-transparent px-2.5 text-left text-[15px] font-semibold text-text transition-colors hover:bg-text/5" data-testid="server-menu">
+          <span class="truncate">{{ store.serverName }}</span><ChevronDown :size="14" class="shrink-0 text-muted" aria-hidden="true" />
         </button>
-        <ul v-if="c.kind === 'voice' && store.voicePresence[c.id]?.length" class="list-none m-0 mb-1 pl-7 pr-2" :data-voice-members="c.name">
-          <li v-for="id in store.voicePresence[c.id]" :key="id" class="flex items-center gap-2 py-0.5 text-[12.5px] text-muted" :data-voice-member="memberById(id)?.handle">
-            <Avatar :member="memberById(id)" size="xs" /><span class="truncate">{{ memberById(id)?.displayName }}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" class="w-56">
+        <DropdownMenuItem v-if="store.isAdmin" data-testid="menu-invite-people" @select="openModal('invite-people')"><UserPlus />Invite people</DropdownMenuItem>
+        <DropdownMenuItem data-testid="menu-invite-agent" @select="openModal('invite-agent')"><Bot />Invite an agent</DropdownMenuItem>
+        <DropdownMenuItem data-testid="menu-people" @select="openModal('people')"><Users />{{ store.isAdmin ? 'People & agents' : 'People' }}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+
+    <div class="thin-scrollbar min-h-0 flex-1 overflow-auto px-1 pb-2">
+      <div class="flex items-center justify-between px-2.5 pt-3 pb-1">
+        <span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Channels</span>
+        <Button variant="toolbar-icon" size="toolbar" class="size-6" aria-label="Create channel" data-testid="create-channel" @click="openModal('create-channel')"><Plus :size="14" /></Button>
+      </div>
+      <button v-for="c in text" :key="c.id" type="button" class="chan" :class="{ active: c.id === channelId }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
+        <Lock v-if="c.isPrivate" :size="14" class="shrink-0" aria-label="Private" /><Hash v-else :size="14" class="shrink-0" aria-hidden="true" />
+        <span class="truncate">{{ c.name }}</span>
+      </button>
+
+      <div v-if="voices.length" class="px-2.5 pt-4 pb-1"><span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Voice channels</span></div>
+      <template v-for="c in voices" :key="c.id">
+        <button type="button" class="chan" :class="{ active: c.id === channelId }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
+          <Volume2 :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ c.name }}</span>
+          <Lock v-if="c.isPrivate" :size="12" class="ml-auto shrink-0 opacity-70" aria-label="Private" />
+        </button>
+        <ul v-if="store.voicePresence[c.id]?.length" class="m-0 mb-1 list-none py-0 pr-2 pl-[30px]" :data-voice-members="c.name">
+          <li v-for="id in store.voicePresence[c.id]" :key="id" class="flex items-center gap-2 py-[3px] text-[12.5px] text-muted" :data-voice-member="memberById(id)?.handle">
+            <MemberAvatar :member="memberById(id)" size="xs" /><span class="truncate">{{ memberById(id)?.displayName }}</span>
           </li>
         </ul>
       </template>
     </div>
-    <div v-if="voice.status === 'connected' && voice.channelId != null" class="border-t border-line px-3 py-2 flex items-center gap-2 text-[12.5px]" data-testid="voice-bar">
-      <i class="w-2 h-2 rounded-full bg-online inline-block" /><span class="truncate font-medium">{{ store.channels.find(c => c.id === voice.channelId)?.name }}</span>
+
+    <div v-if="voice.status === 'connected' && voice.channelId != null" class="mx-1 mb-1 flex items-center gap-2 rounded-card border border-border bg-card-bg px-2.5 py-1.5 text-[12.5px]" data-testid="voice-bar">
+      <StatusDot state="online" /><span class="truncate font-medium">{{ store.channels.find(c => c.id === voice.channelId)?.name }}</span>
       <span class="ml-auto flex gap-1">
-        <button class="px-2 h-6 rounded-btn text-muted hover:bg-hover bg-transparent border border-line cursor-pointer text-xs" @click="toggleMute">{{ voice.muted ? 'Unmute' : 'Mute' }}</button>
-        <button class="px-2 h-6 rounded-btn text-danger-ink hover:bg-hover bg-transparent border border-line cursor-pointer text-xs" @click="leaveVoice()">Leave</button>
+        <Button variant="toolbar-icon" size="toolbar" :aria-label="voice.muted ? 'Unmute' : 'Mute'" :title="voice.muted ? 'Unmute' : 'Mute'" @click="toggleMute"><MicOff v-if="voice.muted" :size="14" /><Mic v-else :size="14" /></Button>
+        <Button variant="toolbar-icon-danger" size="sm" class="h-7 px-2 text-xs" @click="leaveVoice()">Leave</Button>
       </span>
     </div>
-    <div class="border-t border-line px-3 py-2.5 flex items-center gap-2.5 text-[13px]">
-      <Avatar :member="me" size="sm" />
-      <span class="min-w-0 truncate font-medium" data-testid="me-name">{{ me?.displayName }}</span>
-      <span class="ml-auto flex gap-0.5">
-        <button class="w-7 h-7 grid place-items-center rounded-btn text-muted hover:bg-hover bg-transparent border-0 cursor-pointer" aria-label="Toggle theme" title="Toggle theme" @click="toggleTheme">◐</button>
-        <button class="px-2 h-7 rounded-btn text-muted hover:bg-hover bg-transparent border-0 cursor-pointer text-xs" data-testid="sign-out" @click="signOut">Sign out</button>
-      </span>
-    </div>
+
+    <DropdownMenu>
+      <DropdownMenuTrigger as-child>
+        <button type="button" class="mx-1 mb-1 flex items-center gap-2.5 rounded-btn border-0 bg-transparent px-2.5 py-2 text-left text-[13px] text-text transition-colors hover:bg-text/5" data-testid="user-menu">
+          <MemberAvatar :member="me" size="sm" />
+          <span class="min-w-0 flex-1 truncate font-medium" data-testid="me-name">{{ me?.displayName }}</span>
+          <ChevronDown :size="14" class="shrink-0 text-muted" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" class="w-56">
+        <DropdownMenuLabel>Signed in as @{{ me?.handle }}</DropdownMenuLabel>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger data-testid="theme-menu"><Palette />Theme<span class="ml-auto pr-1 text-xs text-muted">{{ themeLabel }}</span></DropdownMenuSubTrigger>
+          <DropdownMenuSubContent class="w-48">
+            <DropdownMenuRadioGroup :model-value="selection" @update:model-value="setTheme($event as ThemeSelection)">
+              <DropdownMenuRadioItem value="system" data-theme-option="system">System</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem v-for="t in themes" :key="t.id" :value="t.id" :data-theme-option="t.id">{{ t.label }}</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem data-testid="sign-out" @select="signOut"><LogOut />Sign out</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   </nav>
 </template>
 <style scoped>
-.menu-item { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-.menu-item:hover { background: var(--hover); }
+.chan { width: 100%; min-width: 0; min-height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 10px; margin: 1px 0; border: 0; border-radius: var(--radius-btn); background: transparent; color: color-mix(in srgb, var(--text) 86%, transparent); text-align: left; cursor: pointer; font-size: 13.5px; transition: background var(--transition), color var(--transition); }
+.chan:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
+.chan.active { background: var(--accent-dim); color: var(--text); font-weight: 600; }
+.chan svg { color: var(--muted); }
+.chan.active svg { color: var(--accent-text); }
 </style>

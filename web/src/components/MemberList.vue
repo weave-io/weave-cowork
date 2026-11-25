@@ -1,29 +1,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Pencil, Plus } from 'lucide-vue-next'
 import { store, currentChannel, channelMembers, memberById, openModal } from '../store'
-import Avatar from './ui/Avatar.vue'
-import AgentBadge from './ui/AgentBadge.vue'
+import { Button } from '@/components/ui/button'
+import MemberAvatar from './MemberAvatar.vue'
+import AgentBadge from './AgentBadge.vue'
 
 const members = computed(() => channelMembers(currentChannel.value))
 const people = computed(() => members.value.filter(m => m.kind === 'person'))
 const agents = computed(() => members.value.filter(m => m.kind === 'agent'))
 </script>
 <template>
-  <aside class="bg-side border-l border-line overflow-auto px-2 py-3" aria-label="Members" data-testid="member-list">
-    <div class="text-[11px] font-bold text-muted px-2 pb-1 tracking-wide">PEOPLE — {{ people.length }}</div>
-    <div v-for="m in people" :key="m.id" class="flex items-center gap-2.5 px-2 py-1.5 rounded-btn">
-      <Avatar :member="m" />
-      <span class="min-w-0"><span class="font-medium text-[13.5px] block">{{ m.displayName }}<span v-if="m.id === store.meId" class="text-muted font-normal"> (you)</span></span>
-        <span class="text-[11.5px] text-muted block">@{{ m.handle }}{{ m.role === 'admin' ? ' · admin' : '' }}</span></span>
+  <aside class="thin-scrollbar min-h-0 overflow-auto bg-panel-bg px-2 py-3" aria-label="Members" data-testid="member-list">
+    <div class="px-2 pb-1 text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">People — {{ people.length }}</div>
+    <div v-for="m in people" :key="m.id" class="flex items-center gap-2.5 rounded-btn px-2 py-1.5">
+      <MemberAvatar :member="m" />
+      <span class="min-w-0"><span class="block truncate text-[13.5px] font-medium">{{ m.displayName }}<span v-if="m.id === store.meId" class="font-normal text-muted"> (you)</span></span>
+        <span class="block truncate text-[11.5px] text-muted">@{{ m.handle }}{{ m.role === 'admin' ? ' · admin' : '' }}</span></span>
     </div>
-    <div class="text-[11px] font-bold text-muted px-2 pt-4 pb-1 tracking-wide">AGENTS — {{ agents.length }}</div>
-    <div v-for="m in agents" :key="m.id" class="flex items-center gap-2.5 px-2 py-1.5 rounded-btn" :class="!m.online && 'opacity-60'" :data-agent="m.handle">
-      <Avatar :member="m" status />
-      <span class="min-w-0 flex-1"><span class="font-medium text-[13.5px] flex items-center gap-1.5">{{ m.displayName }} <AgentBadge /></span>
-        <span class="text-[11.5px] text-muted block truncate" data-testid="agent-sub">{{ m.online ? 'online' : 'offline' }} · owned by {{ memberById(m.ownerId ?? 0)?.displayName }}</span></span>
-      <button v-if="store.isAdmin || m.ownerId === store.meId" class="text-[12px] text-accent-ink bg-transparent border-0 cursor-pointer hover:underline" data-testid="edit-agent-row" :aria-label="`Edit ${m.displayName}`" @click="openModal('edit-agent', { id: m.id })">Edit</button>
+    <div class="px-2 pt-4 pb-1 text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Agents — {{ agents.length }}</div>
+    <div v-for="m in agents" :key="m.id" class="flex items-center gap-2.5 rounded-btn px-2 py-1.5" :data-agent="m.handle">
+      <MemberAvatar :member="m" status />
+      <span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 text-[13.5px] font-medium">{{ m.displayName }} <AgentBadge /></span>
+        <span class="block truncate text-[11.5px] text-muted" data-testid="agent-sub">{{ m.online ? 'online' : 'offline' }} · owned by {{ memberById(m.ownerId ?? 0)?.displayName }}</span></span>
+      <Button v-if="store.isAdmin || m.ownerId === store.meId" variant="toolbar-icon" size="toolbar" data-testid="edit-agent-row" :aria-label="`Edit ${m.displayName}`" title="Edit" @click="openModal('edit-agent', { id: m.id })"><Pencil :size="14" /></Button>
     </div>
-    <p v-if="!agents.length" class="text-xs text-muted px-2 m-0">No agents here yet.</p>
-    <button class="mt-3 mx-2 text-[12.5px] text-accent-ink bg-transparent border-0 cursor-pointer p-0 hover:underline" @click="openModal('invite-agent')">+ Invite an agent</button>
+    <p v-if="!agents.length" class="m-0 px-2 text-xs text-muted">No agents here yet.</p>
+    <Button variant="ghost" size="sm" class="mx-1 mt-3 h-8 gap-1 text-[12.5px] text-accent-text" @click="openModal('invite-agent')"><Plus :size="14" />Invite an agent</Button>
   </aside>
 </template>

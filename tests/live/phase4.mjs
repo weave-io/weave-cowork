@@ -26,7 +26,7 @@ try {
   // --- Alex sets up and creates 🔊 standup ---
   await setup(a, BASE)
   await createVoice(a, 'standup')
-  expect((await a.textContent('[data-channel=standup]')).includes('🔊'), 'Alex creates 🔊 standup; the channel list shows the speaker icon')
+  expect(await a.locator('[data-channel=standup][data-kind=voice] svg.lucide-volume-2').count() === 1, 'Alex creates a voice channel standup; the channel list shows the speaker icon')
   expect(await a.locator('[data-testid=voice-join]').count() === 1 && await a.locator('[data-testid=composer]').count() === 0, 'a voice channel shows a Join button, not a composer')
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await r.goto(`${BASE}/invite/${code}`)
@@ -102,10 +102,10 @@ try {
   await a2.waitForSelector('[data-channel=daily][data-kind=voice]')
   await r.waitForSelector('[data-channel=daily][data-kind=voice]')
   ok('Alex renames the voice channel; Rosa sees it')
-  await a2.check('text=Private channel >> input'); await a2.waitForTimeout(0)
+  await a2.click('[data-testid=private-switch]')
   await r.waitForSelector('[data-channel=daily]', { state: 'detached' })
   ok('Alex makes it private: it disappears for Rosa')
-  await a2.click('[data-testid=delete-channel]'); await a2.click('[data-testid=confirm-delete]')
+  await a2.click('[data-testid=delete-channel]'); await a2.click('[data-testid=confirm-action]')
   await a2.waitForSelector('[data-channel=daily]', { state: 'detached' })
   ok('Alex deletes it')
 

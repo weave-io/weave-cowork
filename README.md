@@ -16,8 +16,16 @@ the architecture); the rules for building it are in `AGENTS.md`; the build log i
 | `src/CoWork.Server` | ASP.NET Core 10: minimal APIs, SignalR, cookie auth, SQLite (Dapper, numbered migrations); serves the web app |
 | `src/CoWork.Runner` | `cowork-runner`: connects out to a server and runs agents' harness sessions over ACP |
 | `src/CoWork.Contracts` | what the server and the runner say to each other |
-| `web/` | Vue 3 + Vite + TypeScript + Tailwind, built into the server's `wwwroot` |
+| `web/` | Vue 3 + Vite + TypeScript + Tailwind 4, built into the server's `wwwroot` |
 | `deploy/` | Dockerfile, docker-compose.yml (with an optional LiveKit service), a Caddy example |
+
+## Look and feel
+
+The look is adapted from Weave Fleet: the theme tokens and all its themes
+(`web/src/assets/main.css`), the Weave logo, and the `ui/` pieces in `web/src/components/ui/` (button, dialog, alert-dialog,
+dropdown-menu, tooltip, input, textarea, select, switch, avatar, badge, empty-state, error-note, spinner, relative-time and
+the confirm host), built on `reka-ui` and `lucide-vue-next`. The theme is chosen in the user menu (bottom of the channel
+list) and remembered per browser.
 
 ## Run it locally
 

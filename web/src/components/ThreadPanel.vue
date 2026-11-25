@@ -2,6 +2,9 @@
 import { computed, nextTick, watch, ref } from 'vue'
 import { store, memberById } from '../store'
 import { post } from '../api'
+import { X, Hash } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import StatusDot from './StatusDot.vue'
 import PostItem from './PostItem.vue'
 import Composer from './Composer.vue'
 
@@ -23,6 +26,7 @@ function shortCommand(cmd: string[]) {
   const [exe = '', ...rest] = cmd
   return [exe.split(/[\\/]/).pop(), ...rest].join(' ')
 }
+const dot = (a: { id: number; online: boolean; busy: boolean; queued: number }) => !isOnline(a) ? (a.queued > 0 ? 'waiting' : 'offline') : a.busy ? 'working' : 'online'
 const isOnline = (a: { id: number; online: boolean }) => memberById(a.id)?.online ?? a.online
 function status(a: { id: number; online: boolean; busy: boolean; queued: number }) {
   if (!isOnline(a)) return a.queued > 0 ? 'waiting for the runner' : 'offline'
@@ -35,31 +39,31 @@ async function send(text: string) {
 }
 </script>
 <template>
-  <aside v-if="t" class="bg-side border-l border-line flex flex-col min-w-0 min-h-0" aria-label="Thread" data-testid="thread-panel">
-    <div class="px-3.5 py-2.5 border-b border-line">
+  <aside v-if="t" class="flex min-h-0 min-w-0 flex-col bg-panel-bg" aria-label="Thread" data-testid="thread-panel">
+    <div class="border-b border-border px-3.5 py-2.5">
       <div class="flex items-center gap-2">
         <h2 class="m-0 text-[15px] font-semibold">Thread</h2>
-        <span class="text-muted text-[13px]">in #{{ channelName }}</span>
-        <button class="ml-auto w-7 h-7 grid place-items-center rounded-btn text-muted hover:bg-hover cursor-pointer border-0 bg-transparent" aria-label="Close thread" @click="emit('close')">✕</button>
+        <span class="flex items-center gap-0.5 text-[13px] text-muted">in <Hash :size="12" aria-hidden="true" class="ml-0.5" />{{ channelName }}</span>
+        <Button variant="toolbar-icon" size="toolbar" class="ml-auto" aria-label="Close thread" @click="emit('close')"><X :size="16" /></Button>
       </div>
       <div v-for="a in t.agents" :key="a.id" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted" data-testid="session-line">
-        <span class="font-mono text-[11.5px] border border-line rounded-full px-2 bg-panel">session</span>
-        <b class="text-ink">@{{ a.handle }}</b>
+        <span class="rounded-[5px] border border-border px-1.5 font-mono text-[11.5px]">session</span>
+        <b class="text-text">@{{ a.handle }}</b>
         <span class="font-mono text-[11.5px]" :title="a.harnessCommand.join(' ')" data-testid="session-command">{{ shortCommand(a.harnessCommand) }}</span>
         <span v-if="a.runnerHost">· on {{ a.runnerHost }}</span>
         <span v-if="startedBy">· started by {{ startedBy.displayName }}</span>
         <span class="ml-auto flex items-center gap-1.5" data-testid="agent-status">
-          <i class="w-[7px] h-[7px] rounded-full inline-block" :class="[isOnline(a) ? 'bg-online' : 'bg-offline', a.busy && 'pulse']" />
+          <StatusDot :state="dot(a)" />
           {{ status(a) }}
         </span>
       </div>
     </div>
-    <div ref="scroller" class="flex-1 overflow-auto px-2 py-2.5">
+    <div ref="scroller" class="thin-scrollbar flex-1 overflow-auto px-1.5 py-2.5">
       <PostItem :post="t.root" in-thread />
-      <div class="flex items-center gap-2.5 text-faint text-xs mx-2.5 my-2"><span class="flex-1 h-px bg-line" />{{ t.replies.filter(r => r.kind === 'text').length }} {{ t.replies.filter(r => r.kind === 'text').length === 1 ? 'reply' : 'replies' }}<span class="flex-1 h-px bg-line" /></div>
+      <div class="mx-2.5 my-2 flex items-center gap-2.5 text-xs text-muted"><span class="h-px flex-1 bg-border" />{{ t.replies.filter(r => r.kind === 'text').length }} {{ t.replies.filter(r => r.kind === 'text').length === 1 ? 'reply' : 'replies' }}<span class="h-px flex-1 bg-border" /></div>
       <PostItem v-for="r in t.replies" :key="r.id" :post="r" in-thread />
       <template v-for="a in t.agents" :key="'w' + a.id">
-        <div v-if="!isOnline(a) && a.queued > 0" class="mx-2.5 my-1.5 border border-dashed border-line rounded-btn px-2.5 py-1.5 text-[12.5px] text-muted" data-testid="waiting-runner">
+        <div v-if="!isOnline(a) && a.queued > 0" class="mx-2.5 my-1.5 rounded-card border border-dashed border-border px-2.5 py-1.5 text-[12.5px] text-muted" data-testid="waiting-runner">
           Waiting for {{ a.displayName }}’s runner. It'll answer when the runner is back.
         </div>
       </template>

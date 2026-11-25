@@ -1,0 +1,648 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Tailwind's dark: follows Fleet's theme, not the operating system's colour scheme: the theme store sets the resolved
+   theme on <html data-theme> (System resolves to dark or light first). Every theme is dark except the ones listed;
+   a new light theme goes in this list (src/assets/__tests__/dark-variant.test.ts checks it against stores/theme.ts). */
+@custom-variant dark (&:where(:root:not([data-theme="light"], [data-theme="solarized-light"]) *));
+
+:root {
+  --visual-vh: 100dvh;
+  --fold-gap: 0px;
+  /* Three surfaces: window chrome, panels on top of it, raised elements on panels. */
+  --rail-bg: #0d0d10;
+  --panel-bg: #141418;
+  --card-bg: #1b1b20;
+  --main-bg: #0d0d10;
+  /* Translucent so a border reads the same on every surface it crosses. */
+  --border: rgba(255, 255, 255, 0.075);
+  --text: #e8e8ec;
+  --muted: #8e8e9a;
+  /* How much of --text a quiet session's row keeps: a day without activity, then three. The deeper one is the
+     least that still reads at 4.5:1 on --main-bg and --panel-bg, so each theme sets its own. */
+  --row-dim-1: 66%;
+  --row-dim-2: 51%;
+  /* A session row's other text: its age and labels take --row-meta of --text, the least that reads at 4.5:1 on
+     every row background (resting, hovered, open, picked); a status colour keeps --row-<colour> of itself and
+     takes the rest from --text, the most that still reads at 4.5:1 there. */
+  --row-meta: 53%;
+  --row-error: 71%;
+  --row-waiting: 100%;
+  --row-accent: 67%;
+  --row-running: 100%;
+  --row-queued: 69%;
+  --coral: #D95A3A;
+  --indigo: #6366f1;
+  /* #6366f1 nudged one step so white text on it reaches 4.5:1. */
+  --accent: #6365f1;
+  /* Accent words (links, picked labels): --accent moved toward black or white until it reads at 4.5:1 on every
+     surface, on --accent-dim and on a 14% accent tint. --accent itself is for fills, borders, icons and the focus ring. */
+  --accent-text: #8284F4;
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --accent-dim: rgba(99, 102, 241, 0.15);
+  /* Keyboard focus ring (see *:focus-visible). */
+  --focus-ring: var(--accent);
+  --running: #22c55e;
+  --idle: #f59e0b;
+  --complete: #3b82f6;
+  --error: #ef4444;
+  /* Error words: --error moved toward --text until it reads at 4.5:1 on the error tint (10% in ErrorNote, 14% in chips). */
+  --error-text: #EF5E5F;
+  /* Coral words (a machine's live state, notes): --coral moved toward black or white until 4.5:1 on every surface
+     and on its own tint. */
+  --coral-text: #DE6E52;
+  --queued: #8b5cf6;
+  /* Status words: each status colour moved toward black or white (keeping its hue) until it reads at 4.5:1 on
+     every surface and on its own tint there. The colours themselves are for dots, icons and tints: 3:1. */
+  --running-text: var(--running);
+  --idle-text: var(--idle);
+  --complete-text: #4F8FF7;
+  --queued-text: #9F78F8;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --radius-card: 10px;
+  --radius-btn: 8px;
+  --radius-panel: 12px;
+  --transition: 150ms ease-out;
+  --transition-pulse: 2s;
+  /* Lift for the conversation sheet; dark themes rely on the surface step instead. */
+  --sheet-shadow: none;
+  /* Lift for menus: they open over panels of the same colour in most themes, so the shadow sets them apart. */
+  --menu-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.25);
+  /* Status glyphs: colour only the states that need attention. Idle is the
+     resting state, so it stays quiet; waiting on the user is amber. */
+  --status-idle: var(--muted);
+  --status-waiting: var(--idle);
+  --status-waiting-text: var(--idle-text);
+  /* Pull requests: one colour per state and for checks, on every GitHub surface. "Blocked" is an open pull
+     request something stops (a failing check, a conflict, changes requested), in the waiting colour. */
+  --pr-open: var(--running);
+  --pr-draft: var(--muted);
+  --pr-blocked: var(--status-waiting);
+  --pr-merged: var(--queued);
+  --pr-closed: var(--error);
+  --check-pass: var(--running);
+  --check-fail: var(--error);
+  --check-pending: var(--status-waiting);
+  --diff-add: var(--running);
+  --diff-del: var(--error);
+  /* The same states as words. */
+  --pr-open-text: var(--running-text);
+  --pr-blocked-text: var(--status-waiting-text);
+  --pr-merged-text: var(--queued-text);
+  --pr-closed-text: var(--error-text);
+  --check-pass-text: var(--running-text);
+  --diff-add-text: var(--running-text);
+  --diff-del-text: var(--error-text);
+  --bg: var(--main-bg);
+  --font-sans-stack: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono-stack: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root[data-theme="light"] {
+  /* Prototype design tokens */
+  --bg: #F3F2EF;
+  --surface: #FFFFFF;
+  --coral: #D95A3A;
+  --indigo: #5B6EC7;
+
+  /* Mapped to existing variables */
+  --rail-bg: #FFFFFF;
+  --panel-bg: #FFFFFF;
+  --card-bg: #ffffff;
+  --main-bg: #F3F2EF;
+  --border: rgba(26, 25, 24, 0.09);
+  --sheet-shadow: 0 1px 2px rgba(26, 25, 24, 0.04), 0 12px 32px -18px rgba(26, 25, 24, 0.18);
+  --menu-shadow: 0 16px 40px -12px rgba(26, 25, 24, 0.22), 0 2px 6px rgba(26, 25, 24, 0.06);
+  --text: #1A1918;
+  --muted: #67645F;
+  --row-dim-1: 77%;
+  --row-dim-2: 62%;
+  --row-meta: 63%;
+  --row-error: 71%;
+  --row-waiting: 55%;
+  --row-accent: 69%;
+  --row-running: 56%;
+  --row-queued: 80%;
+  --accent: #5B6EC7;
+  --accent-text: #4D5EA9;
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --accent-dim: rgba(91, 110, 199, 0.12);
+  --running: #16A149;
+  --idle: #D27306;
+  --complete: #2563eb;
+  --error: #dc2626;
+  --error-text: #B92323;
+  --coral-text: #A7452D;
+  --queued: #7c3aed;
+  --running-text: #107435;
+  --idle-text: #975304;
+  --complete-text: #2159D4;
+  --queued-text: #7537DF;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+}
+
+/* ─── Weave Classic (Dark Slate + Purple) ──────────────────────────────── */
+:root[data-theme="weave-classic"] {
+  --rail-bg: #0B1120;
+  --panel-bg: #1E293B;
+  --card-bg: #1E293B;
+  --main-bg: #0F172A;
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #F8FAFC;
+  --muted: #94A3B8;
+  --row-dim-1: 65%;
+  --row-dim-2: 50%;
+  --row-meta: 56%;
+  --row-error: 57%;
+  --row-waiting: 86%;
+  --row-accent: 56%;
+  --row-running: 80%;
+  --row-queued: 56%;
+  --accent: #A855F7;
+  --accent-text: #BF81F9;
+  --primary: var(--accent);
+  /* White on this purple is 3.96:1; the rail colour on it reaches 4.5:1, and the accent keeps its colour as link text. */
+  --primary-foreground: #0B1120;
+  --accent-dim: rgba(168, 85, 247, 0.15);
+  --running: #22c55e;
+  --idle: #f59e0b;
+  --complete: #3b82f6;
+  --error: #ef4444;
+  --error-text: #F27A7A;
+  --coral-text: #E3836B;
+  --queued: #8b5cf6;
+  --running-text: var(--running);
+  --idle-text: var(--idle);
+  --complete-text: #669EF8;
+  --queued-text: #AA88F8;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+}
+
+/* ─── Black (OLED) ─────────────────────────────────────────────────────── */
+:root[data-theme="black"] {
+  --rail-bg: #000000;
+  --panel-bg: #0A0A0A;
+  --card-bg: #0A0A0A;
+  --main-bg: #000000;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #FAFAFA;
+  --muted: #A1A1AA;
+  --row-dim-1: 62%;
+  --row-dim-2: 47%;
+  --row-meta: 48%;
+  --row-error: 83%;
+  --row-waiting: 100%;
+  --row-accent: 82%;
+  --row-running: 100%;
+  --row-queued: 80%;
+  --accent: #A855F7;
+  --accent-text: #AB5AF7;
+  --primary: var(--accent);
+  /* White on this purple is 3.96:1; black on it reaches 4.5:1, and the accent keeps its colour as link text. */
+  --primary-foreground: #000000;
+  --accent-dim: rgba(168, 85, 247, 0.15);
+  --running: #22c55e;
+  --idle: #f59e0b;
+  --complete: #3b82f6;
+  --error: #ef4444;
+  --error-text: #EF4444;
+  --coral-text: var(--coral);
+  --queued: #8b5cf6;
+  --running-text: var(--running);
+  --idle-text: var(--idle);
+  --complete-text: var(--complete);
+  --queued-text: #9266F7;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+}
+
+/* ─── Nord ─────────────────────────────────────────────────────────────── */
+:root[data-theme="nord"] {
+  --rail-bg: #272C36;
+  --panel-bg: #3B4252;
+  --card-bg: #3B4252;
+  --main-bg: #2E3440;
+  --border: rgba(216, 222, 233, 0.12);
+  --text: #ECEFF4;
+  --muted: #D8DEE9;
+  --row-dim-1: 79%;
+  --row-dim-2: 64%;
+  --row-meta: 75%;
+  --row-error: 27%;
+  --row-waiting: 40%;
+  --row-accent: 32%;
+  --row-running: 31%;
+  --row-queued: 29%;
+  --accent: #88C0D0;
+  --accent-text: #A3CEDB;
+  --primary: var(--accent);
+  --primary-foreground: #2E3440;
+  --accent-dim: rgba(136, 192, 208, 0.15);
+  --running: #A3BE8C;
+  --idle: #EBCB8B;
+  --complete: #81A1C1;
+  --error: #C7767D;
+  --error-text: #DAB3B9;
+  --coral: #DD6B4E;
+  --coral-text: #F0BDB0;
+  --queued: #B48EAD;
+  --running-text: #B6CCA4;
+  --idle-text: var(--idle);
+  --complete-text: #ADC2D7;
+  --queued-text: #D1B9CC;
+  --destructive: #BF616A;
+  --destructive-foreground: #ECEFF4;
+}
+
+/* ─── Dracula ──────────────────────────────────────────────────────────── */
+:root[data-theme="dracula"] {
+  --rail-bg: #21222C;
+  --panel-bg: #343746;
+  --card-bg: #343746;
+  --main-bg: #282A36;
+  --border: rgba(248, 248, 242, 0.1);
+  --text: #F8F8F2;
+  --muted: #BFBFBF;
+  --row-dim-1: 71%;
+  --row-dim-2: 56%;
+  --row-meta: 63%;
+  --row-error: 45%;
+  --row-waiting: 100%;
+  --row-accent: 54%;
+  --row-running: 100%;
+  --row-queued: 53%;
+  --accent: #BD93F9;
+  --accent-text: #CAA8FA;
+  --primary: var(--accent);
+  --primary-foreground: #282A36;
+  --accent-dim: rgba(189, 147, 249, 0.15);
+  --running: #50FA7B;
+  --idle: #F1FA8C;
+  --complete: #8BE9FD;
+  --error: #FF5555;
+  --error-text: #FD9290;
+  --coral-text: #EAA695;
+  --queued: #FF79C6;
+  --running-text: var(--running);
+  --idle-text: var(--idle);
+  --complete-text: var(--complete);
+  --queued-text: #FF8ECF;
+  --destructive: #FF5555;
+  --destructive-foreground: #282A36;
+}
+
+/* ─── Solarized Dark ──────────────────────────────────────────────────── */
+:root[data-theme="solarized-dark"] {
+  --rail-bg: #001E28;
+  --panel-bg: #073642;
+  --card-bg: #073642;
+  --main-bg: #002B36;
+  --border: rgba(253, 246, 227, 0.1);
+  --text: #FDF6E3;
+  /* Solarized's #839496 lifted to 4.5:1 on its surfaces and the tints muted words sit on (--accent-dim, 3–6% --text). */
+  --muted: #9EABAD;
+  --row-dim-1: 69%;
+  --row-dim-2: 54%;
+  --row-meta: 60%;
+  --row-error: 48%;
+  --row-waiting: 58%;
+  --row-accent: 50%;
+  --row-running: 57%;
+  --row-queued: 50%;
+  --accent: #268BD2;
+  --accent-text: #6BB0E0;
+  --primary: var(--accent);
+  /* Solarized blue stays; dark text on it reaches 4.5:1 where base3 (#FDF6E3) gave 3.41. */
+  --primary-foreground: #00222B;
+  --accent-dim: rgba(38, 139, 210, 0.15);
+  --running: #859900;
+  --idle: #B58900;
+  --complete: #268BD2;
+  --error: #DE3E3B;
+  --error-text: #EB8D85;
+  --coral-text: #E6947F;
+  --queued: #6D72C5;
+  --running-text: #A0AF38;
+  --idle-text: #C5A236;
+  --complete-text: #67AEE0;
+  --queued-text: #9C9FD8;
+  --destructive: #DC322F;
+  --destructive-foreground: #FDF6E3;
+}
+
+/* ─── Solarized Light ─────────────────────────────────────────────────── */
+:root[data-theme="solarized-light"] {
+  --rail-bg: #EEE8D5;
+  --panel-bg: #FDF6E3;
+  --card-bg: #EEE8D5;
+  --main-bg: #FDF6E3;
+  --border: #D6CDB7;
+  --menu-shadow: 0 16px 40px -12px rgba(7, 54, 66, 0.25), 0 2px 6px rgba(7, 54, 66, 0.08);
+  --text: #073642;
+  /* Solarized's #657B83 lifted to 4.5:1 on its surfaces and the tints muted words sit on (--accent-dim, 3–6% --text). */
+  --muted: #516269;
+  --row-dim-1: 82%;
+  --row-dim-2: 67%;
+  --row-meta: 70%;
+  --row-error: 72%;
+  --row-waiting: 52%;
+  --row-accent: 52%;
+  --row-running: 49%;
+  --row-queued: 62%;
+  --accent: #268BD2;
+  --accent-text: #1B6395;
+  --primary: var(--accent);
+  /* Solarized blue stays; dark text on it reaches 4.5:1 where base3 (#FDF6E3) gave 3.41. */
+  --primary-foreground: #00222B;
+  --accent-dim: rgba(38, 139, 210, 0.12);
+  --running: #7A8D00;
+  --idle: #A87F00;
+  --complete: #268BD2;
+  --error: #DC322F;
+  --error-text: #A63131;
+  --coral-text: #9E422A;
+  --queued: #6C71C4;
+  --running-text: #586600;
+  --idle-text: #795B00;
+  --complete-text: #1B6395;
+  --queued-text: #545899;
+  --destructive: #DC322F;
+  --destructive-foreground: #FDF6E3;
+}
+
+/* ─── Monokai ──────────────────────────────────────────────────────────── */
+:root[data-theme="monokai"] {
+  --rail-bg: #1E1F1C;
+  --panel-bg: #3E3D32;
+  --card-bg: #3E3D32;
+  --main-bg: #272822;
+  --border: rgba(248, 248, 242, 0.1);
+  --text: #F8F8F2;
+  --muted: #C6C6BC;
+  --row-dim-1: 73%;
+  --row-dim-2: 58%;
+  --row-meta: 70%;
+  --row-error: 32%;
+  --row-waiting: 67%;
+  --row-accent: 53%;
+  --row-running: 53%;
+  --row-queued: 38%;
+  --accent: #A6E22E;
+  --accent-text: var(--accent);
+  --primary: var(--accent);
+  --primary-foreground: #272822;
+  --accent-dim: rgba(166, 226, 46, 0.15);
+  --running: #A6E22E;
+  --idle: #E6DB74;
+  --complete: #66D9EF;
+  --error: #F9337A;
+  --error-text: #FA99BA;
+  --coral: #DB6142;
+  --coral-text: #EFBAAC;
+  --queued: #AE81FF;
+  --running-text: var(--running);
+  --idle-text: var(--idle);
+  --complete-text: var(--complete);
+  --queued-text: #C8A9FF;
+  --destructive: #F92672;
+  --destructive-foreground: #F8F8F2;
+}
+
+/* ─── GitHub Dark ──────────────────────────────────────────────────────── */
+:root[data-theme="github-dark"] {
+  --rail-bg: #010409;
+  --panel-bg: #161B22;
+  --card-bg: #161B22;
+  --main-bg: #0D1117;
+  --border: rgba(240, 246, 252, 0.1);
+  --text: #E6EDF3;
+  --muted: #8E97A1;
+  --row-dim-1: 66%;
+  --row-dim-2: 51%;
+  --row-meta: 55%;
+  --row-error: 70%;
+  --row-waiting: 92%;
+  --row-accent: 89%;
+  --row-running: 91%;
+  --row-queued: 91%;
+  --accent: #58A6FF;
+  --accent-text: var(--accent);
+  --primary: var(--accent);
+  --primary-foreground: #0D1117;
+  --accent-dim: rgba(88, 166, 255, 0.15);
+  --running: #3FB950;
+  --idle: #D29922;
+  --complete: #58A6FF;
+  --error: #F85149;
+  --error-text: #F8564E;
+  --coral-text: #E0795F;
+  --queued: #BC8CFF;
+  --running-text: var(--running);
+  --idle-text: var(--idle);
+  --complete-text: var(--complete);
+  --queued-text: var(--queued);
+  --destructive: #F85149;
+  --destructive-foreground: #E6EDF3;
+}
+
+@theme inline {
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+  --color-background: var(--panel-bg);
+  --color-foreground: var(--text);
+  --color-card: var(--card-bg);
+  --color-popover: var(--card-bg);
+  --color-popover-foreground: var(--text);
+  --color-rail-bg: var(--rail-bg);
+  --color-panel-bg: var(--panel-bg);
+  --color-card-bg: var(--card-bg);
+  --color-main-bg: var(--main-bg);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-dim: var(--accent-dim);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-coral: var(--coral);
+  --color-coral-text: var(--coral-text);
+  --color-indigo: var(--indigo);
+  --color-running: var(--running);
+  --color-running-text: var(--running-text);
+  --color-idle: var(--idle);
+  --color-idle-text: var(--idle-text);
+  --color-complete: var(--complete);
+  --color-complete-text: var(--complete-text);
+  --color-error: var(--error);
+  --color-error-text: var(--error-text);
+  --color-queued: var(--queued);
+  --color-queued-text: var(--queued-text);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-surface: var(--panel-bg);
+  /* Names the shared ui/ components use. Each maps to a Fleet token, so they follow every theme. */
+  --color-muted-foreground: var(--muted);
+  --color-secondary: color-mix(in srgb, var(--text) 8%, transparent);
+  --color-secondary-foreground: var(--text);
+  /* Field borders and the Switch's off track: a step stronger than --border, so the track reads as a control. */
+  --color-input: color-mix(in srgb, var(--text) 18%, transparent);
+  --color-ring: var(--accent);
+  /* Text on a solid accent fill (highlighted Select and Command rows). */
+  --color-accent-foreground: var(--primary-foreground);
+  --radius-card: var(--radius-card);
+  --radius-btn: var(--radius-btn);
+  --radius-panel: var(--radius-panel);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  /* Keyboard focus: a 2px ring in --focus-ring (the accent, 3:1 or better against every surface in the shipped
+     themes). :focus-visible keeps it off mouse clicks. It's an outline, so it never moves layout or hides an element's
+     own border or shadow. It sits 2px outside by default; a row inside a scroller can draw it inside instead
+     (outline-offset: -2px), which a component's own rule may set. */
+  *:focus-visible {
+    outline: 2px solid var(--focus-ring) !important;
+    outline-offset: 2px;
+    /* The ui/ components also ask for Tailwind focus rings (focus-visible:ring-[3px]); the outline replaces them. */
+    --tw-ring-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-shadow: 0 0 #0000 !important;
+  }
+
+  /* Text fields match :focus-visible on a click too, so they keep a quieter cue that works for both: the accent
+     border and the caret. */
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="color"], [type="file"]), textarea, [contenteditable]:not([contenteditable="false"])):focus-visible {
+    outline: none !important;
+    border-color: var(--accent) !important;
+  }
+
+  /* A menu's rows show focus with the highlight tint, the same for the keyboard as for the pointer. */
+  [role="menuitem"]:focus-visible,
+  [role="menuitemcheckbox"]:focus-visible,
+  [role="menuitemradio"]:focus-visible,
+  [role="option"]:focus-visible {
+    outline: none !important;
+  }
+
+  html {
+    font-family: var(--font-sans-stack);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--main-bg);
+    color: var(--text);
+    font-family: var(--font-sans-stack);
+  }
+
+  #app {
+    min-height: 100vh;
+  }
+
+  /* A select's open list is drawn from its options' colours, not the select's: a transparent select left the list
+     white under the theme's light text. Every select's list takes the theme's raised surface. */
+  select option,
+  select optgroup {
+    background-color: var(--card-bg);
+    color: var(--text);
+  }
+}
+
+/* ─── Mobile / Safe Area Utilities ─────────────────────────────────────── */
+@utility safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@utility safe-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+@utility safe-right {
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ─── Foldable Device Utilities ─────────────────────────────────────────── */
+@utility fold-left {
+  width: env(viewport-segment-width 0 0, 50%);
+}
+
+@utility fold-right {
+  width: env(viewport-segment-width 1 0, 50%);
+}
+
+@utility fold-gap {
+  gap: var(--fold-gap);
+}
+
+/* ─── Scrollbar Utilities ───────────────────────────────────────────────── */
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--muted);
+    border-radius: 3px;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ─── Small-screen typography ───────────────────────────────────────────── */
+@media (max-width: 359px) {
+  html {
+    font-size: 12px;
+  }
+}
+
+/* Find in this conversation: every match, and the current one more strongly. */
+::highlight(find-hit) {
+  background-color: color-mix(in srgb, var(--status-waiting, #d4a017) 38%, transparent);
+  color: inherit;
+}
+
+::highlight(find-current) {
+  background-color: var(--status-waiting, #d4a017);
+  color: #1a1400;
+}
+
+/* Find in Changes: the same marks under their own names, so the two bars never clear each other's. */
+::highlight(changes-find-hit) {
+  background-color: color-mix(in srgb, var(--status-waiting, #d4a017) 38%, transparent);
+  color: inherit;
+}
+
+::highlight(changes-find-current) {
+  background-color: var(--status-waiting, #d4a017);
+  color: #1a1400;
+}

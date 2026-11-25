@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Hash, Volume2 } from 'lucide-vue-next'
 import { post, ApiError } from '../../api'
 import { closeModal, loadBootstrap } from '../../store'
-import Field from '../ui/Field.vue'
-import Button from '../ui/Button.vue'
+import FormField from '../FormField.vue'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { ErrorNote } from '@/components/ui/error-note'
+import { Spinner } from '@/components/ui/spinner'
 
 const router = useRouter()
 const name = ref(''), topic = ref(''), isPrivate = ref(false), kind = ref<'text' | 'voice'>('text'), error = ref(''), busy = ref(false)
@@ -18,15 +22,17 @@ async function create() {
 </script>
 <template>
   <form @submit.prevent="create">
-    <div class="flex gap-4 mb-3 text-[13px]" role="radiogroup" aria-label="Channel type">
-      <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" v-model="kind" value="text" name="kind" /> # Text</label>
-      <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" v-model="kind" value="voice" name="kind" data-testid="kind-voice" /> 🔊 Voice</label>
+    <div class="mb-3 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Channel type">
+      <Button type="button" role="radio" :aria-checked="kind === 'text'" :variant="kind === 'text' ? 'secondary' : 'outline'" class="justify-start" :class="kind === 'text' && 'border border-accent'" data-testid="kind-text" @click="kind = 'text'"><Hash :size="16" />Text</Button>
+      <Button type="button" role="radio" :aria-checked="kind === 'voice'" :variant="kind === 'voice' ? 'secondary' : 'outline'" class="justify-start" :class="kind === 'voice' && 'border border-accent'" data-testid="kind-voice" @click="kind = 'voice'"><Volume2 :size="16" />Voice</Button>
     </div>
-    <Field name="name" label="Name" v-model="name" placeholder="checkout-app" />
-    <Field name="topic" label="Topic (optional)" v-model="topic" placeholder="What is this channel for?" />
-    <label class="flex items-start gap-2 text-[13px] mb-3 cursor-pointer"><input type="checkbox" v-model="isPrivate" class="mt-1" name="private" />
-      <span><b>Private</b><br><span class="text-muted text-xs">Only the people and agents you add can see it. Public channels are open to everyone in the server.</span></span></label>
-    <p v-if="error" role="alert" class="text-danger-ink text-[13px] mt-0">{{ error }}</p>
-    <div class="flex justify-end gap-2"><Button @click="closeModal">Cancel</Button><Button type="submit" variant="primary" :disabled="busy || !name.trim()">Create channel</Button></div>
+    <FormField name="name" label="Name" v-model="name" placeholder="checkout-app" />
+    <FormField name="topic" label="Topic (optional)" v-model="topic" placeholder="What is this channel for?" />
+    <label class="mb-4 flex cursor-pointer items-start gap-3 text-[13px]">
+      <Switch v-model="isPrivate" class="mt-0.5" name="private" data-testid="private-switch" aria-label="Private" />
+      <span><b class="font-medium">Private</b><br><span class="text-xs text-muted">Only the people and agents you add can see it. Public channels are open to everyone in the server.</span></span>
+    </label>
+    <ErrorNote v-if="error" :message="error" class="mb-3" data-testid="form-error" />
+    <div class="flex justify-end gap-2"><Button variant="outline" @click="closeModal">Cancel</Button><Button type="submit" :disabled="busy || !name.trim()"><Spinner v-if="busy" size="sm" />Create channel</Button></div>
   </form>
 </template>

@@ -2,9 +2,13 @@
 import { computed, ref } from 'vue'
 import { post, put, ApiError } from '../../api'
 import { store, closeModal, loadBootstrap } from '../../store'
-import Modal from '../ui/Modal.vue'
-import Field from '../ui/Field.vue'
-import Button from '../ui/Button.vue'
+import { Copy, Check, Hash, Lock } from 'lucide-vue-next'
+import AppDialog from '../AppDialog.vue'
+import Field from '../FormField.vue'
+import StatusDot from '../StatusDot.vue'
+import { Button } from '@/components/ui/button'
+import { ErrorNote } from '@/components/ui/error-note'
+import { Spinner } from '@/components/ui/spinner'
 
 const handle = ref(''), about = ref(''), instructions = ref(''), harness = ref('opencode acp'), workspace = ref('')
 const error = ref(''), busy = ref(false)
@@ -28,7 +32,7 @@ async function join() {
 }
 </script>
 <template>
-  <Modal title="Invite an agent" wide @close="closeModal">
+  <AppDialog title="Invite an agent" wide @close="closeModal">
     <form v-if="!created" @submit.prevent="create">
       <p class="mt-0 text-[13px] text-muted">An agent is a harness (like OpenCode) running on a machine you control. It takes part in threads, and each thread is one harness session. You own it: its permission requests come to you.</p>
       <Field name="handle" label="Name" v-model="handle" placeholder="reviewer" hint="People mention it with @name." />
@@ -36,31 +40,32 @@ async function join() {
       <Field name="instructions" label="Instructions" v-model="instructions" textarea placeholder="You review code. Be concise, and say what you checked." />
       <Field name="harness" label="Harness command" v-model="harness" mono hint="Any ACP agent: opencode acp, copilot --acp, …" />
       <Field name="workspace" label="Workspace folder" v-model="workspace" mono placeholder="/home/alex/src/checkout-app" hint="A folder on the runner's machine." />
-      <p v-if="error" role="alert" class="text-danger-ink text-[13px] mt-0">{{ error }}</p>
-      <div class="flex justify-end"><Button type="submit" variant="primary" :disabled="busy || !handle.trim() || !workspace.trim()">Create agent</Button></div>
+      <ErrorNote v-if="error" :message="error" class="mb-3" />
+      <div class="flex justify-end"><Button type="submit" :disabled="busy || !handle.trim() || !workspace.trim()"><Spinner v-if="busy" size="sm" />Create agent</Button></div>
     </form>
 
     <template v-else>
       <div v-if="!online">
         <p class="mt-0 text-[13px]">On the machine where <b>{{ created.handle }}</b> should work, run this. The code works once and expires in 10 minutes.</p>
-        <div class="flex gap-2 items-center bg-card border border-line rounded-btn p-2"><code class="flex-1" data-testid="runner-command">{{ created.command }}</code><Button small @click="copy">{{ copied ? 'Copied' : 'Copy' }}</Button></div>
-        <p class="text-[13px] text-muted mt-3 mb-2"><i class="w-2 h-2 rounded-full bg-away pulse inline-block mr-1.5 align-middle" />Waiting for the runner to connect… It stays connected while it runs. Next time, <code>cowork-runner run</code> serves every agent saved on that machine.</p>
-        <Button small @click="newCode">Get a new code</Button>
+        <div class="flex items-center gap-2 rounded-btn border border-border bg-card-bg p-2"><code class="flex-1 bg-transparent" data-testid="runner-command">{{ created.command }}</code><Button size="sm" variant="outline" @click="copy"><Check v-if="copied" :size="14" /><Copy v-else :size="14" />{{ copied ? 'Copied' : 'Copy' }}</Button></div>
+        <p class="mt-3 mb-2 flex items-start gap-2 text-[13px] text-muted"><StatusDot state="waiting" class="mt-1.5" /><span>Waiting for the runner to connect… It stays connected while it runs. Next time, <code>cowork-runner run</code> serves every agent saved on that machine.</span></p>
+        <Button size="sm" variant="outline" @click="newCode">Get a new code</Button>
       </div>
       <div v-else>
-        <p class="mt-0 flex items-center gap-2 font-semibold" data-testid="agent-connected"><i class="w-2 h-2 rounded-full bg-online inline-block" /> {{ agent?.handle }} is connected</p>
+        <p class="mt-0 flex items-center gap-2 font-semibold" data-testid="agent-connected"><StatusDot state="online" /> {{ agent?.handle }} is connected</p>
         <template v-if="!joined">
           <p class="text-[13px] text-muted">Which channels should {{ agent?.handle }} join?</p>
-          <label v-for="c in store.channels" :key="c.id" class="flex items-center gap-2 py-1 cursor-pointer text-[13px]">
-            <input type="checkbox" :value="c.id" v-model="picked" :data-pick="c.name" /> {{ c.isPrivate ? '🔒' : '#' }}{{ c.name }}
+          <label v-for="c in store.channels" :key="c.id" class="flex cursor-pointer items-center gap-2 py-1 text-[13px]">
+            <input type="checkbox" class="size-4 accent-(--accent)" :value="c.id" v-model="picked" :data-pick="c.name" />
+            <Lock v-if="c.isPrivate" :size="13" class="text-muted" aria-label="Private" /><Hash v-else :size="13" class="text-muted" aria-hidden="true" />{{ c.name }}
           </label>
-          <div class="flex justify-end gap-2 mt-3"><Button @click="closeModal">Skip</Button><Button variant="primary" data-testid="join-channels" @click="join">Add to channels</Button></div>
+          <div class="mt-3 flex justify-end gap-2"><Button variant="outline" @click="closeModal">Skip</Button><Button data-testid="join-channels" @click="join">Add to channels</Button></div>
         </template>
         <template v-else>
           <p class="text-[13px] text-muted">Done. Mention <b>@{{ agent?.handle }}</b> in one of those channels to start a thread with it.</p>
-          <div class="flex justify-end"><Button variant="primary" @click="closeModal">Close</Button></div>
+          <div class="flex justify-end"><Button @click="closeModal">Close</Button></div>
         </template>
       </div>
     </template>
-  </Modal>
+  </AppDialog>
 </template>

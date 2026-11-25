@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { ArrowUp } from 'lucide-vue-next'
 import { store, channelMembers, currentChannel } from '../store'
+import { Button } from '@/components/ui/button'
+import AgentBadge from './AgentBadge.vue'
 
 const props = defineProps<{ placeholder: string; busy?: boolean }>()
 const emit = defineEmits<{ send: [text: string] }>()
@@ -35,16 +38,16 @@ function send() {
 }
 </script>
 <template>
-  <div class="relative mx-4 mt-1.5 mb-3.5">
-    <ul v-if="options.length" class="absolute bottom-full mb-1 left-0 bg-raised border border-line rounded-card shadow-lg py-1 min-w-[220px] list-none m-0 p-1 z-10" data-testid="mention-list">
-      <li v-for="(m, i) in options" :key="m.id" class="px-2 py-1 rounded-btn cursor-pointer flex gap-2 items-center text-[13px]" :class="i === pick && 'bg-accent-dim'" @mousedown.prevent="insert(m.handle)">
-        <b>@{{ m.handle }}</b><span class="text-muted">{{ m.displayName }}</span><span v-if="m.kind === 'agent'" class="ml-auto text-[10px] font-bold text-accent-ink">AGENT</span>
+  <div class="relative mx-3 mt-1.5 mb-3">
+    <ul v-if="options.length" class="absolute bottom-full left-0 z-10 m-0 mb-1 min-w-[220px] list-none rounded-card border border-border bg-card-bg p-[5px] shadow-(--menu-shadow)" data-testid="mention-list">
+      <li v-for="(m, i) in options" :key="m.id" class="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1 text-[13px]" :class="i === pick && 'bg-text/7'" @mousedown.prevent="insert(m.handle)">
+        <b>@{{ m.handle }}</b><span class="text-muted">{{ m.displayName }}</span><AgentBadge v-if="m.kind === 'agent'" class="ml-auto" />
       </li>
     </ul>
-    <div class="bg-card border border-line rounded-card px-3.5 py-2.5 flex gap-2.5 items-end focus-within:border-accent">
+    <div class="flex items-end gap-2 rounded-card border border-border bg-card-bg py-2 pr-2 pl-3.5 transition-colors focus-within:border-accent">
       <textarea ref="el" v-model="text" rows="1" :placeholder="placeholder" aria-label="Message" data-testid="composer"
-        class="flex-1 bg-transparent border-0 resize-none text-ink text-sm max-h-40 composer-ta" style="field-sizing: content" @keydown="onKey" />
-      <button class="text-accent-ink font-semibold text-[13px] bg-transparent border-0 cursor-pointer disabled:opacity-40" :disabled="!text.trim()" @click="send">Send</button>
+        class="max-h-40 min-h-[24px] flex-1 resize-none border-0 bg-transparent py-0.5 text-sm text-text outline-none placeholder:text-muted" style="field-sizing: content" @keydown="onKey" />
+      <Button size="icon-sm" class="size-8 rounded-btn" :disabled="!text.trim()" aria-label="Send" @click="send"><ArrowUp :size="16" /></Button>
     </div>
   </div>
 </template>
