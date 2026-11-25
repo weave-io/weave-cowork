@@ -231,6 +231,20 @@ public class ProjectTests
     }
 
     [Fact]
+    public async Task Search_finds_a_project_s_messages_for_its_members_only()
+    {
+        var (app, alex, rosa, sam, jo, project, ch, reviewer) = await World();
+        using var _a = app; await using var _b = reviewer;
+        await sam.Post(ch, "Partial refunds round per line, which is why we're a cent out.");
+        int Total(JsonElement r) => r.GetProperty("messages").GetProperty("total").GetInt32() + r.GetProperty("threads").GetProperty("total").GetInt32();
+        Assert.Equal(1, Total(await rosa.Http.GetFromJsonAsync<JsonElement>("/api/search?q=refunds")));
+        Assert.Equal(1, Total(await alex.Http.GetFromJsonAsync<JsonElement>("/api/search?q=refunds")));
+        Assert.Equal(0, Total(await jo.Http.GetFromJsonAsync<JsonElement>("/api/search?q=refunds")));       // a public channel, but in a project Jo isn't in
+        (await alex.Http.PutAsJsonAsync($"/api/projects/{project}/members/{jo.Id}", new { role = "member" })).EnsureSuccessStatusCode();
+        Assert.Equal(1, Total(await jo.Http.GetFromJsonAsync<JsonElement>("/api/search?q=refunds")));
+    }
+
+    [Fact]
     public void A_thread_slug_is_its_first_words_and_its_id()
     {
         Assert.Equal("fix-rounding-in-refunds-12", Projects.Slug("@reviewer fix rounding in refunds", 12));

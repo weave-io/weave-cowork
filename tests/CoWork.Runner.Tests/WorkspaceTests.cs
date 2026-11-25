@@ -51,6 +51,13 @@ public class WorkspaceTests : IDisposable
         public Task<string?> AskPermission(PermissionRequestMsg r) => Task.FromResult<string?>("allow");
         public string Said(long thread) => string.Concat(Events.Where(e => e.ThreadId == thread && e.Kind == StreamKinds.Text).Select(e => e.Text));
         public string LastSaid(long thread) => Events.Where(e => e.ThreadId == thread && e.Kind == StreamKinds.Text).Last().Text!;
+        /// <summary>Delivers and waits for the turn's end to reach the sink (events go out through the adapter's queue after Deliver returns).</summary>
+        public async Task Turn(AcpAdapter adapter, DeliverMessage m)
+        {
+            var before = Events.Count(e => e.ThreadId == m.ThreadId && e.Kind == StreamKinds.TurnEnded);
+            await adapter.Deliver(m);
+            for (var i = 0; i < 600 && Events.Count(e => e.ThreadId == m.ThreadId && e.Kind == StreamKinds.TurnEnded) <= before; i++) await Task.Delay(20);
+        }
     }
 
     static DeliverMessage Msg(long thread, string text, long? project, ThreadWorkspace? ws) =>
@@ -69,8 +76,8 @@ public class WorkspaceTests : IDisposable
         await using (var adapter = new AcpAdapter(sink, agentRoot: root))
         {
             await Task.WhenAll(
-                adapter.Deliver(Msg(11, "WRITE:rosa.txt WHERE", 7, Repo(bare, "cowork/rounding-11"))),
-                adapter.Deliver(Msg(12, "WRITE:sam.txt WHERE", 7, Repo(bare, "cowork/cart-12"))));
+                sink.Turn(adapter, Msg(11, "WRITE:rosa.txt WHERE", 7, Repo(bare, "cowork/rounding-11"))),
+                sink.Turn(adapter, Msg(12, "WRITE:sam.txt WHERE", 7, Repo(bare, "cowork/cart-12"))));
             var cwd11 = Field(sink.Said(11), "cwd"); var cwd12 = Field(sink.Said(12), "cwd");
             Assert.NotEqual(cwd11, cwd12);
             Assert.True(File.Exists(Path.Combine(cwd11, "rosa.txt"))); Assert.False(File.Exists(Path.Combine(cwd11, "sam.txt")));
@@ -103,10 +110,10 @@ public class WorkspaceTests : IDisposable
         // a restarted runner: the same thread finds the same worktree, and its session is loaded there
         var store = new SessionStore(Path.Combine(_dir, "sessions.json"));
         var sink2 = new Sink();
-        await using (var a2 = new AcpAdapter(sink2, store, root)) await a2.Deliver(Msg(13, "WHERE", 7, Repo(bare, "cowork/later-13")));
+        await using (var a2 = new AcpAdapter(sink2, store, root)) await sink2.Turn(a2, Msg(13, "WHERE", 7, Repo(bare, "cowork/later-13")));
         var first = Field(sink2.Said(13), "cwd");
         var sink3 = new Sink();
-        await using (var a3 = new AcpAdapter(sink3, store, root)) await a3.Deliver(Msg(13, "WHERE again", 7, Repo(bare, "cowork/later-13")));
+        await using (var a3 = new AcpAdapter(sink3, store, root)) await sink3.Turn(a3, Msg(13, "WHERE again", 7, Repo(bare, "cowork/later-13")));
         Assert.Contains("LOADED", sink3.LastSaid(13));
         Assert.Equal(first, Field(sink3.LastSaid(13), "cwd"));
     }
@@ -118,12 +125,12 @@ public class WorkspaceTests : IDisposable
         var root = Path.Combine(_dir, "runner", "srv-1");
         var sink = new Sink();
         await using var adapter = new AcpAdapter(sink, agentRoot: root);
-        await adapter.Deliver(Msg(1, "WHERE", 7, Repo(bare, "cowork/one-1")));
+        await sink.Turn(adapter, Msg(1, "WHERE", 7, Repo(bare, "cowork/one-1")));
         // someone pushes to main after the clone
         var seed = Path.Combine(_dir, "seed");
         File.WriteAllText(Path.Combine(seed, "CHANGELOG.md"), "Rounding fixed\n");
         Git(seed, "add", "."); Git(seed, "commit", "-q", "-m", "Changelog"); Git(seed, "push", "-q", bare, "main");
-        await adapter.Deliver(Msg(2, "WHERE", 7, Repo(bare, "cowork/two-2")));
+        await sink.Turn(adapter, Msg(2, "WHERE", 7, Repo(bare, "cowork/two-2")));
         Assert.False(File.Exists(Path.Combine(Field(sink.Said(1), "cwd"), "CHANGELOG.md")));
         Assert.True(File.Exists(Path.Combine(Field(sink.Said(2), "cwd"), "CHANGELOG.md")));
     }
@@ -137,9 +144,9 @@ public class WorkspaceTests : IDisposable
         var plain = Path.Combine(_dir, "data-folder"); Directory.CreateDirectory(plain);
         var sink = new Sink();
         await using var adapter = new AcpAdapter(sink, agentRoot: root);
-        await adapter.Deliver(Msg(1, "WRITE:a.txt WHERE", 7, new ThreadWorkspace(4, "specs", "folder", null, null, gitFolder, "cowork/specs-1")));
-        await adapter.Deliver(Msg(2, "WRITE:b.txt WHERE", 7, new ThreadWorkspace(5, "data", "folder", null, null, plain, "cowork/data-2")));
-        await adapter.Deliver(Msg(3, "WHERE", 8, new ThreadWorkspace(null, "none", "none", null, null, null, "cowork/talk-3")));
+        await sink.Turn(adapter, Msg(1, "WRITE:a.txt WHERE", 7, new ThreadWorkspace(4, "specs", "folder", null, null, gitFolder, "cowork/specs-1")));
+        await sink.Turn(adapter, Msg(2, "WRITE:b.txt WHERE", 7, new ThreadWorkspace(5, "data", "folder", null, null, plain, "cowork/data-2")));
+        await sink.Turn(adapter, Msg(3, "WHERE", 8, new ThreadWorkspace(null, "none", "none", null, null, null, "cowork/talk-3")));
         var cwd1 = Field(sink.Said(1), "cwd");
         Assert.NotEqual(gitFolder, cwd1);
         Assert.Equal("cowork/specs-1", Git(cwd1, "rev-parse", "--abbrev-ref", "HEAD"));
@@ -164,7 +171,7 @@ public class WorkspaceTests : IDisposable
         var own = Path.Combine(_dir, "own");
         var sink = new Sink();
         await using var adapter = new AcpAdapter(sink, agentRoot: Path.Combine(_dir, "runner", "srv-1"));
-        await adapter.Deliver(Msg(1, "WHERE", null, null) with { Workspace = own });
+        await sink.Turn(adapter, Msg(1, "WHERE", null, null) with { Workspace = own });
         Assert.Equal(own, Field(sink.Said(1), "cwd"));
         Assert.DoesNotContain(sink.Events, e => e.Kind == StreamKinds.Workspace);
         var inherited = Environment.GetEnvironmentVariable("XDG_DATA_HOME");

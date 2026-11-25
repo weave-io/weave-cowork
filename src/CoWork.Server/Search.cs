@@ -73,11 +73,11 @@ public static class Search
                    snippet(search_fts, -1, char(2), char(3), '…', 32) AS snippet, bm25(search_fts, 4.0, 1.0) AS rank
                FROM search_fts JOIN search_docs d ON d.id = search_fts.rowid";
         var where = (match is null ? " WHERE " : " WHERE search_fts MATCH @match AND ") + @"d.gone = 0
-              AND d.channel_id IN (SELECT id FROM channels WHERE is_private = 0 OR id IN (SELECT channel_id FROM channel_members WHERE member_id = @me))"
+              AND d.channel_id IN (SELECT ch.id FROM channels ch WHERE " + Access.SeesChannel + ")"     // who sees a channel: one rule (Access), projects included
             + (q.In.Count > 0 ? " AND d.channel_id IN (SELECT id FROM channels WHERE name IN @ins)" : "")
             + (q.From.Count > 0 ? " AND d.author_id IN (SELECT id FROM members WHERE handle IN @froms)" : "");
         var sql = hits + where;
-        var args = new DynamicParameters(new { me, match, ins = q.In, froms = q.From, limit, offset });
+        var args = new DynamicParameters(new { me, m = me, match, ins = q.In, froms = q.From, limit, offset });
 
         // threads: grouped from their matching messages (the opening post or any reply), best match first; a thread whose opening post is gone isn't listed
         var threadSql = $@"WITH h AS MATERIALIZED ({sql}), g AS (SELECT thread_id, MIN(rank) AS rank, COUNT(*) AS matches, post_id AS best_post, snippet AS best_snippet, author_id AS best_author
