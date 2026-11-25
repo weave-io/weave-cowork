@@ -474,3 +474,97 @@ volume and `~/.weave` untouched; OpenRouter never used)
 - The gateway is OpenAI-compatible only (no Anthropic-shaped endpoint); the thread token isn't a signed JWT yet; a pool is picked by free
   slots alone (no matching of templates to pools).
 - CoWork's MCP tools in `session/new` are round 3.
+
+## Brief 7, round 2: locked down
+
+**Demo:** `tests/live/phase10.mjs` (27 checks; Alex, Rosa and Sam in browsers, a real pool, real containers with no network of their own,
+real OpenCode 2.4.1 through the gateway to this machine's Copilot sign-in). Alex sets Checkout app's **network list** (github.com,
+registry.npmjs.org), its **setup command** (`sh scripts/agent-setup.sh`) and its **budget** (2,000,000 tokens a month, 200,000 a thread) in
+project settings. Rosa asks researcher to fetch example.com: the setup runs first as a tool row ("registry.npmjs.org answered 200 … installed 3
+packages": a listed host, through the proxy), the proxy refuses example.com, and Rosa gets the ask "researcher wants to reach example.com. It
+isn't on Checkout app's network list. Asked by researcher, for Rosa's thread." Alex, though he owns researcher and leads the project, sees
+"researcher is waiting for Rosa". Rosa allows it once; the session gets `<cowork-system thread="1">Rosa allowed example.com once. Try
+again.</cowork-system>` and researcher fetches the page ("Example Domain"). The setup ran once in a thread of two turns. With the thread cap
+lowered to 10,000 tokens, Sam's thread stops cleanly with "Reached this thread's cap of 10,000 tokens. A lead can raise it." (one notice, no
+turn left open); Sam has no Raise button, Alex raises it ("raised this thread's cap to 20,000 tokens."), and the Budget card shows the
+month's real use in tokens. Rosa's container is killed (`podman kill`) while researcher reads: "researcher's sandbox stopped unexpectedly.
+Trying again.", it resumes on its volume, the runner loads the session, the turn finishes, and the tool row that was running is marked
+failed. Alex presses **Pause all agents**: the sandbox stops, the project shows "Agents paused by Alex", Rosa's next message waits (her
+thread says "paused by Alex", its card "Stopped: Alex paused the project's agents."); Resume agents, and it's answered. Inside the container:
+with the proxy bypassed nothing resolves, through it registry.npmjs.org answers 200 and example.net gets 403; the container's network is
+`none`, with its volume at `/work` and the pool's sockets at `/run/cowork`; the setup's result and marker stay in the volume.
+
+**What changed**
+- **No network, two sockets** (`Egress.cs`): a sandbox runs with `--network none`. The pool makes `sockets/<sandbox>/` (mounted read-only at
+  `/run/cowork`) with `server.sock`, a plain pipe to the server (its hub and gateway, always allowed), and `proxy.sock`, an HTTP proxy
+  (`CONNECT` for https, absolute URLs for http) that admits the sandbox's hosts (exact, or `*.example.com`), refuses anything else with a
+  403 that says why, and reports the refusal (`EgressRefusal`, at most once a minute per host). The runner inside offers them on loopback
+  (127.0.0.1:3129 is `COWORK_SERVER`, 127.0.0.1:3128 is `HTTP_PROXY`/`HTTPS_PROXY`, `NO_PROXY` loopback). OpenCode's webfetch, curl and git
+  use the proxy; the runner and the gateway calls go straight to the server socket.
+- **The project's network list** (`ProjectNetworkChanged`, `project_network`) travels in each create or resume as Substrate-shaped rules (the
+  server and gateway, then the listed hosts and what was allowed for the thread). Project settings → **Sandboxes** edits it.
+- **Asks to reach a host:** a refusal is `EgressRefused` (an ask card: Allow once, Allow for this thread, Deny) for whoever started the thread,
+  a lead after 30 minutes, deduplicated while one is pending. `EgressAllowed` tells the pool (`AllowEgress`) and queues a `MessageDelivered`
+  marked `system` with `<cowork-system …>… Try again.</cowork-system>`, delivered when the agent's turn ends; "for this thread" is kept
+  (`thread_egress`) and is in every later start's rules. `EgressDenied` records the answer only.
+- **Setup command** (`SetupCommandChanged`, `projects.setup_command`): `DeliverMessage.SetupCommand` carries it to a sandbox; the runner runs
+  `sh -c` once per thread in the workspace before the first prompt, through the proxy, as a tool row (`cowork-setup`) whose output is always
+  kept (whatever the record-output switch) and shown folded under the row; `~/.cowork/setup.json` in the volume marks it done.
+- **Budgets** (`Budgets.cs`; `BudgetSet`, `ThreadBudgetRaised`, `BudgetReached`; tables `budgets`, `thread_budgets`, `project_usage` by
+  project, UTC month and agent): caps for a month and a thread, each in tokens and in dollars. The gateway checks before each call; at a cap
+  it answers 402 with an OpenAI-shaped error and the thread gets one notice per turn ("Reached this thread's cap of 10,000 tokens. A lead can
+  raise it.", or the project's month), with **Raise this thread's cap** for its leads (the thread gets the per-thread cap again). The Budget
+  card shows the month's use (dollars when the provider reports cost, else tokens), per agent, and the four caps.
+- **Pause all agents** (`ProjectAgentsPaused` / `ProjectAgentsResumed`): every running sandbox of the project is suspended, a turn running in
+  one goes back in line ("Paused by Alex. researcher picks this up again when the agents are resumed."), and the dispatcher holds every
+  delivery in the project (pinned agents too) until Resume, which pumps them.
+- **One restart** when a sandbox dies mid-turn (`Dispatcher.SandboxLost`, from the runner's connection dropping or the pool finding the
+  container stopped, whichever comes first): the first time the message goes back in line with "…stopped unexpectedly. Trying again." and the
+  sandbox resumes on its volume; the second time for the same message the turn fails. Tool calls that were running are marked failed.
+
+**Decisions**
+- **No network at all, instead of an internal podman network.** A container on an internal network shares it with every other sandbox there
+  and still needs a proxy container that can reach both the internal network and a server on the host's loopback, which rootless podman here
+  doesn't combine with pasta. With `--network none` and a socket of its own, a sandbox has no route to anything, not even another sandbox,
+  and the proxy knows which sandbox is asking without trusting a header. Round 1's pasta loopback option is no longer used. Tested first with
+  a plain container: no network, the host's socket reachable as the sandbox's user (sockets 0666, folder 0755).
+- **The proxy runs in the pool process**, which holds no secret but its own token; the server and gateway are reachable by construction (their
+  own socket), so "always allowed" can't be misconfigured. Plain http is one request per connection (`Connection: close`, `Proxy-*` headers
+  dropped), so a client can't hop to another host on a kept-alive connection; an `Upgrade` passes through.
+- **The agent isn't held while it waits for an answer:** the proxy refuses at once (OpenCode reports the failed fetch and ends its turn) and
+  the allow brings a short system message as the next prompt, so it tries again. "Allow once" lives in the proxy only, so a sandbox suspended
+  before using it loses it.
+- **A pool that restarts stops the containers it left running** (their proxy went with the old process); the server sees them gone and
+  resumes them when their threads need them.
+- **Budgets count what the gateway forwarded,** checked before each call: a call that starts under the cap may end past it, and the next is
+  refused. GitHub Copilot reports no cost, so dollar caps don't stop its threads; the card and its hint say the token caps hold. OpenCode
+  then fails its prompt with the gateway's words; the dispatcher drops that error when it repeats the turn's `BudgetReached`, so the thread
+  says it once.
+- **Pausing holds pinned agents' deliveries too** ("all agents"), but a pinned turn already running finishes; only sandboxes are stopped.
+- **The restart is counted per message** (a `restart` flag on `TurnInterrupted`, traced through `TurnStarted` to the `MessageDelivered`), so a
+  later message gets its own retry.
+- phase10 uses a 90 s idle time so a sandbox doesn't stop between its steps; phase9 now finds its threads by who started them (two
+  simultaneous posts may land in either order).
+
+**Checked** (ports 5883–5888, everything in podman labelled and removed by label; the `cowork` project, its volume and `~/.weave` untouched;
+OpenRouter never used)
+- `dotnet test`: 82 server (5 new in `LockedTests`: an ask to the thread's starter, deduplicated, refused to the lead and to another pool,
+  allowed once (the pool told, the system message delivered after the turn), for the thread (in the next start's rules) and denied; the
+  gateway stopping a thread at 200 tokens with one notice and no second error, a member refused and the lead raising it, the month's cap, a
+  dollar cap, the card's numbers; pause with a turn running and a new message held, resume sending both; a sandbox dying twice mid-turn;
+  the setup command in the delivery and its output kept). 32 runner (5 new in `EgressTests` on real unix sockets and a loopback web
+  server: a listed host tunnelled, others refused and reported once, allowed once and for good, plain http rewritten, the server socket;
+  and the setup command running once before the first prompt). `bun run test` 33.
+- Live: **`phase10` 27 checks, three runs** (screenshots `docs/screens/brief7/10-*` to `17-*`, dark and light, looked at; fixed from
+  them: the budget stop said twice, a tool row left "running…" by the killed turn, a paused card saying "Stopped after 0 seconds idle", and
+  this machine's repository path on the settings page). On the locked-down network: `phase9` 37 (round 1's demo), and the earlier checks on
+  fresh scratch servers `phase1` 24, `phase2` 30, `phase4` 19 (LiveKit 1.13.11 as `cwb7-lk`, label `cwb7`, removed), `phase5` 22, `phase6`
+  27, `phase7` 31, `phase8` 31. The importer's answer comparison ignores the two thread-status fields this round added (`pausedBy`,
+  `usage`). The older scripts' own screenshots were restored.
+
+**Not done / next**
+- Leads aren't told at 80% of a budget, nor when an ask passes to them after 30 minutes; nobody is told when no pool is online.
+- The proxy doesn't replace credential placeholders yet (the rules carry `replaceHeaders` as data; pushing from a sandbox needs it) and the
+  thread token isn't a signed token the proxy could check itself (the proxy needs neither today: each sandbox has its own socket).
+- The mockup's "web search" on the network list is a service, not a host; there is no web search in the sandbox yet.
+- Round 3: CoWork's MCP tools in `session/new`, thread status and outcomes; deleting a done thread's volume.

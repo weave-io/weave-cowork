@@ -39,8 +39,8 @@ public class ImporterTests
         switch (n)
         {
             // positions differ by design; what brief 5 added to the answers (projects, a channel's project, a thread agent's workspace, all
-            // empty for a database from before projects) and brief 7 added (an agent's placement, image and model, a thread's sandbox) wasn't in the old server's answers
-            case JsonObject o: foreach (var k in o.Where(kv => kv.Key is "position" or "at" or "projects" or "projectId" or "placement" or "image" or "model" or "sandbox" || kv.Key == "workspace" && kv.Value is null).Select(kv => kv.Key).ToList()) o.Remove(k); foreach (var kv in o.ToList()) Strip(kv.Value); break;
+            // empty for a database from before projects) and brief 7 added (an agent's placement, image and model, a thread's sandbox, who paused it and its usage) wasn't in the old server's answers
+            case JsonObject o: foreach (var k in o.Where(kv => kv.Key is "position" or "at" or "projects" or "projectId" or "placement" or "image" or "model" or "sandbox" or "pausedBy" or "usage" || kv.Key == "workspace" && kv.Value is null).Select(kv => kv.Key).ToList()) o.Remove(k); foreach (var kv in o.ToList()) Strip(kv.Value); break;
             case JsonArray a: foreach (var x in a) Strip(x); break;
         }
         return n!;

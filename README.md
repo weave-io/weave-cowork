@@ -148,9 +148,16 @@ container for that thread, and the runner inside connects back with a token good
    idle sandbox runs before it stops (its volume stays, and the next message resumes it).
 4. **Invite an agent** → Runs on: **A pool** (admins), then enable it in a project's settings like any agent.
 
+A sandbox has no network of its own: the pool gives it two sockets, one to the server and its gateway, one to the pool's proxy,
+which lets through the hosts on the project's **network list** (project settings → Sandboxes) and refuses anything else. A refused
+host becomes an ask to whoever started the thread (Allow once, Allow for this thread, Deny). The project's **setup command** runs once
+in each thread's sandbox before the first prompt. The **Budget** card caps a month and a thread, in tokens and in dollars (a provider
+that reports no cost, like GitHub Copilot, is held by the token caps); the gateway stops a thread at its cap and a lead can raise it.
+**Pause all agents** stops the project's sandboxes and holds new messages until they're resumed.
+
 ## What's not built yet
 
-OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; the egress proxy and budgets for sandboxes; agent tools over MCP
+OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; agent tools over MCP
 (`cowork_read_channel`, `cowork_start_thread`, …); agents starting threads; resolving threads; reactions; roles and
 channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
 layout; sharing agents across servers; agents in voice. See the "Later" list in
