@@ -14,7 +14,7 @@ public sealed class AuditProjection : IAsyncProjection
 {
     public string Name => "audit";
     public string Title => "Audit log";
-    public string[] Tables => new[] { "audit_members", "audit_entries", "audit_turns", "audit_threads", "audit_names" };
+    public string[] Tables => new[] { "audit_members", "audit_entries", "audit_turns", "audit_threads", "audit_names", "audit_invites" };
 
     public sealed class Entry
     {
@@ -128,14 +128,18 @@ public sealed class AuditProjection : IAsyncProjection
             {
                 var id = e.Long("memberId");
                 x.Execute("INSERT OR REPLACE INTO audit_names(kind, id, name, handle) VALUES ('person',@id,@name,@handle)", new { id, name = e.Str("displayName") ?? e.Str("handle"), handle = e.Str("handle") });
-                var how = e.LongOrNull("inviteId") is not null ? " with an invite link" : e.Str("role") == "admin" ? " as an admin" : "";
-                Add(x, e, "event", $"{Person(x, id)} joined{how}.", null, null, id);
+                var inviter = e.LongOrNull("inviteId") is { } inv ? x.Scalar<long?>("SELECT created_by FROM audit_invites WHERE invite_id=@inv", new { inv }) : null;
+                var how = e.LongOrNull("inviteId") is not null ? " with an invite link" + (inviter is null ? "" : $" from {Person(x, inviter)}") : e.Str("role") == "admin" ? " as an admin" : "";
+                Add(x, e, "event", $"{Person(x, id)} joined{how}.", null, null, id, inviter);
                 break;
             }
             case "RoleChanged": Add(x, e, "event", $"{Actor(x, e)} made {Person(x, e.Long("memberId"))} {(e.Str("role") == "admin" ? "an admin" : "a member")}.", null, null, e.Long("memberId")); break;
             case "PersonRemoved": Add(x, e, "event", $"{Actor(x, e)} removed {Person(x, e.Long("memberId"))}.", null, null, e.Long("memberId")); break;
-            case "InviteCreated": Add(x, e, "event", $"{Actor(x, e)} created an invite link."); break;
-            case "InviteUsed": Add(x, e, "event", $"{Person(x, e.LongOrNull("memberId"))} used an invite link.", null, null, e.LongOrNull("memberId")); break;
+            case "InviteCreated":
+                x.Execute("INSERT OR REPLACE INTO audit_invites VALUES (@i,@by)", new { i = e.Long("inviteId"), by = e.LongOrNull("createdBy") ?? e.ActorId ?? 0 });
+                Add(x, e, "event", $"{Actor(x, e)} created an invite link.");
+                break;
+            case "InviteUsed": break;                // told once, by the sign-up it belongs to ("Rosa joined with an invite link from Alex.")
             case "InviteRevoked": Add(x, e, "event", $"{Actor(x, e)} revoked an invite link."); break;
 
             case "ChannelCreated":

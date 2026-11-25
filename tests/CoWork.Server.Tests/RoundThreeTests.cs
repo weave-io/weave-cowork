@@ -67,6 +67,8 @@ public class RoundThreeTests
         Assert.Contains(all, s => s.StartsWith("Alex messaged reviewer (Alex's agent) in #checkout-app. It answered on testbox."));
         Assert.Contains(all, s => s.StartsWith("Rosa messaged reviewer (Alex's agent) in #checkout-app. It answered on testbox."));
         Assert.Contains("reviewer's runner connected from testbox.", all);
+        Assert.Contains("Rosa joined with an invite link from Alex.", all);                      // one sign-up is one sentence
+        Assert.DoesNotContain(all, s => s.Contains("used an invite link"));
         Assert.DoesNotContain(all, s => s.Contains("what does this repository do"));           // what people say is not in the audit
 
         // the sentence comes from the chain: the grant names the ask it answers, the ask belongs to the turn Rosa started
