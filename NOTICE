@@ -1,0 +1,19 @@
+Weave CoWork
+Copyright 2026 Weave (github.com/weave-io)
+
+Licences
+  - src/CoWork.Runner and src/CoWork.Contracts: Apache License 2.0
+    (see the LICENSE file in each folder).
+  - Everything else, including src/CoWork.Server, web/, tests/ and deploy/:
+    GNU Affero General Public License v3.0 only (see /LICENSE).
+
+Trademarks
+  The Weave name and logo are trademarks. They are not licensed under either
+  licence above.
+
+Origins
+  Parts of Weave CoWork were adapted from Weave Fleet, by the same copyright
+  holder: the ACP client, the theme tokens and the ui components.
+
+Third-party software that ships with CoWork is listed, with its licences, in
+THIRD-PARTY-NOTICES.md.

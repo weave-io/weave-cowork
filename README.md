@@ -136,3 +136,11 @@ OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; hosted runn
 channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
 layout; sharing agents across servers; agents in voice. See the "Later" list in
 `docs/build/brief.md`.
+
+## Licence
+
+Weave CoWork is licensed under the [GNU AGPL-3.0-only](LICENSE), except `src/CoWork.Runner` and `src/CoWork.Contracts`
+(the runner and what it says to the server), which are under the Apache License 2.0 (a `LICENSE` in each folder). The
+Weave name and logo are trademarks and are not licensed. See [NOTICE](NOTICE) and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for third-party software. To contribute, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
