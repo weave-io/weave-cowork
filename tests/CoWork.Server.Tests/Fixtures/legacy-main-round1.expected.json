@@ -1,0 +1,928 @@
+{
+ "alex": {
+  "bootstrap": {
+   "server": {
+    "name": "Lumen Labs"
+   },
+   "meId": 1,
+   "isAdmin": true,
+   "members": [
+    {
+     "id": 1,
+     "kind": "person",
+     "handle": "alex",
+     "displayName": "Alex",
+     "removed": false,
+     "role": "admin",
+     "ownerId": null,
+     "about": null,
+     "online": false,
+     "harnessCommand": null,
+     "workspace": null,
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 2,
+     "kind": "person",
+     "handle": "rosa",
+     "displayName": "Rosa",
+     "removed": false,
+     "role": "member",
+     "ownerId": null,
+     "about": null,
+     "online": false,
+     "harnessCommand": null,
+     "workspace": null,
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 3,
+     "kind": "person",
+     "handle": "bob",
+     "displayName": "Bob",
+     "removed": true,
+     "role": "member",
+     "ownerId": null,
+     "about": null,
+     "online": false,
+     "harnessCommand": null,
+     "workspace": null,
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 4,
+     "kind": "agent",
+     "handle": "reviewer",
+     "displayName": "Reviewer",
+     "removed": false,
+     "role": null,
+     "ownerId": 1,
+     "about": "Reads code",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": "build-01",
+     "connected": true
+    },
+    {
+     "id": 5,
+     "kind": "agent",
+     "handle": "sleeper",
+     "displayName": "sleeper",
+     "removed": false,
+     "role": null,
+     "ownerId": 1,
+     "about": "",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": "build-01",
+     "connected": true
+    },
+    {
+     "id": 6,
+     "kind": "agent",
+     "handle": "fresh",
+     "displayName": "fresh",
+     "removed": false,
+     "role": null,
+     "ownerId": 1,
+     "about": "",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 7,
+     "kind": "agent",
+     "handle": "gone",
+     "displayName": "gone",
+     "removed": true,
+     "role": null,
+     "ownerId": 1,
+     "about": "",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": null,
+     "connected": false
+    }
+   ],
+   "channels": [
+    {
+     "id": 2,
+     "name": "checkout-app",
+     "kind": "text",
+     "topic": "The checkout app",
+     "isPrivate": false,
+     "creatorId": 1,
+     "memberIds": [
+      1,
+      4,
+      5
+     ],
+     "canManage": true
+    },
+    {
+     "id": 1,
+     "name": "general",
+     "kind": "text",
+     "topic": "Everything that doesn't have a channel yet",
+     "isPrivate": false,
+     "creatorId": 1,
+     "memberIds": [],
+     "canManage": true
+    },
+    {
+     "id": 3,
+     "name": "leads",
+     "kind": "text",
+     "topic": "",
+     "isPrivate": true,
+     "creatorId": 1,
+     "memberIds": [
+      1
+     ],
+     "canManage": true
+    },
+    {
+     "id": 4,
+     "name": "standup",
+     "kind": "voice",
+     "topic": "",
+     "isPrivate": false,
+     "creatorId": 1,
+     "memberIds": [
+      1
+     ],
+     "canManage": true
+    }
+   ],
+   "voice": {
+    "enabled": false,
+    "url": null
+   },
+   "voicePresence": {}
+  },
+  "feeds": {
+   "1": [],
+   "2": [
+    {
+     "id": 3,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@reviewer what does this repository do?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598617594,
+     "replyCount": 6,
+     "hasThread": true,
+     "threadAgents": [
+      "reviewer",
+      "sleeper"
+     ]
+    },
+    {
+     "id": 12,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@sleeper are you there?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598619229,
+     "replyCount": 0,
+     "hasThread": true,
+     "threadAgents": [
+      "sleeper"
+     ]
+    },
+    {
+     "id": 13,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "a plain message in the channel",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598619252,
+     "replyCount": 0,
+     "hasThread": false,
+     "threadAgents": []
+    }
+   ],
+   "3": [
+    {
+     "id": 2,
+     "channelId": 3,
+     "threadId": null,
+     "authorId": 1,
+     "body": "hiring plans for the quarter",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598617302,
+     "replyCount": 0,
+     "hasThread": false,
+     "threadAgents": []
+    }
+   ]
+  },
+  "threads": {
+   "3": {
+    "root": {
+     "id": 3,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@reviewer what does this repository do?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598617594,
+     "replyCount": 6,
+     "hasThread": true,
+     "threadAgents": [
+      "reviewer",
+      "sleeper"
+     ]
+    },
+    "replies": [
+     {
+      "id": 4,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "Let me look.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598617666,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 5,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "read README.md",
+      "kind": "tool",
+      "meta": {
+       "toolId": "t1",
+       "title": "read README.md",
+       "toolKind": "read",
+       "status": "completed"
+      },
+      "streaming": false,
+      "createdAt": 1795598617685,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 6,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "It's a checkout app.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598617726,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 7,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 2,
+      "body": "@reviewer please run git log -3",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598617756,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 8,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "run git log -3",
+      "kind": "ask",
+      "meta": {
+       "requestId": "r1",
+       "agentId": 4,
+       "ownerId": 1,
+       "title": "run git log -3",
+       "options": [
+        {
+         "id": "allow",
+         "name": "Allow once",
+         "kind": "allow_once"
+        },
+        {
+         "id": "reject",
+         "name": "Reject",
+         "kind": "reject_once"
+        }
+       ],
+       "status": "answered",
+       "answer": "allow"
+      },
+      "streaming": false,
+      "createdAt": 1795598617780,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 9,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "Three commits.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598618726,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 10,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 1,
+      "body": "@reviewer one more thing, say hi to @sleeper",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598619198,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 11,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "On it. Over to @sleeper.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598619221,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     }
+    ],
+    "agents": [
+     {
+      "id": 4,
+      "handle": "reviewer",
+      "displayName": "Reviewer",
+      "online": false,
+      "busy": false,
+      "queued": 0,
+      "harnessCommand": [
+       "opencode",
+       "acp"
+      ],
+      "runnerHost": "build-01",
+      "ownerId": 1
+     },
+     {
+      "id": 5,
+      "handle": "sleeper",
+      "displayName": "sleeper",
+      "online": false,
+      "busy": false,
+      "queued": 2,
+      "harnessCommand": [
+       "opencode",
+       "acp"
+      ],
+      "runnerHost": "build-01",
+      "ownerId": 1
+     }
+    ],
+    "startedBy": 1
+   },
+   "12": {
+    "root": {
+     "id": 12,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@sleeper are you there?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598619229,
+     "replyCount": 0,
+     "hasThread": true,
+     "threadAgents": [
+      "sleeper"
+     ]
+    },
+    "replies": [],
+    "agents": [
+     {
+      "id": 5,
+      "handle": "sleeper",
+      "displayName": "sleeper",
+      "online": false,
+      "busy": false,
+      "queued": 1,
+      "harnessCommand": [
+       "opencode",
+       "acp"
+      ],
+      "runnerHost": "build-01",
+      "ownerId": 1
+     }
+    ],
+    "startedBy": 1
+   }
+  }
+ },
+ "rosa": {
+  "bootstrap": {
+   "server": {
+    "name": "Lumen Labs"
+   },
+   "meId": 2,
+   "isAdmin": false,
+   "members": [
+    {
+     "id": 1,
+     "kind": "person",
+     "handle": "alex",
+     "displayName": "Alex",
+     "removed": false,
+     "role": "admin",
+     "ownerId": null,
+     "about": null,
+     "online": false,
+     "harnessCommand": null,
+     "workspace": null,
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 2,
+     "kind": "person",
+     "handle": "rosa",
+     "displayName": "Rosa",
+     "removed": false,
+     "role": "member",
+     "ownerId": null,
+     "about": null,
+     "online": false,
+     "harnessCommand": null,
+     "workspace": null,
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 3,
+     "kind": "person",
+     "handle": "bob",
+     "displayName": "Bob",
+     "removed": true,
+     "role": "member",
+     "ownerId": null,
+     "about": null,
+     "online": false,
+     "harnessCommand": null,
+     "workspace": null,
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 4,
+     "kind": "agent",
+     "handle": "reviewer",
+     "displayName": "Reviewer",
+     "removed": false,
+     "role": null,
+     "ownerId": 1,
+     "about": "Reads code",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": "build-01",
+     "connected": true
+    },
+    {
+     "id": 5,
+     "kind": "agent",
+     "handle": "sleeper",
+     "displayName": "sleeper",
+     "removed": false,
+     "role": null,
+     "ownerId": 1,
+     "about": "",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": "build-01",
+     "connected": true
+    },
+    {
+     "id": 6,
+     "kind": "agent",
+     "handle": "fresh",
+     "displayName": "fresh",
+     "removed": false,
+     "role": null,
+     "ownerId": 1,
+     "about": "",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": null,
+     "connected": false
+    },
+    {
+     "id": 7,
+     "kind": "agent",
+     "handle": "gone",
+     "displayName": "gone",
+     "removed": true,
+     "role": null,
+     "ownerId": 1,
+     "about": "",
+     "online": false,
+     "harnessCommand": [
+      "opencode",
+      "acp"
+     ],
+     "workspace": "/work/lumen",
+     "runnerHost": null,
+     "connected": false
+    }
+   ],
+   "channels": [
+    {
+     "id": 2,
+     "name": "checkout-app",
+     "kind": "text",
+     "topic": "The checkout app",
+     "isPrivate": false,
+     "creatorId": 1,
+     "memberIds": [
+      1,
+      4,
+      5
+     ],
+     "canManage": false
+    },
+    {
+     "id": 1,
+     "name": "general",
+     "kind": "text",
+     "topic": "Everything that doesn't have a channel yet",
+     "isPrivate": false,
+     "creatorId": 1,
+     "memberIds": [],
+     "canManage": false
+    },
+    {
+     "id": 4,
+     "name": "standup",
+     "kind": "voice",
+     "topic": "",
+     "isPrivate": false,
+     "creatorId": 1,
+     "memberIds": [
+      1
+     ],
+     "canManage": false
+    }
+   ],
+   "voice": {
+    "enabled": false,
+    "url": null
+   },
+   "voicePresence": {}
+  },
+  "feeds": {
+   "1": [],
+   "2": [
+    {
+     "id": 3,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@reviewer what does this repository do?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598617594,
+     "replyCount": 6,
+     "hasThread": true,
+     "threadAgents": [
+      "reviewer",
+      "sleeper"
+     ]
+    },
+    {
+     "id": 12,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@sleeper are you there?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598619229,
+     "replyCount": 0,
+     "hasThread": true,
+     "threadAgents": [
+      "sleeper"
+     ]
+    },
+    {
+     "id": 13,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "a plain message in the channel",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598619252,
+     "replyCount": 0,
+     "hasThread": false,
+     "threadAgents": []
+    }
+   ]
+  },
+  "threads": {
+   "3": {
+    "root": {
+     "id": 3,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@reviewer what does this repository do?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598617594,
+     "replyCount": 6,
+     "hasThread": true,
+     "threadAgents": [
+      "reviewer",
+      "sleeper"
+     ]
+    },
+    "replies": [
+     {
+      "id": 4,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "Let me look.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598617666,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 5,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "read README.md",
+      "kind": "tool",
+      "meta": {
+       "toolId": "t1",
+       "title": "read README.md",
+       "toolKind": "read",
+       "status": "completed"
+      },
+      "streaming": false,
+      "createdAt": 1795598617685,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 6,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "It's a checkout app.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598617726,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 7,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 2,
+      "body": "@reviewer please run git log -3",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598617756,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 8,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "run git log -3",
+      "kind": "ask",
+      "meta": {
+       "requestId": "r1",
+       "agentId": 4,
+       "ownerId": 1,
+       "title": "run git log -3",
+       "options": [
+        {
+         "id": "allow",
+         "name": "Allow once",
+         "kind": "allow_once"
+        },
+        {
+         "id": "reject",
+         "name": "Reject",
+         "kind": "reject_once"
+        }
+       ],
+       "status": "answered",
+       "answer": "allow"
+      },
+      "streaming": false,
+      "createdAt": 1795598617780,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 9,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "Three commits.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598618726,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 10,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 1,
+      "body": "@reviewer one more thing, say hi to @sleeper",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598619198,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     },
+     {
+      "id": 11,
+      "channelId": 2,
+      "threadId": 3,
+      "authorId": 4,
+      "body": "On it. Over to @sleeper.",
+      "kind": "text",
+      "meta": null,
+      "streaming": false,
+      "createdAt": 1795598619221,
+      "replyCount": 0,
+      "hasThread": false,
+      "threadAgents": null
+     }
+    ],
+    "agents": [
+     {
+      "id": 4,
+      "handle": "reviewer",
+      "displayName": "Reviewer",
+      "online": false,
+      "busy": false,
+      "queued": 0,
+      "harnessCommand": [
+       "opencode",
+       "acp"
+      ],
+      "runnerHost": "build-01",
+      "ownerId": 1
+     },
+     {
+      "id": 5,
+      "handle": "sleeper",
+      "displayName": "sleeper",
+      "online": false,
+      "busy": false,
+      "queued": 2,
+      "harnessCommand": [
+       "opencode",
+       "acp"
+      ],
+      "runnerHost": "build-01",
+      "ownerId": 1
+     }
+    ],
+    "startedBy": 1
+   },
+   "12": {
+    "root": {
+     "id": 12,
+     "channelId": 2,
+     "threadId": null,
+     "authorId": 1,
+     "body": "@sleeper are you there?",
+     "kind": "text",
+     "meta": null,
+     "streaming": false,
+     "createdAt": 1795598619229,
+     "replyCount": 0,
+     "hasThread": true,
+     "threadAgents": [
+      "sleeper"
+     ]
+    },
+    "replies": [],
+    "agents": [
+     {
+      "id": 5,
+      "handle": "sleeper",
+      "displayName": "sleeper",
+      "online": false,
+      "busy": false,
+      "queued": 1,
+      "harnessCommand": [
+       "opencode",
+       "acp"
+      ],
+      "runnerHost": "build-01",
+      "ownerId": 1
+     }
+    ],
+    "startedBy": 1
+   }
+  }
+ }
+}

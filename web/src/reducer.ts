@@ -6,6 +6,16 @@ export function applyEvent(s: FeedState, evt: string, p: any): void {
     case 'post-created': return onCreated(s, p as Post)
     case 'post-updated': return onUpdated(s, p as Post)
     case 'post-upsert': return find(s, p.id) ? onUpdated(s, p as Post) : onCreated(s, p as Post)       // catching up: add it, or replace what we have
+    case 'post-deleted': {
+      // a deleted message disappears; deleting a thread's root takes the thread with it
+      if (p.channelId !== s.channelId) return
+      s.posts = s.posts.filter(x => x.id !== p.id)
+      if (s.thread) {
+        if (s.thread.rootId === p.id) s.thread = null
+        else s.thread.replies = s.thread.replies.filter(x => x.id !== p.id)
+      }
+      return
+    }
     case 'post-delta': {
       const t = find(s, p.id)
       if (!t) return

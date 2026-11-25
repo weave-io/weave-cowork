@@ -108,10 +108,10 @@ public class EventTests
         using var _a = app; await using var _b = runner;
         var root = (await alex.Post(ch, "@reviewer what does this repository do?")).GetProperty("id").GetInt64();
         await runner.NextDelivery();
-        var evs = Events(app);
+        var evs = Events(app, "WHERE type IN ('MessagePosted','ThreadStarted','AgentJoinedThread','MessageDelivered','TurnStarted')");
         Assert.Equal(new[] { "MessagePosted", "ThreadStarted", "AgentJoinedThread", "MessageDelivered", "TurnStarted" }, evs.Select(e => e.Type));
         Assert.Equal(new[] { $"channel-{ch}", $"thread-{root}", $"thread-{root}", $"thread-{root}", $"thread-{root}" }, evs.Select(e => e.StreamId));
-        Assert.Equal(new[] { 1, 1, 2, 3, 4 }, evs.Select(e => e.Version));
+        Assert.Equal(new[] { 1, 2, 3, 4 }, evs.Skip(1).Select(e => e.Version));
         Assert.Equal(alex.Id, evs[0].ActorId);                                        // the author is the caller
         Assert.Equal(evs[0].Position, evs[1].Causation);                              // the mention started the thread
         Assert.Equal(alex.Id, evs[3].OnBehalfOf);                                     // delivered on behalf of Alex
@@ -146,7 +146,8 @@ public class EventTests
         // every post and thread row the app reads came from an event: the position of the last one that changed it
         using var c = app.Sql();
         Assert.Equal(0, c.ExecuteScalar<int>("SELECT COUNT(*) FROM posts WHERE position=0"));
-        Assert.Equal("done", c.ExecuteScalar<string>("SELECT status FROM deliveries"));
+        Assert.Equal(0, c.ExecuteScalar<int>("SELECT COUNT(*) FROM open_turns"));                                    // the turn ended
+        Assert.True(c.ExecuteScalar<long>("SELECT position FROM runner_positions") >= c.ExecuteScalar<long>("SELECT MAX(position) FROM events WHERE type='TurnStarted'"));   // nothing queued: the runner is caught up
     }
 
     [Fact]
@@ -263,7 +264,7 @@ public class EventTests
         Assert.Equal(0, c2.ExecuteScalar<int>("SELECT COUNT(*) FROM posts WHERE streaming=1"));
         Assert.Equal("Half an ans", c2.ExecuteScalar<string>("SELECT body FROM posts WHERE kind='text' AND thread_id IS NOT NULL"));
         Assert.Contains("cut off", c2.ExecuteScalar<string>("SELECT body FROM posts WHERE kind='notice'"));
-        Assert.Equal("failed", c2.ExecuteScalar<string>("SELECT status FROM deliveries"));
+        Assert.Equal(0, c2.ExecuteScalar<int>("SELECT COUNT(*) FROM open_turns"));
         // and the next restart doesn't interrupt it again
         using var third = new TestApp(existingDb: app.DbPath); _ = third.Server;
         Assert.Single(Events(third, "WHERE type='TurnInterrupted'"));

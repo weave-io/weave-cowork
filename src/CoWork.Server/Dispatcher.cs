@@ -41,8 +41,7 @@ public sealed class Dispatcher
         public Timer? Timer; public bool Closed;
     }
 
-    private sealed class DeliveryRow { public long Id { get; set; } public long ThreadId { get; set; } public string Text { get; set; } = ""; public string? Turn { get; set; } public long? Behalf { get; set; } public long? Cause { get; set; } }
-    private sealed class InFlight { public long Id { get; set; } public long ThreadId { get; set; } public long ChannelId { get; set; } public string? Turn { get; set; } public long? Behalf { get; set; } public long? Cause { get; set; } }
+    private sealed class InFlight { public long ThreadId { get; set; } public long ChannelId { get; set; } public string? Turn { get; set; } public long? Behalf { get; set; } public long? Cause { get; set; } }
 
     public Dispatcher(Db db, IEventStore store, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> runnerHub, LiveQueue live, ThreadViews views)
     { _db = db; _store = store; _rt = rt; _runners = runners; _runnerHub = runnerHub; _live = live; _views = views; }
@@ -75,7 +74,7 @@ public sealed class Dispatcher
                 var channel = ctx.Query<ChannelRow>("SELECT * FROM channels WHERE id=@channelId", new { channelId }).First();
                 postId = ctx.NextId("posts");
                 var mentions = Mentions(body).ToArray();
-                var mentioned = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND a.token_hash IS NOT NULL
+                var mentioned = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND rs.token_hash IS NOT NULL
                     AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != author.Id && mentions.Contains(a.Handle.ToLowerInvariant())).ToList();
                 var posted = new { postId, channelId, threadId, body = body, mentions };
@@ -100,7 +99,7 @@ public sealed class Dispatcher
                 var targets = new Dictionary<long, MemberRow>();
                 if (threadId is not null)
                     foreach (var a in ctx.Query<MemberRow>(Q.MemberSelect + @" JOIN thread_agents ta ON ta.agent_id = m.id AND ta.thread_id=@root
-                        WHERE m.removed=0 AND a.token_hash IS NOT NULL AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { root, channelId }))
+                        WHERE m.removed=0 AND rs.token_hash IS NOT NULL AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { root, channelId }))
                         targets[a.Id] = a;
                 foreach (var a in mentioned) targets[a.Id] = a;
                 targets.Remove(author.Id);
@@ -112,7 +111,7 @@ public sealed class Dispatcher
                     if (!joined) evs.Add(new NewEvent($"thread-{root}", "AgentJoinedThread", new { agentId = a.Id, ownerId = a.OwnerId }, null, authorId, turn, CausedByIndex: causeIdx));
                     evs.Add(new NewEvent($"thread-{root}", "MessageDelivered", new
                     {
-                        deliveryId = ctx.NextId("deliveries"), agentId = a.Id, postId, chained = false,
+                        agentId = a.Id, postId, chained = false,
                         text = Wrap(author.Handle, author.DisplayName, a.OwnerId == author.Id, channel.Name, root, body),
                     }, null, authorId, turn, CausedByIndex: causeIdx));
                     toPump.Add(a.Id);
@@ -133,7 +132,7 @@ public sealed class Dispatcher
         {
             var conn = _runners.ConnectionOf(agentId);
             if (conn is null) return;
-            var sends = new List<(DeliveryRow Row, string Turn, DeliverMessage Msg)>();
+            var sends = new List<(Deliveries.Row Row, string Turn, DeliverMessage Msg)>();
             var stored = _store.Append(ctx =>
             {
                 sends.Clear();
@@ -141,16 +140,15 @@ public sealed class Dispatcher
                 if (agent is null || agent.Removed) return Array.Empty<NewEvent>();
                 var record = ctx.Scalar<int>("SELECT record_tool_output FROM agents WHERE member_id=@agentId", new { agentId }) == 1;
                 var evs = new List<NewEvent>();
-                foreach (var r in ctx.Query<DeliveryRow>(@"
-                    SELECT d.id, d.thread_id, d.text, d.turn, d.behalf, d.cause FROM deliveries d
-                    WHERE d.agent_id=@agentId AND d.status='queued'
-                      AND NOT EXISTS (SELECT 1 FROM deliveries s WHERE s.agent_id=d.agent_id AND s.thread_id=d.thread_id AND s.status='sent')
-                      AND d.id = (SELECT MIN(q.id) FROM deliveries q WHERE q.agent_id=d.agent_id AND q.thread_id=d.thread_id AND q.status='queued')
-                    ORDER BY d.id", new { agentId }))
+                // the runner catches up from its position: what is queued after it, the oldest per thread, in threads where this agent is idle
+                var busy = ctx.Query<long>("SELECT thread_id FROM open_turns WHERE agent_id=@agentId", new { agentId }).ToHashSet();
+                var seen = new HashSet<long>();
+                foreach (var r in ctx.Query<Deliveries.Row>(Deliveries.Queued, new { agentId }))
                 {
+                    if (!seen.Add(r.ThreadId) || busy.Contains(r.ThreadId)) continue;
                     var turn = r.Turn ?? NewTurn();
-                    evs.Add(new NewEvent($"thread-{r.ThreadId}", "TurnStarted", new { agentId, deliveryId = r.Id, host = agent.RunnerHost }, agentId, r.Behalf, turn, r.Cause));
-                    sends.Add((r, turn, new DeliverMessage(r.Id, r.ThreadId, agentId, agent.Handle, agent.Instructions ?? "",
+                    evs.Add(new NewEvent($"thread-{r.ThreadId}", "TurnStarted", new { agentId, deliveryId = r.Position, host = agent.RunnerHost }, agentId, r.Behalf, turn, r.Position));
+                    sends.Add((r, turn, new DeliverMessage(r.Position, r.ThreadId, agentId, agent.Handle, agent.Instructions ?? "",
                         JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace!, r.Text, record)));
                 }
                 return evs;
@@ -174,8 +172,7 @@ public sealed class Dispatcher
 
     public async Task RunnerConnected(long agentId, string conn, string? host)
     {
-        using (var c = _db.Open())
-            c.Execute("UPDATE agents SET runner_host=COALESCE(@host, runner_host), last_seen=@now WHERE member_id=@agentId", new { host, now = Db.Now(), agentId });
+        _store.Append(new[] { new NewEvent($"agent-{agentId}", "RunnerConnected", new { agentId, host }, agentId) });
         FailInFlight(agentId, "the runner went offline during this turn");     // a turn in flight when the last runner died can't be resumed
         _runners.Set(agentId, conn);                                           // only now can a delivery be sent: it can't be mistaken for one of the old turns
         await _rt.ToAll("bootstrap-changed");
@@ -194,6 +191,7 @@ public sealed class Dispatcher
     public async Task RunnerDisconnected(long agentId, string conn)
     {
         if (!_runners.Remove(agentId, conn)) return;
+        _store.Append(new[] { new NewEvent($"agent-{agentId}", "RunnerDisconnected", new { agentId }, agentId) });
         FailInFlight(agentId, "the runner went offline during this turn");
         await _rt.ToAll("bootstrap-changed");
         await BroadcastAgentThreads(agentId);
@@ -219,8 +217,8 @@ public sealed class Dispatcher
     {
         List<InFlight> stuck;
         using (var c = _db.Open())
-            stuck = c.Query<InFlight>(@"SELECT d.id, d.thread_id, t.channel_id, d.turn, d.behalf, d.cause FROM deliveries d JOIN threads t ON t.root_id=d.thread_id
-                WHERE d.agent_id=@agentId AND d.status='sent'", new { agentId }).ToList();
+            stuck = c.Query<InFlight>(@"SELECT o.thread_id, t.channel_id, o.turn, o.behalf, o.cause FROM open_turns o JOIN threads t ON t.root_id=o.thread_id
+                WHERE o.agent_id=@agentId", new { agentId }).ToList();
         foreach (var s in stuck)
         {
             _turns.TryGetValue((s.ThreadId, agentId), out var st);
@@ -275,7 +273,7 @@ public sealed class Dispatcher
         _store.Append(ctx =>
         {
             var evs = new List<NewEvent>();
-            foreach (var s in ctx.Query<InFlight>("SELECT d.id, d.thread_id, 0 AS channel_id, d.turn, d.behalf, d.cause FROM deliveries d WHERE d.agent_id=@agentId AND d.status='sent'", new { agentId }))
+            foreach (var s in ctx.Query<InFlight>("SELECT o.thread_id, 0 AS channel_id, o.turn, o.behalf, o.cause FROM open_turns o WHERE o.agent_id=@agentId", new { agentId }))
                 evs.Add(new NewEvent($"thread-{s.ThreadId}", "TurnInterrupted", new { agentId, reason }, agentId, s.Behalf, s.Turn ?? NewTurn(), s.Cause));
             return evs;
         });
@@ -291,7 +289,7 @@ public sealed class Dispatcher
         using var c = _db.Open();
         var ch = c.QueryFirstOrDefault<long?>("SELECT channel_id FROM threads WHERE root_id=@threadId", new { threadId });
         if (ch is null) return null;
-        var d = c.QueryFirstOrDefault<InFlight>("SELECT d.id, d.thread_id, 0 AS channel_id, d.turn, d.behalf, d.cause FROM deliveries d WHERE d.thread_id=@threadId AND d.agent_id=@agentId AND d.status='sent'", new { threadId, agentId });
+        var d = c.QueryFirstOrDefault<InFlight>("SELECT o.thread_id, 0 AS channel_id, o.turn, o.behalf, o.cause FROM open_turns o WHERE o.thread_id=@threadId AND o.agent_id=@agentId", new { threadId, agentId });
         return _turns.GetOrAdd((threadId, agentId), _ => new TurnState { ThreadId = threadId, AgentId = agentId, ChannelId = ch.Value, Turn = d?.Turn ?? NewTurn(), Behalf = d?.Behalf, StartedAt = d?.Cause });
     }
 
@@ -443,9 +441,9 @@ public sealed class Dispatcher
                 var evs = new List<NewEvent>();
                 var author = ctx.Query<MemberRow>(Q.MemberSelect + " WHERE m.id=@agentId", new { agentId }).First();
                 var channel = ctx.Query<ChannelRow>("SELECT * FROM channels WHERE id=@channelId", new { channelId }).First();
-                var lastPost = ctx.Scalar<long?>("SELECT MAX(id) FROM posts WHERE thread_id=@threadId AND author_id=@agentId AND kind='text'", new { threadId, agentId }) ?? 0;
+                var lastPost = ctx.Scalar<long?>("SELECT MAX(id) FROM posts WHERE thread_id=@threadId AND author_id=@agentId AND kind='text' AND deleted=0", new { threadId, agentId }) ?? 0;
                 var wanted = Mentions(said).ToHashSet();
-                var targets = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND a.token_hash IS NOT NULL
+                var targets = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND rs.token_hash IS NOT NULL
                     AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != agentId && wanted.Contains(a.Handle.ToLowerInvariant()));
                 var chain = ctx.Scalar<int>("SELECT agent_chain FROM threads WHERE root_id=@threadId", new { threadId });
@@ -458,7 +456,7 @@ public sealed class Dispatcher
                         evs.Add(new NewEvent($"thread-{threadId}", "AgentJoinedThread", new { agentId = a.Id, ownerId = a.OwnerId }, null, behalf, turn, cause));
                     evs.Add(new NewEvent($"thread-{threadId}", "MessageDelivered", new
                     {
-                        deliveryId = ctx.NextId("deliveries"), agentId = a.Id, postId = lastPost, chained = true,
+                        agentId = a.Id, postId = lastPost, chained = true,
                         text = Wrap(author.Handle, author.DisplayName, false, channel.Name, threadId, said),
                     }, null, behalf, turn, cause));
                     pump.Add(a.Id);

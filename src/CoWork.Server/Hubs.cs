@@ -36,8 +36,12 @@ public sealed class AppHub : Hub
             (ef.Kind == EffectKind.ThreadUpdated ? threads : posts)[ef.Id] = ef;
         var views = _rt.Services.GetRequiredService<ThreadViews>();
         // posts oldest first (the order they were created in), then the thread headers
-        var messages = posts.Values.OrderBy(e => e.Id).Select(e => (object)new { name = "post-upsert", payload = (object)ThreadViews.PostPayload(c, e.Id, e.Position) })
-            .Concat(threads.Values.OrderBy(e => e.Position).Select(e => (object)new { name = "thread-updated", payload = views.ThreadUpdated(c, e.Id, e.Position)! }))
+        var messages = posts.Values.OrderBy(e => e.Id)
+            .Select(e => e.Kind == EffectKind.PostDeleted ? new { name = "post-deleted", payload = (object?)new { id = e.Id, channelId = e.ChannelId, at = e.Position } }
+                : new { name = "post-upsert", payload = (object?)ThreadViews.PostPayload(c, e.Id, e.Position) })
+            .Where(m => m.payload is not null).Select(m => (object)m)
+            .Concat(threads.Values.OrderBy(e => e.Position).Select(e => (name: "thread-updated", payload: views.ThreadUpdated(c, e.Id, e.Position))).Where(m => m.payload is not null)
+                .Select(m => (object)new { m.name, payload = m.payload! }))
             .ToList();
         return new { head = events.Count == 0 ? head : events[^1].Position, truncated = false, messages };
     }

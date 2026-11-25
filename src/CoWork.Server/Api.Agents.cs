@@ -24,7 +24,7 @@ public static partial class Api
 
     static void MapAgents(RouteGroupBuilder api, RouteGroupBuilder authed)
     {
-        authed.MapPost("/agents", async (AgentBody b, HttpContext ctx, Db db, Realtime rt) =>
+        authed.MapPost("/agents", async (AgentBody b, HttpContext ctx, Db db, Realtime rt, IEventStore store) =>
         {
             var me = Me(ctx);
             var handle = (b.Handle ?? "").Trim().TrimStart('@').ToLowerInvariant();
@@ -33,18 +33,25 @@ public static partial class Api
             if (cmd.Length == 0) return Err(400, "Add the harness command.");
             if (string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
             var code = Tokens.NewCode();
-            long id;
-            using (var c = db.Open())
+            long id = 0; var taken = false;
+            store.Append(d =>
             {
-                if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM members WHERE handle=@handle", new { handle }) > 0) return Err(409, "That name is taken.");
-                using var tx = c.BeginTransaction();
-                id = c.ExecuteScalar<long>("INSERT INTO members(kind, handle, display_name, created_at) VALUES ('agent',@handle,@n,@now); SELECT last_insert_rowid();",
-                    new { handle, n = string.IsNullOrWhiteSpace(b.DisplayName) ? handle : b.DisplayName.Trim(), now = Db.Now() }, tx);
-                c.Execute(@"INSERT INTO agents(member_id, owner_id, about, instructions, harness_command, workspace, code_hash, code_expires)
-                            VALUES (@id,@me,@about,@ins,@cmd,@ws,@ch,@exp)",
-                    new { id, me, about = b.About ?? "", ins = b.Instructions ?? "", cmd = JsonSerializer.Serialize(cmd), ws = b.Workspace.Trim(), ch = Tokens.Hash(code), exp = Db.Now() + 10 * 60_000 }, tx);
-                tx.Commit();
-            }
+                taken = d.Scalar<int>("SELECT COUNT(*) FROM members WHERE handle=@handle", new { handle }) > 0;
+                if (taken) return Array.Empty<NewEvent>();
+                id = d.NextId("members");
+                var expires = Db.Now() + 10 * 60_000;
+                d.Execute("INSERT OR REPLACE INTO runner_secrets(agent_id, token_hash, code_hash) VALUES (@id, NULL, @h)", new { id, h = Tokens.Hash(code) });
+                return new[]
+                {
+                    new NewEvent($"agent-{id}", "AgentCreated", new
+                    {
+                        agentId = id, handle, displayName = string.IsNullOrWhiteSpace(b.DisplayName) ? handle : b.DisplayName.Trim(), ownerId = me,
+                        about = b.About ?? "", instructions = b.Instructions ?? "", harnessCommand = cmd, workspace = b.Workspace.Trim(), recordToolOutput = false,
+                    }, me),
+                    new NewEvent($"agent-{id}", "EnrolmentCodeIssued", new { agentId = id, expiresAt = expires }, me, CausedByIndex: 0),
+                };
+            });
+            if (taken) return Err(409, "That name is taken.");
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(CodeResponse(ctx, id, code, handle));
         });
@@ -61,40 +68,52 @@ public static partial class Api
         });
 
         // edit an agent; new threads use the new settings, running sessions keep theirs
-        authed.MapPut("/agents/{id:long}", async (long id, AgentEditBody b, HttpContext ctx, Db db, Realtime rt) =>
+        authed.MapPut("/agents/{id:long}", async (long id, AgentEditBody b, HttpContext ctx, Db db, Realtime rt, IEventStore store) =>
         {
             var cmd = ParseCommand(b.HarnessCommand ?? "");
             if (cmd.Length == 0) return Err(400, "Add the harness command.");
             if (string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
+            var me = Me(ctx);
             using (var c = db.Open())
+                if (!CanAdminAgent(c, id, me)) return Err(403, "Only the agent's owner or an admin can do that.");
+            store.Append(new[] { new NewEvent($"agent-{id}", "AgentEdited", new
             {
-                if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
-                c.Execute("UPDATE agents SET about=@about, instructions=@ins, harness_command=@cmd, workspace=@ws WHERE member_id=@id",
-                    new { about = b.About ?? "", ins = b.Instructions ?? "", cmd = JsonSerializer.Serialize(cmd), ws = b.Workspace.Trim(), id });
-                if (b.RecordToolOutput is { } rec) c.Execute("UPDATE agents SET record_tool_output=@rec WHERE member_id=@id", new { rec = rec ? 1 : 0, id });
-                if (!string.IsNullOrWhiteSpace(b.DisplayName)) c.Execute("UPDATE members SET display_name=@n WHERE id=@id", new { n = b.DisplayName.Trim(), id });
-            }
+                agentId = id, displayName = string.IsNullOrWhiteSpace(b.DisplayName) ? null : b.DisplayName.Trim(), about = b.About ?? "", instructions = b.Instructions ?? "",
+                harnessCommand = cmd, workspace = b.Workspace.Trim(), recordToolOutput = b.RecordToolOutput,
+            }, me) });
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(new { ok = true });
         });
 
         // a fresh one-time code for an agent whose runner needs to (re)connect
-        authed.MapPost("/agents/{id:long}/code", (long id, HttpContext ctx, Db db) =>
+        authed.MapPost("/agents/{id:long}/code", (long id, HttpContext ctx, Db db, IEventStore store) =>
         {
-            using var c = db.Open();
-            if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
-            var code = Tokens.NewCode();
-            c.Execute("UPDATE agents SET code_hash=@h, code_expires=@exp WHERE member_id=@id", new { h = Tokens.Hash(code), exp = Db.Now() + 10 * 60_000, id });
-            return Results.Ok(CodeResponse(ctx, id, code, Q.Member(c, id)!.Handle));
-        });
-
-        authed.MapPost("/agents/{id:long}/disconnect", async (long id, HttpContext ctx, Db db, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> hub) =>
-        {
+            var me = Me(ctx);
+            string handle;
             using (var c = db.Open())
             {
-                if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
-                c.Execute("UPDATE agents SET token_hash=NULL, runner_host=NULL WHERE member_id=@id", new { id });
+                if (!CanAdminAgent(c, id, me)) return Err(403, "Only the agent's owner or an admin can do that.");
+                handle = Q.Member(c, id)!.Handle;
             }
+            var code = Tokens.NewCode();
+            store.Append(d =>
+            {
+                d.Execute("INSERT INTO runner_secrets(agent_id, code_hash) VALUES (@id,@h) ON CONFLICT(agent_id) DO UPDATE SET code_hash=@h", new { id, h = Tokens.Hash(code) });
+                return new[] { new NewEvent($"agent-{id}", "EnrolmentCodeIssued", new { agentId = id, expiresAt = Db.Now() + 10 * 60_000 }, me) };
+            });
+            return Results.Ok(CodeResponse(ctx, id, code, handle));
+        });
+
+        authed.MapPost("/agents/{id:long}/disconnect", async (long id, HttpContext ctx, Db db, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> hub, IEventStore store) =>
+        {
+            var me = Me(ctx);
+            using (var c = db.Open())
+                if (!CanAdminAgent(c, id, me)) return Err(403, "Only the agent's owner or an admin can do that.");
+            store.Append(d =>
+            {
+                d.Execute("UPDATE runner_secrets SET token_hash=NULL WHERE agent_id=@id", new { id });
+                return new[] { new NewEvent($"agent-{id}", "TokenRevoked", new { agentId = id }, me) };
+            });
             await CutOff(id, runners, hub);
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(new { ok = true });
@@ -104,26 +123,36 @@ public static partial class Api
         {
             using (var c = db.Open())
                 if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
-            await RemoveAgent(id, db, rt);
+            await RemoveAgent(id, Me(ctx), db, rt);
             return Results.Ok(new { ok = true });
         });
 
         // a runner trades its one-time code for a token
-        api.MapPost("/runner/enrol", async (EnrolRequest r, Db db, Realtime rt) =>
+        api.MapPost("/runner/enrol", async (EnrolRequest r, Db db, Realtime rt, IEventStore store) =>
         {
             var token = Tokens.NewToken();
-            using var c = db.Open();
-            var row = c.QueryFirstOrDefault<(long Id, string Handle, long Exp)?>(
-                @"SELECT a.member_id, m.handle, COALESCE(a.code_expires,0) FROM agents a JOIN members m ON m.id=a.member_id WHERE a.code_hash=@h AND m.removed=0",
-                new { h = Tokens.Hash((r.Code ?? "").Trim().ToUpperInvariant()) });
-            if (row is null) return Err(400, "That code isn't valid. It may have been used already.");
-            if (row.Value.Exp < Db.Now()) return Err(400, "That code has expired. Ask for a new one.");
-            c.Execute("UPDATE agents SET token_hash=@t, code_hash=NULL, code_expires=NULL, runner_host=@host WHERE member_id=@id",
-                new { t = Tokens.Hash(token), host = r.Host, id = row.Value.Id });
+            var codeHash = Tokens.Hash((r.Code ?? "").Trim().ToUpperInvariant());
+            string? error = null; long agentId = 0; string handle = "";
+            store.Append(d =>
+            {
+                error = null;
+                // "a code is used once and only before it expires" is decided here, inside the write, so two runners can't both use it
+                var row = d.Query<EnrolRow>(
+                    @"SELECT a.member_id AS id, m.handle, COALESCE(a.code_expires,0) AS exp FROM runner_secrets rs JOIN agents a ON a.member_id=rs.agent_id JOIN members m ON m.id=a.member_id
+                      WHERE rs.code_hash=@codeHash AND m.removed=0", new { codeHash }).FirstOrDefault();
+                if (row is null) { error = "That code isn't valid. It may have been used already."; return Array.Empty<NewEvent>(); }
+                if (row.Exp < Db.Now()) { error = "That code has expired. Ask for a new one."; return Array.Empty<NewEvent>(); }
+                agentId = row.Id; handle = row.Handle;
+                d.Execute("UPDATE runner_secrets SET token_hash=@t, code_hash=NULL WHERE agent_id=@agentId", new { t = Tokens.Hash(token), agentId });
+                return new[] { new NewEvent($"agent-{agentId}", "RunnerEnrolled", new { agentId, host = r.Host }, agentId) };
+            });
+            if (error is not null) return Err(400, error);
             await rt.ToAll("bootstrap-changed");
-            return Results.Ok(new EnrolResponse(row.Value.Id, row.Value.Handle, token));
+            return Results.Ok(new EnrolResponse(agentId, handle, token));
         });
     }
+
+    sealed class EnrolRow { public long Id { get; set; } public string Handle { get; set; } = ""; public long Exp { get; set; } }
 
     static object CodeResponse(HttpContext ctx, long id, string code, string? handle = null) =>
         new { agentId = id, handle, code, expiresInMinutes = 10, command = $"cowork-runner connect {ctx.Request.Scheme}://{ctx.Request.Host} --code {code}" };
@@ -140,20 +169,18 @@ public static partial class Api
         if (conn is not null) { await hub.Clients.Client(conn).SendAsync("Revoked"); runners.ForceRemove(agentId); }
     }
 
-    static async Task RemoveAgent(long id, Db db, Realtime rt)
+    /// <summary>Takes an agent out: its turns end, its secrets are cleared, and one event says so (the projections drop its token, runner and channel places).</summary>
+    public static async Task RemoveAgent(long id, long? by, Db db, Realtime rt)
     {
         var runners = rt.Services.GetRequiredService<RunnerRegistry>();
         var hub = rt.Services.GetRequiredService<IHubContext<RunnerHub>>();
+        var store = rt.Services.GetRequiredService<IEventStore>();
         rt.Services.GetRequiredService<Dispatcher>().AbandonAgent(id, "the agent was removed");
-        using (var c = db.Open())
+        store.Append(d =>
         {
-            using var tx = c.BeginTransaction();
-            c.Execute("UPDATE members SET removed=1 WHERE id=@id", new { id }, tx);
-            c.Execute("UPDATE agents SET token_hash=NULL, code_hash=NULL, runner_host=NULL WHERE member_id=@id", new { id }, tx);
-            c.Execute("DELETE FROM channel_members WHERE member_id=@id", new { id }, tx);
-            c.Execute("UPDATE deliveries SET status='failed' WHERE agent_id=@id AND status IN ('queued','sent')", new { id }, tx);
-            tx.Commit();
-        }
+            d.Execute("UPDATE runner_secrets SET token_hash=NULL, code_hash=NULL WHERE agent_id=@id", new { id });
+            return new[] { new NewEvent($"agent-{id}", "AgentRemoved", new { agentId = id }, by) };
+        });
         await CutOff(id, runners, hub);
         await rt.ToAll("bootstrap-changed");
     }

@@ -18,6 +18,15 @@ describe('applyEvent', () => {
     applyEvent(s, 'post-created', post(1, { channelId: 2 }))
     expect(s.posts).toEqual([])
   })
+  test('a deleted message disappears from the feed or the thread; a deleted root closes its thread; another channel is ignored', () => {
+    const s = feed({ posts: [post(1), post(5)], thread: { rootId: 1, root: post(1), replies: [post(2, { threadId: 1 }), post(3, { threadId: 1 })], agents: [], startedBy: 1 } })
+    applyEvent(s, 'post-deleted', { id: 2, channelId: 1 })
+    expect(s.thread!.replies.map(p => p.id)).toEqual([3])
+    applyEvent(s, 'post-deleted', { id: 5, channelId: 2 })
+    expect(s.posts.map(p => p.id)).toEqual([1, 5])
+    applyEvent(s, 'post-deleted', { id: 1, channelId: 1 })
+    expect(s.posts.map(p => p.id)).toEqual([5]); expect(s.thread).toBeNull()
+  })
   test('a reply goes to the open thread only', () => {
     const s = feed({ thread: { rootId: 1, root: post(1), replies: [], agents: [], startedBy: 1 } })
     applyEvent(s, 'post-created', post(2, { threadId: 1 }))

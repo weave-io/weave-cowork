@@ -55,8 +55,8 @@ public static class Q
     public const string MemberSelect = @"
         SELECT m.id, m.kind, m.handle, m.display_name, m.created_at, m.removed,
                p.role AS role, a.owner_id, a.about, a.instructions, a.harness_command, a.workspace, a.runner_host,
-               (a.token_hash IS NOT NULL) AS has_token
-        FROM members m LEFT JOIN people p ON p.member_id = m.id LEFT JOIN agents a ON a.member_id = m.id";
+               (rs.token_hash IS NOT NULL) AS has_token
+        FROM members m LEFT JOIN people p ON p.member_id = m.id LEFT JOIN agents a ON a.member_id = m.id LEFT JOIN runner_secrets rs ON rs.agent_id = m.id";
 
     public static MemberRow? Member(SqliteConnection c, long id) =>
         c.QueryFirstOrDefault<MemberRow>(MemberSelect + " WHERE m.id=@id", new { id });
@@ -65,12 +65,15 @@ public static class Q
         c.QueryFirstOrDefault<ChannelRow>("SELECT * FROM channels WHERE id=@id", new { id });
 
     public const string PostSelect = @"
-        SELECT p.*, (SELECT COUNT(*) FROM posts r WHERE r.thread_id = p.id AND r.kind = 'text') AS reply_count,
+        SELECT p.*, (SELECT COUNT(*) FROM posts r WHERE r.thread_id = p.id AND r.kind = 'text' AND r.deleted = 0) AS reply_count,
                (SELECT COUNT(*) FROM threads t WHERE t.root_id = p.id) AS has_thread
-        FROM posts p";
+        FROM (SELECT * FROM posts WHERE deleted = 0) p";
 
     public static PostRow? Post(SqliteConnection c, long id) =>
         c.QueryFirstOrDefault<PostRow>(PostSelect + " WHERE p.id=@id", new { id });
+
+    /// <summary>The stream a post's events are in: a top-level post in its channel's, a reply in its thread's.</summary>
+    public static string StreamOf(PostRow p) => p.ThreadId is { } t ? $"thread-{t}" : $"channel-{p.ChannelId}";
 
     public static object PostDto(PostRow p, IReadOnlyList<string>? threadAgents = null) => new
     {

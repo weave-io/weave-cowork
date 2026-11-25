@@ -22,7 +22,7 @@ public sealed class LiveQueue
     public void Delta(long channelId, object payload) => _ch.Writer.TryWrite(new LiveDelta(channelId, payload));
 }
 
-public enum EffectKind { PostCreated, PostUpdated, ThreadUpdated }
+public enum EffectKind { PostCreated, PostUpdated, ThreadUpdated, PostDeleted }
 
 /// <summary>What a screen has to change because of an event: a post appears, a post changes, a thread's header changes.</summary>
 public sealed record Effect(long ChannelId, EffectKind Kind, long Id, long Position);
@@ -33,7 +33,7 @@ public static class Effects
     {
         var list = new List<Effect>();
         long? ChannelOfThread(long t) => c.ExecuteScalar<long?>("SELECT channel_id FROM threads WHERE root_id=@t", new { t });
-        long? ChannelOfPost(long p) => c.ExecuteScalar<long?>("SELECT channel_id FROM posts WHERE id=@p", new { p });
+        long? ChannelOfPost(long p) => c.ExecuteScalar<long?>("SELECT channel_id FROM posts WHERE id=@p AND deleted=0", new { p });
         void Post(EffectKind kind, long id, long pos) { if (ChannelOfPost(id) is { } ch) list.Add(new Effect(ch, kind, id, pos)); }
         void Thread(long root, long pos) { if (root != 0 && ChannelOfThread(root) is { } ch) list.Add(new Effect(ch, EffectKind.ThreadUpdated, root, pos)); }
         foreach (var e in events)
@@ -49,7 +49,11 @@ public static class Effects
                 case "MessageDelivered": case "TurnStarted": case "TurnEnded": Thread(t, e.Position); break;
                 case "ToolCallStarted": case "PermissionRequested":
                     Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
-                case "ToolCallDetailed": case "ToolCallFinished": case "PermissionGranted": case "PermissionDenied":
+                case "MessageDeleted":
+                    list.Add(new Effect(e.Long("channelId"), EffectKind.PostDeleted, e.Long("postId"), e.Position));
+                    if (e.LongOrNull("threadId") is { } inThread) Thread(inThread, e.Position);        // the thread's reply count changed
+                    break;
+                case "ToolCallDetailed": case "ToolCallFinished": case "PermissionGranted": case "PermissionDenied": case "MessageRedacted":
                     Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); break;
                 case "AgentReplied":
                     if (e.Long("segment") == 0) { Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); }
@@ -75,8 +79,10 @@ public sealed class ThreadViews
     private readonly RunnerRegistry _runners;
     public ThreadViews(Db db, RunnerRegistry runners) { _db = db; _runners = runners; }
 
-    public static JsonObject PostPayload(SqliteConnection c, long id, long? at)
+    /// <summary>The post as the app shows it, or null if it is gone (deleted since).</summary>
+    public static JsonObject? PostPayload(SqliteConnection c, long id, long? at)
     {
+        if (Q.Post(c, id) is null) return null;
         var node = JsonSerializer.SerializeToNode(Q.FullPostDto(c, id))!.AsObject();
         node["at"] = at;
         return node;
@@ -96,8 +102,8 @@ public sealed class ThreadViews
             .Select(a => (object)new
             {
                 id = a.Id, handle = a.Handle, displayName = a.DisplayName, online = _runners.IsOnline(a.Id),
-                busy = c.ExecuteScalar<int>("SELECT COUNT(*) FROM deliveries WHERE thread_id=@rootId AND agent_id=@id AND status='sent'", new { rootId, id = a.Id }) > 0,
-                queued = c.ExecuteScalar<int>("SELECT COUNT(*) FROM deliveries WHERE thread_id=@rootId AND agent_id=@id AND status='queued'", new { rootId, id = a.Id }),
+                busy = c.ExecuteScalar<int>("SELECT COUNT(*) FROM open_turns WHERE thread_id=@rootId AND agent_id=@id", new { rootId, id = a.Id }) > 0,
+                queued = c.ExecuteScalar<int>(Deliveries.QueuedIn, new { agentId = a.Id, stream = $"thread-{rootId}" }),
                 harnessCommand = JsonSerializer.Deserialize<string[]>(a.HarnessCommand!), runnerHost = a.RunnerHost, ownerId = a.OwnerId,
             }).ToList();
     }
@@ -134,7 +140,8 @@ public sealed class LivePublisher : BackgroundService
                             if (!ReferenceEquals(lastThread[ef.Id], ef)) continue;
                             if (_views.ThreadUpdated(c, ef.Id, ef.Position) is { } p) sends.Add((ef.ChannelId, "thread-updated", p));
                         }
-                        else sends.Add((ef.ChannelId, ef.Kind == EffectKind.PostCreated ? "post-created" : "post-updated", ThreadViews.PostPayload(c, ef.Id, ef.Position)));
+                        else if (ef.Kind == EffectKind.PostDeleted) sends.Add((ef.ChannelId, "post-deleted", new { id = ef.Id, channelId = ef.ChannelId, at = ef.Position }));
+                        else if (ThreadViews.PostPayload(c, ef.Id, ef.Position) is { } payload) sends.Add((ef.ChannelId, ef.Kind == EffectKind.PostCreated ? "post-created" : "post-updated", payload));
                     }
                 }
                 foreach (var (ch, name, payload) in sends) await _rt.ToChannel(ch, name, payload);

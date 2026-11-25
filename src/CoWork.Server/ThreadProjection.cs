@@ -4,8 +4,8 @@ using System.Text.Json.Nodes;
 namespace CoWork.Server;
 
 /// <summary>
-/// The inline projection of the thread stream: keeps `posts`, `threads`, `thread_agents` and `deliveries` (what the app reads)
-/// in step with the events, in the transaction that appended them. A post's `position` is the last event that changed it.
+/// The inline projection of the thread stream: keeps `posts`, `threads`, `thread_agents`, `open_turns` and a runner's position (what the app
+/// reads) in step with the events, in the transaction that appended them. A post's `position` is the last event that changed it.
 /// </summary>
 public sealed class ThreadProjection : IInlineProjection
 {
@@ -20,35 +20,45 @@ public sealed class ThreadProjection : IInlineProjection
                 var thread = e.LongOrNull("threadId");
                 x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@by,@body,'text',@at,@pos)",
                     new { id = e.Long("postId"), ch = e.Long("channelId"), t = thread, by = e.ActorId, body = e.Str("body"), at = e.OccurredAt, pos = e.Position });
-                if (thread is not null) x.Execute("UPDATE threads SET agent_chain=0 WHERE root_id=@thread", new { thread });      // a person spoke: the agent-to-agent count starts again
+                if (thread is not null) x.Execute("UPDATE threads SET agent_chain=@chain WHERE root_id=@thread", new { thread, chain = e.LongOrNull("agentChain") ?? 0 });      // a person spoke: the agent-to-agent count starts again (an imported thread says where it stood)
                 break;
             }
             case "ThreadStarted":
-                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by) VALUES (@r,@ch,@by)", new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy") });
+                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by, agent_chain) VALUES (@r,@ch,@by,@chain)",
+                    new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy"), chain = e.LongOrNull("agentChain") ?? 0 });      // agentChain: only an imported thread starts with a count
                 break;
             case "AgentJoinedThread":
                 x.Execute("INSERT OR IGNORE INTO thread_agents VALUES (@t,@a)", new { t = ThreadOf(e), a = e.Long("agentId") });
                 break;
             case "MessageDelivered":
-                x.Execute("INSERT INTO deliveries(id, thread_id, agent_id, post_id, text, status, created_at, turn, behalf, cause) VALUES (@id,@t,@a,@post,@text,'queued',@at,@turn,@behalf,@cause)",
-                    new { id = e.Long("deliveryId"), t = ThreadOf(e), a = e.Long("agentId"), post = e.Long("postId"), text = e.Str("text"), at = e.OccurredAt, turn = e.Correlation, behalf = e.OnBehalfOf, cause = e.Position });
+                // queued work is this event itself: it stays queued until a turn starts for it (see Deliveries)
                 if (e.Bool("chained")) x.Execute("UPDATE threads SET agent_chain=agent_chain+1 WHERE root_id=@t", new { t = ThreadOf(e) });
                 break;
             case "TurnStarted":
-                x.Execute("UPDATE deliveries SET status='sent' WHERE id=@id", new { id = e.Long("deliveryId") });
+            {
+                var agent = e.Long("agentId");
+                x.Execute("INSERT OR REPLACE INTO open_turns(thread_id, agent_id, turn, behalf, cause) VALUES (@t,@a,@turn,@behalf,@pos)",
+                    new { t = ThreadOf(e), a = agent, turn = e.Correlation, behalf = e.OnBehalfOf, pos = e.Position });
+                Deliveries.Advance(x, agent, e.Position, pullBackTo: null);
                 break;
+            }
             case "TurnEnded":
-                x.Execute("UPDATE deliveries SET status='done' WHERE thread_id=@t AND agent_id=@a AND status='sent'", new { t = ThreadOf(e), a = e.Long("agentId") });
+                x.Execute("DELETE FROM open_turns WHERE thread_id=@t AND agent_id=@a", new { t = ThreadOf(e), a = e.Long("agentId") });
                 break;
             case "TurnFailed":
                 x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@a,@body,'notice',@at,@pos)",
                     new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), body = e.Str("reason"), at = e.OccurredAt, pos = e.Position });
-                if (e.Bool("ended")) x.Execute("UPDATE deliveries SET status='failed' WHERE thread_id=@t AND agent_id=@a AND status='sent'", new { t = ThreadOf(e), a = e.Long("agentId") });
+                if (e.Bool("ended")) x.Execute("DELETE FROM open_turns WHERE thread_id=@t AND agent_id=@a", new { t = ThreadOf(e), a = e.Long("agentId") });
                 break;
             case "TurnInterrupted":
             {
                 var t = ThreadOf(e); var a = e.Long("agentId");
-                x.Execute("UPDATE deliveries SET status=@s WHERE thread_id=@t AND agent_id=@a AND status='sent'", new { s = e.Bool("requeued") ? "queued" : "failed", t, a });
+                x.Execute("DELETE FROM open_turns WHERE thread_id=@t AND agent_id=@a", new { t, a });
+                if (e.Bool("requeued"))           // the runner couldn't be reached: the message is queued again, so the runner's position goes back before it
+                {
+                    var delivered = e.Causation is { } started ? x.Scalar<long?>("SELECT causation FROM events WHERE position=@started", new { started }) : null;
+                    Deliveries.Advance(x, a, e.Position, pullBackTo: delivered);
+                }
                 if (e.Data.TryGetProperty("finalizedPostIds", out var ids))
                     foreach (var id in ids.EnumerateArray())
                         x.Execute("UPDATE posts SET streaming=0, position=@pos WHERE id=@id", new { id = id.GetInt64(), pos = e.Position });
@@ -98,6 +108,13 @@ public sealed class ThreadProjection : IInlineProjection
                     new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), title = e.Str("title"), meta = meta.ToJsonString(), at = e.OccurredAt, pos = e.Position });
                 break;
             }
+            case "MessageDeleted":
+                x.Execute("UPDATE posts SET deleted=1, position=@pos WHERE id=@id", new { pos = e.Position, id = e.Long("postId") });
+                break;
+            case "MessageRedacted":
+                x.Execute("UPDATE posts SET body=@r, position=@pos WHERE id=@id", new { r = Redaction.Text, pos = e.Position, id = e.Long("postId") });
+                Redaction.RewriteEvents(x, e.Long("postId"));
+                break;
             case "PermissionGranted":
                 Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "answered"; m["answer"] = e.Str("optionId"); });
                 break;

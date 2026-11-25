@@ -42,14 +42,6 @@ public static partial class Api
         return null;
     }
 
-    static long CreatePerson(Microsoft.Data.Sqlite.SqliteConnection c, IPasswordHasher<MemberRow> hasher, string username, string displayName, string password, string role)
-    {
-        var id = c.ExecuteScalar<long>("INSERT INTO members(kind, handle, display_name, created_at) VALUES ('person', @h, @n, @now); SELECT last_insert_rowid();",
-            new { h = username, n = displayName.Trim(), now = Db.Now() });
-        c.Execute("INSERT INTO people VALUES (@id, @ph, @role)", new { id, ph = hasher.HashPassword(new MemberRow(), password), role });
-        return id;
-    }
-
     public static void Map(WebApplication app)
     {
         var api = app.MapGroup("/api");
@@ -64,21 +56,31 @@ public static partial class Api
             return Results.Ok(new { needsSetup = needs, serverName = name });
         });
 
-        api.MapPost("/setup", async (SetupBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher, Realtime rt) =>
+        api.MapPost("/setup", async (SetupBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher, IEventStore store) =>
         {
-            long id;
             using (var c = db.Open())
             {
                 if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM people") > 0) return Err(409, "This server is already set up.");
                 if (string.IsNullOrWhiteSpace(b.ServerName) || b.ServerName.Length > 60) return Err(400, "Name the server (up to 60 characters).");
                 var bad = ValidateAccount(b.Username, b.DisplayName, b.Password);
                 if (bad is not null) return Err(400, bad);
-                using var tx = c.BeginTransaction();
-                c.Execute("INSERT INTO settings VALUES ('server_name', @n)", new { n = b.ServerName.Trim() }, tx);
-                id = CreatePerson(c, hasher, b.Username, b.DisplayName, b.Password, "admin");
-                var ch = c.ExecuteScalar<long>("INSERT INTO channels(name, topic, is_private, creator_id, created_at) VALUES ('general', 'Everything that doesn''t have a channel yet', 0, @id, @now); SELECT last_insert_rowid();", new { id, now = Db.Now() }, tx);
-                tx.Commit();
             }
+            var hash = hasher.HashPassword(new MemberRow(), b.Password);
+            long id = 0; var already = false;
+            store.Append(d =>
+            {
+                already = d.Scalar<int>("SELECT COUNT(*) FROM people") > 0;            // two setups at once: the second one loses
+                if (already) return Array.Empty<NewEvent>();
+                id = d.NextId("members"); var general = d.NextId("channels");
+                d.Execute("INSERT OR REPLACE INTO credentials VALUES (@id,@hash)", new { id, hash });
+                return new[]
+                {
+                    new NewEvent("server", "ServerSetUp", new { serverName = b.ServerName.Trim() }, id),
+                    new NewEvent("server", "PersonJoined", new { memberId = id, handle = b.Username, displayName = b.DisplayName.Trim(), role = "admin" }, id, CausedByIndex: 0),
+                    new NewEvent($"channel-{general}", "ChannelCreated", new { channelId = general, name = "general", topic = "Everything that doesn't have a channel yet", isPrivate = false, kind = "text", creatorId = id }, id, CausedByIndex: 0),
+                };
+            });
+            if (already) return Err(409, "This server is already set up.");
             await SignIn(ctx, id);
             return Results.Ok(new { ok = true });
         });
@@ -87,7 +89,7 @@ public static partial class Api
         {
             using var c = db.Open();
             var row = c.QueryFirstOrDefault<(long Id, string Hash)?>(
-                "SELECT m.id, p.password_hash FROM members m JOIN people p ON p.member_id=m.id WHERE m.handle=@u AND m.removed=0", new { u = (b.Username ?? "").Trim() });
+                "SELECT m.id, cr.password_hash FROM members m JOIN people p ON p.member_id=m.id JOIN credentials cr ON cr.member_id=m.id WHERE m.handle=@u AND m.removed=0", new { u = (b.Username ?? "").Trim() });
             if (row is null) { hasher.HashPassword(new MemberRow(), "x"); return Err(401, "Wrong username or password."); }
             var res = hasher.VerifyHashedPassword(new MemberRow(), row.Value.Hash, b.Password ?? "");
             if (res == PasswordVerificationResult.Failed) return Err(401, "Wrong username or password.");
@@ -107,21 +109,34 @@ public static partial class Api
             return Results.Ok(new { valid = reason is null, reason, serverName = name, invitedBy = by });
         });
 
-        api.MapPost("/invites/{code}/accept", async (string code, SignupBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher, Realtime rt) =>
+        api.MapPost("/invites/{code}/accept", async (string code, SignupBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher, Realtime rt, IEventStore store) =>
         {
-            long id;
             using (var c = db.Open())
             {
-                var (inv, reason) = CheckInvite(c, code);
+                var (_, reason) = CheckInvite(c, code);
                 if (reason is not null) return Err(410, reason);
                 var bad = ValidateAccount(b.Username, b.DisplayName, b.Password);
                 if (bad is not null) return Err(400, bad);
                 if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM members WHERE handle=@u", new { u = b.Username }) > 0) return Err(409, "That username is taken.");
-                using var tx = c.BeginTransaction();
-                id = CreatePerson(c, hasher, b.Username, b.DisplayName, b.Password, "member");
-                c.Execute("UPDATE invites SET uses=uses+1 WHERE code=@code", new { code }, tx);
-                tx.Commit();
             }
+            var hash = hasher.HashPassword(new MemberRow(), b.Password);
+            long id = 0; string? refused = null; var status = 0;
+            store.Append(d =>
+            {
+                refused = null;
+                var inv = d.Query<InviteRow>(InviteSql, new { code }).FirstOrDefault();       // again, inside the write: two people may be using the last place
+                var (_, reason) = CheckInvite(inv);
+                if (reason is not null) { refused = reason; status = 410; return Array.Empty<NewEvent>(); }
+                if (d.Scalar<int>("SELECT COUNT(*) FROM members WHERE handle=@u", new { u = b.Username }) > 0) { refused = "That username is taken."; status = 409; return Array.Empty<NewEvent>(); }
+                id = d.NextId("members");
+                d.Execute("INSERT OR REPLACE INTO credentials VALUES (@id,@hash)", new { id, hash });
+                return new[]
+                {
+                    new NewEvent("server", "PersonJoined", new { memberId = id, handle = b.Username, displayName = b.DisplayName.Trim(), role = "member", inviteId = inv!.Id }, id),
+                    new NewEvent("server", "InviteUsed", new { inviteId = inv.Id, memberId = id }, id, CausedByIndex: 0),
+                };
+            });
+            if (refused is not null) return Err(status, refused);
             await SignIn(ctx, id);
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(new { ok = true });
@@ -152,26 +167,33 @@ public static partial class Api
         {
             using var c = db.Open();
             if (!Access.IsAdmin(c, Me(ctx))) return Err(403, "Only admins can do that.");
-            var rows = c.Query("SELECT i.*, m.display_name AS by_name FROM invites i JOIN members m ON m.id=i.created_by WHERE i.revoked=0 AND i.expires_at>@now ORDER BY i.created_at DESC", new { now = Db.Now() })
+            var rows = c.Query(@"SELECT ic.code, i.created_by, i.created_at, i.expires_at, i.max_uses, i.uses, m.display_name AS by_name
+                    FROM invites i JOIN invite_codes ic ON ic.invite_id=i.id JOIN members m ON m.id=i.created_by
+                    WHERE i.revoked=0 AND i.expires_at>@now ORDER BY i.created_at DESC, i.id DESC", new { now = Db.Now() })
                 .Select(r => new { code = (string)r.code, createdBy = (long)r.created_by, byName = (string)r.by_name, createdAt = (long)r.created_at, expiresAt = (long)r.expires_at, maxUses = (long)r.max_uses, uses = (long)r.uses });
             return Results.Ok(rows);
         });
-        authed.MapPost("/invites", (InviteBody b, HttpContext ctx, Db db) =>
+        authed.MapPost("/invites", (InviteBody b, HttpContext ctx, Db db, IEventStore store) =>
+        {
+            using (var c = db.Open()) if (!Access.IsAdmin(c, Me(ctx))) return Err(403, "Only admins can do that.");
+            var me = Me(ctx);
+            var code = Tokens.NewInviteCode();
+            var days = Math.Clamp(b.ExpiresInDays ?? 7, 1, 90); var uses = Math.Clamp(b.MaxUses ?? 10, 1, 1000);
+            store.Append(d =>
+            {
+                var id = d.NextId("invites");
+                d.Execute("INSERT OR REPLACE INTO invite_codes(invite_id, code) VALUES (@id,@code)", new { id, code });       // the code is a secret: it stays out of the event
+                return new[] { new NewEvent("server", "InviteCreated", new { inviteId = id, createdBy = me, expiresAt = DateTimeOffset.UtcNow.AddDays(days).ToUnixTimeMilliseconds(), maxUses = uses }, me) };
+            });
+            return Results.Ok(new { code });
+        });
+        authed.MapDelete("/invites/{code}", (string code, HttpContext ctx, Db db, IEventStore store) =>
         {
             using var c = db.Open();
             var me = Me(ctx);
             if (!Access.IsAdmin(c, me)) return Err(403, "Only admins can do that.");
-            var code = Tokens.NewInviteCode();
-            var days = Math.Clamp(b.ExpiresInDays ?? 7, 1, 90); var uses = Math.Clamp(b.MaxUses ?? 10, 1, 1000);
-            c.Execute("INSERT INTO invites(code, created_by, created_at, expires_at, max_uses) VALUES (@code,@me,@now,@exp,@uses)",
-                new { code, me, now = Db.Now(), exp = DateTimeOffset.UtcNow.AddDays(days).ToUnixTimeMilliseconds(), uses });
-            return Results.Ok(new { code });
-        });
-        authed.MapDelete("/invites/{code}", (string code, HttpContext ctx, Db db) =>
-        {
-            using var c = db.Open();
-            if (!Access.IsAdmin(c, Me(ctx))) return Err(403, "Only admins can do that.");
-            c.Execute("UPDATE invites SET revoked=1 WHERE code=@code", new { code });
+            if (c.ExecuteScalar<long?>("SELECT invite_id FROM invite_codes WHERE code=@code", new { code }) is { } inviteId)
+                store.Append(new[] { new NewEvent("server", "InviteRevoked", new { inviteId }, me) });
             return Results.Ok(new { ok = true });
         });
 
@@ -181,9 +203,12 @@ public static partial class Api
         MapAgents(api, authed);
     }
 
-    static (InviteRow? inv, string? reason) CheckInvite(Microsoft.Data.Sqlite.SqliteConnection c, string code)
+    const string InviteSql = "SELECT i.id, ic.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.revoked FROM invite_codes ic JOIN invites i ON i.id=ic.invite_id WHERE ic.code=@code";
+
+    static (InviteRow? inv, string? reason) CheckInvite(Microsoft.Data.Sqlite.SqliteConnection c, string code) => CheckInvite(c.QueryFirstOrDefault<InviteRow>(InviteSql, new { code }));
+
+    static (InviteRow? inv, string? reason) CheckInvite(InviteRow? inv)
     {
-        var inv = c.QueryFirstOrDefault<InviteRow>("SELECT code, created_by, expires_at, max_uses, uses, revoked FROM invites WHERE code=@code", new { code });
         if (inv is null) return (null, "That invite link doesn't exist.");
         if (inv.Revoked) return (inv, "That invite link was revoked.");
         if (inv.ExpiresAt < Db.Now()) return (inv, "That invite link has expired.");
@@ -194,6 +219,7 @@ public static partial class Api
 
 public class InviteRow
 {
+    public long Id { get; set; }
     public string Code { get; set; } = "";
     public long CreatedBy { get; set; }
     public long ExpiresAt { get; set; }

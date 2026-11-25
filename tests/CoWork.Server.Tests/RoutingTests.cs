@@ -22,10 +22,10 @@ public class EnrolmentTests
         Assert.Equal("reviewer", enrol.Handle);
         Assert.Equal(HttpStatusCode.BadRequest, (await anon.PostAsJsonAsync("/api/runner/enrol", new EnrolRequest(code, "box"))).StatusCode);
         using var c = app.Sql();
-        var stored = c.ExecuteScalar<string>("SELECT token_hash FROM agents");
+        var stored = c.ExecuteScalar<string>("SELECT token_hash FROM runner_secrets");
         Assert.NotEqual(enrol.Token, stored);
         Assert.Equal(Tokens.Hash(enrol.Token), stored);
-        Assert.Null(c.ExecuteScalar<string?>("SELECT code_hash FROM agents"));
+        Assert.Null(c.ExecuteScalar<string?>("SELECT code_hash FROM runner_secrets"));
     }
 
     [Fact]

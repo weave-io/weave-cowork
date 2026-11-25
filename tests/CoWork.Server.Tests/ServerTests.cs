@@ -29,7 +29,7 @@ public class AuthAndMembershipTests
         Assert.Equal(HttpStatusCode.Unauthorized, r.StatusCode);
         Assert.Contains("Wrong username or password", await r.Content.ReadAsStringAsync());
         using var c = app.Sql();
-        Assert.DoesNotContain("correct horse", c.ExecuteScalar<string>("SELECT password_hash FROM people LIMIT 1"));
+        Assert.DoesNotContain("correct horse", c.ExecuteScalar<string>("SELECT password_hash FROM credentials LIMIT 1"));
     }
 
     [Fact]
@@ -102,12 +102,12 @@ public class InviteTests
         Assert.Equal(HttpStatusCode.Gone, r.StatusCode); Assert.Contains("revoked", await r.Content.ReadAsStringAsync());
 
         var expired = await app.Invite(alex);
-        using (var c = app.Sql()) c.Execute("UPDATE invites SET expires_at=1 WHERE code=@expired", new { expired });
+        using (var c = app.Sql()) c.Execute("UPDATE invites SET expires_at=1 WHERE id=(SELECT invite_id FROM invite_codes WHERE code=@expired)", new { expired });
         r = await Accept(app, expired, "a2");
         Assert.Equal(HttpStatusCode.Gone, r.StatusCode); Assert.Contains("expired", await r.Content.ReadAsStringAsync());
 
         var once = await app.Invite(alex);
-        using (var c = app.Sql()) c.Execute("UPDATE invites SET max_uses=1 WHERE code=@once", new { once });
+        using (var c = app.Sql()) c.Execute("UPDATE invites SET max_uses=1 WHERE id=(SELECT invite_id FROM invite_codes WHERE code=@once)", new { once });
         Assert.Equal(HttpStatusCode.OK, (await Accept(app, once, "a3")).StatusCode);
         r = await Accept(app, once, "a4");
         Assert.Equal(HttpStatusCode.Gone, r.StatusCode); Assert.Contains("used up", await r.Content.ReadAsStringAsync());

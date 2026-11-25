@@ -14,4 +14,5 @@
     <ProjectReference Include="..\..\src\CoWork.Server\CoWork.Server.csproj" />
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup><None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

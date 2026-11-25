@@ -46,11 +46,41 @@ public static partial class Api
             return Results.Ok(new { root = Q.FullPostDto(c, rootId), replies, agents = d.ThreadAgentStatus(rootId), startedBy });
         });
 
+        // delete a message: the projections hide it, the events keep the fact. The author may, an admin may, an agent's owner may for its posts.
+        authed.MapDelete("/posts/{id:long}", (long id, HttpContext ctx, Db db, IEventStore store) =>
+        {
+            var (post, error) = Editable(db, id, Me(ctx));
+            if (post is null) return error!;
+            store.Append(new[] { new NewEvent(Q.StreamOf(post), "MessageDeleted", new { postId = id, channelId = post.ChannelId, threadId = post.ThreadId }, Me(ctx)) });
+            return Results.Ok(new { ok = true });
+        });
+
+        // redact a message: its words are replaced, in the projections and in the events that hold them; the fact that it was said stays
+        authed.MapPost("/posts/{id:long}/redact", (long id, HttpContext ctx, Db db, IEventStore store) =>
+        {
+            var (post, error) = Editable(db, id, Me(ctx));
+            if (post is null) return error!;
+            store.Append(new[] { new NewEvent(Q.StreamOf(post), "MessageRedacted", new { postId = id, channelId = post.ChannelId, threadId = post.ThreadId }, Me(ctx)) });
+            return Results.Ok(new { ok = true });
+        });
+
         // an agent's permission card: only its owner may answer
         authed.MapPost("/posts/{id:long}/answer", async (long id, AnswerBody b, HttpContext ctx, Dispatcher d) =>
         {
             var (ok, error) = await d.Answer(id, Me(ctx), b.OptionId);
             return ok ? Results.Ok(new { ok = true }) : Err(error == "forbidden" ? 403 : 400, error == "forbidden" ? "Only the agent's owner can answer this." : error!);
         });
+    }
+
+    /// <summary>The text post a caller may delete or redact (they can see its channel, and wrote it, own the agent that wrote it, or are an admin), or the error to send.</summary>
+    static (PostRow? Post, IResult? Error) Editable(Db db, long id, long me)
+    {
+        using var c = db.Open();
+        var p = Q.Post(c, id);
+        if (p is null || !Access.CanSee(c, p.ChannelId, me)) return (null, Err(404, "No such message."));
+        if (p.Kind != "text") return (null, Err(400, "Only messages can be deleted."));
+        var owner = c.ExecuteScalar<long?>("SELECT owner_id FROM agents WHERE member_id=@a", new { a = p.AuthorId });
+        if (p.AuthorId != me && owner != me && !Access.IsAdmin(c, me)) return (null, Err(403, "Only the author or an admin can do that."));
+        return (p, null);
     }
 }

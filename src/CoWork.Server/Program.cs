@@ -17,6 +17,7 @@ builder.Services.AddSingleton(db);
 builder.Services.AddSingleton<Realtime>();
 builder.Services.AddSingleton<VoicePresence>();
 builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
+builder.Services.AddSingleton<IInlineProjection, DirectoryProjection>();        // projections run in this order, inside the transaction that appended the event
 builder.Services.AddSingleton<IInlineProjection, ThreadProjection>();
 builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
 builder.Services.AddSingleton<LiveQueue>();
@@ -55,6 +56,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 
 var app = builder.Build();
 
+// a server that kept its state in tables (before the events) is written down as events once, and checked, before anything else reads it
+LegacyImporter.Run(db, app.Services.GetRequiredService<IEventStore>(), m => app.Logger.LogInformation("{Message}", m));
+
 // a turn that started and never ended was cut off by a crash or a restart: the thread says so
 app.Services.GetRequiredService<Dispatcher>().RecoverInterruptedTurns();
 
@@ -69,7 +73,7 @@ app.Use(async (ctx, next) =>
         if (!string.IsNullOrEmpty(token))
         {
             using var c = ctx.RequestServices.GetRequiredService<Db>().Open();
-            agentId = c.QueryFirstOrDefault<long?>("SELECT a.member_id FROM agents a JOIN members m ON m.id=a.member_id WHERE a.token_hash=@h AND m.removed=0", new { h = Tokens.Hash(token) });
+            agentId = c.QueryFirstOrDefault<long?>("SELECT rs.agent_id FROM runner_secrets rs JOIN members m ON m.id=rs.agent_id WHERE rs.token_hash=@h AND m.removed=0", new { h = Tokens.Hash(token) });
         }
         if (agentId is null) { ctx.Response.StatusCode = 401; return; }
         ctx.Items["agentId"] = agentId.Value;

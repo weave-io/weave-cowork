@@ -3,7 +3,7 @@
 import { launch, person, BASE, SHOTS, expect, ok } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
-import { readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 
 const HOME = homedir()
 const DB = process.env.DB ?? `${HOME}/.cache/cowork-scratch/p2/cowork.db`
@@ -14,6 +14,9 @@ const WORKSPACE = process.env.WORKSPACE ?? REPO
 const HARNESS = process.env.HARNESS ?? `${HOME}/.weave/harnesses/opencode2/.opencode/bin/opencode acp`
 const ENV = { ...process.env, HOME: `${OC}/home`, XDG_CONFIG_HOME: `${OC}/config`, XDG_DATA_HOME: `${OC}/data`, XDG_STATE_HOME: `${OC}/state`, XDG_CACHE_HOME: `${OC}/cache` }
 mkdirSync(`${OC}/home`, { recursive: true })
+// the runner's saved sessions outlive the scratch database: a stale one (a thread 6 of an earlier run, in which the model refused the shell command) would be reloaded by thread 6 of this run
+mkdirSync(`${OC}/config/cowork-runner`, { recursive: true })
+for (const f of readdirSync(`${OC}/config/cowork-runner`)) if (/^sessions-.*\.json$/.test(f)) rmSync(`${OC}/config/cowork-runner/${f}`)
 const LONG = 150000
 const sql = (q) => execFileSync('python3', ['-I', '-c', 'import sqlite3,sys,json;c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute(sys.argv[2]).fetchall()))', DB, q]).toString()
 
@@ -70,7 +73,7 @@ try {
   await r.waitForSelector('[data-agent=reviewer]:has-text("online")')
   ok('Rosa sees reviewer online too')
   const cfg = readFileSync(`${OC}/config/cowork-runner/agents.json`, 'utf8')
-  expect(cfg.includes('"token"') && !sql('select token_hash from agents').includes(JSON.parse(cfg)[0].token), 'runner saved its token; the server stores only a hash')
+  expect(cfg.includes('"token"') && !sql('select token_hash from runner_secrets').includes(JSON.parse(cfg)[0].token), 'runner saved its token; the server stores only a hash')
 
   // --- 8. the agent takes part ---
   await a.click('[data-channel=checkout-app]')
@@ -95,13 +98,13 @@ try {
   await r.waitForSelector('[data-testid=thread-panel] [data-post]:has-text("reviewer")')
   ok('Rosa opens the same thread and sees the answer')
   await r.fill('[data-testid=thread-panel] [data-testid=composer]', '@reviewer and what tests does it have?'); await r.keyboard.press('Enter')
-  for (let i = 0; i < 300 && !/^\[\["done"\],\["done"\]\]$/.test(sql("select status from deliveries order by id")); i++) await new Promise(res => setTimeout(res, 500))
+  for (let i = 0; i < 300 && sql("select count(*) from events where type='TurnEnded'") !== '[[2]]\n'; i++) await new Promise(res => setTimeout(res, 500))
   await r.waitForFunction(() => /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? ''), null, { timeout: LONG })
   const second = await r.evaluate(() => [...document.querySelectorAll('[data-testid=thread-panel] [data-post]')].at(-1).textContent)
   console.log('  second answer: ' + second.slice(0, 400))
-  const deliveries = JSON.parse(sql("select text, status from deliveries order by id"))
+  const deliveries = JSON.parse(sql("select json_extract(data,'$.text'), (select count(*) from events e where e.type='TurnEnded' and e.correlation=d.correlation) from events d where d.type='MessageDelivered' order by position"))
   expect(deliveries.length === 2 && deliveries[1][0].includes('from="@rosa"') && deliveries[1][0].includes('name="Rosa"') && deliveries[1][0].includes('owner="false"'), 'the second message reached the agent wrapped with its author: ' + deliveries[1][0].slice(0, 120))
-  expect(deliveries.every(d => d[1] === 'done'), 'both deliveries are done')
+  expect(deliveries.every(d => d[1] === 1) && sql('select count(*) from open_turns') === '[[0]]\n', 'both deliveries are done')
   await shot(r, 'rosa-reply')
 
   // permission: only the owner gets buttons. The scratch OpenCode config asks for every shell command ("bash": "ask"), and the
@@ -168,7 +171,7 @@ try {
   await a.waitForSelector('[data-testid=agents-list] [data-agent=reviewer]', { state: 'detached' })
   ok('Alex removes reviewer entirely')
   await new Promise(res => setTimeout(res, 3000))
-  const tokenRows = sql("select token_hash from agents")
+  const tokenRows = sql("select token_hash from runner_secrets")
   expect(tokenRows.includes('null'), 'the runner token is cut off on the server (hash cleared)')
   await new Promise(res => setTimeout(res, 2000))
   console.log('  runner log tail: ' + runner.log.split('\n').slice(-4).join(' | '))

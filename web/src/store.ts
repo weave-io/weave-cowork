@@ -131,7 +131,7 @@ function startHub() {
   // never gives up: a laptop that sleeps for an hour should come back to a live page
   hub = new signalR.HubConnectionBuilder().withUrl('/hubs/app')
     .withAutomaticReconnect({ nextRetryDelayInMilliseconds: c => [0, 1000, 3000, 5000][c.previousRetryCount] ?? 10000 }).build()
-  for (const evt of ['post-created', 'post-updated', 'post-delta', 'thread-updated'])
+  for (const evt of ['post-created', 'post-updated', 'post-deleted', 'post-delta', 'thread-updated'])
     hub.on(evt, (p: any) => applyLive(evt, p))
   hub.on('voice-presence', (p: { channelId: number; memberIds: number[] }) => { store.voicePresence = { ...store.voicePresence, [p.channelId]: p.memberIds } })
   hub.on('bootstrap-changed', () => {

@@ -18,7 +18,7 @@ public sealed record StoredEvent(
 /// <summary>An event about to be written. Causation is a position, or the index of an earlier event in the same batch.</summary>
 public sealed record NewEvent(
     string StreamId, string Type, object Data, long? ActorId = null, long? OnBehalfOf = null,
-    string? Correlation = null, long? Causation = null, int? CausedByIndex = null, int? ExpectedVersion = null);
+    string? Correlation = null, long? Causation = null, int? CausedByIndex = null, int? ExpectedVersion = null, long? OccurredAt = null);
 
 public sealed class ConcurrencyException(string stream, int expected, int actual)
     : Exception($"Stream {stream} is at version {actual}, not {expected}.");
@@ -26,10 +26,13 @@ public sealed class ConcurrencyException(string stream, int expected, int actual
 /// <summary>What a decider sees while it chooses the events to write: the state as of this transaction, and new ids.</summary>
 public interface IDecisionContext
 {
-    /// <summary>The next id of an id-allocating table ("posts", "deliveries"). Calls in one decision return 1, 2, 3 … in turn.</summary>
+    /// <summary>The next id of an id-allocating table ("posts", "members", "channels" …: tables with an AUTOINCREMENT id). Calls in one decision return 1, 2, 3 … in turn.</summary>
     long NextId(string table);
     T? Scalar<T>(string sql, object? args = null);
     IReadOnlyList<T> Query<T>(string sql, object? args = null);
+    /// <summary>Writes to a table that isn't a projection (a secret: hashes stay out of the log), in the same transaction as the events.
+    /// A decision may run again after a version conflict, so what it writes has to be repeatable.</summary>
+    int Execute(string sql, object? args = null);
 }
 
 /// <summary>The event store. SQLite is behind it; the same table works on Postgres.</summary>
@@ -42,6 +45,11 @@ public interface IEventStore
     IReadOnlyList<StoredEvent> ReadStream(string streamId, int afterVersion = 0);
     IReadOnlyList<StoredEvent> ReadAll(long afterPosition, int limit = 1000);
     long Head();
+    /// <summary>Empties every projection table and replays all events through the inline projections, in one transaction.</summary>
+    void RebuildProjections();
+    /// <summary>The importer's write: one transaction that runs <paramref name="before"/> (it may empty the projections), appends the events
+    /// with their own times through the projections WITHOUT telling subscribers, and runs <paramref name="verify"/> (it throws to undo it all).</summary>
+    IReadOnlyList<StoredEvent> Import(Action<ProjectionContext> before, IReadOnlyList<NewEvent> events, Action<ProjectionContext> verify);
     /// <summary>Called after each commit, in position order, with the events that commit wrote.</summary>
     IDisposable Subscribe(Action<IReadOnlyList<StoredEvent>> onAppended);
 }
@@ -84,43 +92,90 @@ public sealed class SqliteEventStore : IEventStore
     {
         lock (_write)
         {
-            var stored = new List<StoredEvent>();
-            using (var c = _db.Open())
-            {
-                c.Execute("BEGIN IMMEDIATE");
-                try
-                {
-                    var ctx = new Decision(c);
-                    var batch = decide(ctx);
-                    var pc = new ProjectionContext(c, null!);
-                    var versions = new Dictionary<string, int>();
-                    foreach (var (n, i) in batch.Select((n, i) => (n, i)))
-                    {
-                        if (!versions.TryGetValue(n.StreamId, out var v))
-                            v = c.ExecuteScalar<int>("SELECT COALESCE(MAX(version), 0) FROM events WHERE stream_id=@s", new { s = n.StreamId });
-                        if (n.ExpectedVersion is { } exp && exp != v) throw new ConcurrencyException(n.StreamId, exp, v);
-                        versions[n.StreamId] = ++v;
-                        var cause = n.CausedByIndex is { } ci ? stored[ci].Position : n.Causation;
-                        var now = Db.Now();
-                        var json = JsonSerializer.Serialize(n.Data, Json);
-                        var pos = c.ExecuteScalar<long>(@"INSERT INTO events(stream_id, version, type, schema, data, actor_id, on_behalf_of, correlation, causation, occurred_at)
-                            VALUES (@s,@v,@t,1,@d,@a,@b,@corr,@cause,@now); SELECT last_insert_rowid();",
-                            new { s = n.StreamId, v, t = n.Type, d = json, a = n.ActorId, b = n.OnBehalfOf, corr = n.Correlation, cause, now });
-                        var e = new StoredEvent(pos, n.StreamId, v, n.Type, 1, JsonDocument.Parse(json).RootElement.Clone(), n.ActorId, n.OnBehalfOf, n.Correlation, cause, now);
-                        stored.Add(e);
-                        foreach (var p in _projections) p.Apply(pc, e);
-                    }
-                    c.Execute("COMMIT");
-                }
-                catch { try { c.Execute("ROLLBACK"); } catch { /* already rolled back */ } throw; }
-            }
-            if (stored.Count > 0)
-            {
-                Action<IReadOnlyList<StoredEvent>>[] subs;
-                lock (_subs) subs = _subs.ToArray();
-                foreach (var s in subs) try { s(stored); } catch { /* a subscriber's failure must not undo a commit */ }
-            }
+            IReadOnlyList<StoredEvent> stored;
+            using (var c = _db.Open()) stored = InTransaction(c, () => AppendCore(c, decide));
+            Notify(stored);
             return stored;
+        }
+    }
+
+    private void Notify(IReadOnlyList<StoredEvent> stored)
+    {
+        if (stored.Count == 0) return;
+        Action<IReadOnlyList<StoredEvent>>[] subs;
+        lock (_subs) subs = _subs.ToArray();
+        foreach (var s in subs) try { s(stored); } catch { /* a subscriber's failure must not undo a commit */ }
+    }
+
+    private static T InTransaction<T>(SqliteConnection c, Func<T> body)
+    {
+        c.Execute("BEGIN IMMEDIATE");
+        try { var r = body(); c.Execute("COMMIT"); return r; }
+        catch { try { c.Execute("ROLLBACK"); } catch { /* already rolled back */ } throw; }
+    }
+
+    /// <summary>Chooses the events, writes them with the next versions and runs the inline projections on each. Call inside a transaction.</summary>
+    private IReadOnlyList<StoredEvent> AppendCore(SqliteConnection c, Func<IDecisionContext, IReadOnlyList<NewEvent>> decide, IReadOnlyList<NewEvent>? given = null)
+    {
+        var stored = new List<StoredEvent>();
+        var batch = given ?? decide(new Decision(c));
+        var pc = new ProjectionContext(c, null!);
+        var versions = new Dictionary<string, int>();
+        foreach (var (n, i) in batch.Select((n, i) => (n, i)))
+        {
+            if (!versions.TryGetValue(n.StreamId, out var v))
+                v = c.ExecuteScalar<int>("SELECT COALESCE(MAX(version), 0) FROM events WHERE stream_id=@s", new { s = n.StreamId });
+            if (n.ExpectedVersion is { } exp && exp != v) throw new ConcurrencyException(n.StreamId, exp, v);
+            versions[n.StreamId] = ++v;
+            var cause = n.CausedByIndex is { } ci ? stored[ci].Position : n.Causation;
+            var now = n.OccurredAt ?? Db.Now();
+            var json = JsonSerializer.Serialize(n.Data, Json);
+            var schema = Upcasting.CurrentSchema(n.Type);
+            var pos = c.ExecuteScalar<long>(@"INSERT INTO events(stream_id, version, type, schema, data, actor_id, on_behalf_of, correlation, causation, occurred_at)
+                VALUES (@s,@v,@t,@schema,@d,@a,@b,@corr,@cause,@now); SELECT last_insert_rowid();",
+                new { s = n.StreamId, v, t = n.Type, schema, d = json, a = n.ActorId, b = n.OnBehalfOf, corr = n.Correlation, cause, now });
+            var e = new StoredEvent(pos, n.StreamId, v, n.Type, schema, JsonDocument.Parse(json).RootElement.Clone(), n.ActorId, n.OnBehalfOf, n.Correlation, cause, now);
+            stored.Add(e);
+            foreach (var p in _projections) p.Apply(pc, e);
+        }
+        return stored;
+    }
+
+    public IReadOnlyList<StoredEvent> Import(Action<ProjectionContext> before, IReadOnlyList<NewEvent> events, Action<ProjectionContext> verify)
+    {
+        lock (_write)
+        {
+            using var c = _db.Open();
+            return InTransaction(c, () =>
+            {
+                var pc = new ProjectionContext(c, null!);
+                before(pc);
+                var stored = AppendCore(c, _ => events, events);
+                verify(pc);
+                return stored;
+            });
+        }
+    }
+
+    public void RebuildProjections()
+    {
+        lock (_write)
+        {
+            using var c = _db.Open();
+            InTransaction(c, () =>
+            {
+                var pc = new ProjectionContext(c, null!);
+                Projections.Clear(pc);
+                long after = 0;
+                while (true)
+                {
+                    var rows = c.Query<Row>(Select + " WHERE position>@after ORDER BY position LIMIT 1000", new { after }).Select(ToEvent).ToList();
+                    if (rows.Count == 0) break;
+                    foreach (var e in rows) foreach (var p in _projections) p.Apply(pc, e);
+                    after = rows[^1].Position;
+                }
+                return 0;
+            });
         }
     }
 
@@ -157,7 +212,12 @@ public sealed class SqliteEventStore : IEventStore
         public int Schema { get; set; } public string Data { get; set; } = "{}"; public long? ActorId { get; set; } public long? OnBehalfOf { get; set; }
         public string? Correlation { get; set; } public long? Causation { get; set; } public long OccurredAt { get; set; }
     }
-    private static StoredEvent ToEvent(Row r) => new(r.Position, r.StreamId, r.Version, r.Type, r.Schema, JsonDocument.Parse(r.Data).RootElement.Clone(), r.ActorId, r.OnBehalfOf, r.Correlation, r.Causation, r.OccurredAt);
+    /// <summary>Every read goes through here: an event written with an older shape is converted to the current one (see <see cref="Upcasting"/>).</summary>
+    private static StoredEvent ToEvent(Row r)
+    {
+        var (schema, data) = Upcasting.ToCurrent(r.Type, r.Schema, JsonDocument.Parse(r.Data).RootElement.Clone());
+        return new(r.Position, r.StreamId, r.Version, r.Type, schema, data, r.ActorId, r.OnBehalfOf, r.Correlation, r.Causation, r.OccurredAt);
+    }
 
     private sealed class Decision(SqliteConnection c) : IDecisionContext
     {
@@ -171,5 +231,6 @@ public sealed class SqliteEventStore : IEventStore
         }
         public T? Scalar<T>(string sql, object? args = null) => c.ExecuteScalar<T>(sql, args);
         public IReadOnlyList<T> Query<T>(string sql, object? args = null) => c.Query<T>(sql, args).ToList();
+        public int Execute(string sql, object? args = null) => c.Execute(sql, args);
     }
 }
