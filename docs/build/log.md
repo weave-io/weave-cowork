@@ -343,3 +343,134 @@ AGPL-3.0-only for everything except `src/CoWork.Runner` and `src/CoWork.Contract
 - Worktrees are never removed (the runner logs where they are); clones aren't pruned.
 - The agent profile doesn't show its boundaries yet (`AgentBoundary` is ready for it); projects can't be deleted; a channel can be moved by the API only (no button); people's roles change by API (no "make lead" button).
 - `--sandbox`, project rules as settings, sources, budget, board, library and guests: later briefs. Claude Code and other harnesses keep one data folder (their sign-in is under `HOME`).
+
+## Brief 7, round 1: a sandbox per thread
+
+**Demo:** `tests/live/phase9.mjs` (37 checks; browsers for Alex, Rosa and Sam, a real pool on this machine, real containers from
+`cowork-sandbox-opencode:2.4.1`, real OpenCode 2.4.1 talking to the server's gateway, which forwards to this machine's GitHub Copilot
+sign-in with `claude-haiku-4.5`). Alex opens **Where agents run → Add a pool**, runs the command it shows (`cowork-runner pool connect … --slots
+2 --memory 1500M`), and **pool-01** shows online with 2 slots. He sets **Server settings → Models** to GitHub Copilot and the idle time to 25
+s, makes the **researcher** team template (Runs on: a pool) and enables it in Checkout app (a repository). Rosa and Sam ask researcher at the
+same moment: two containers run side by side; Alex's third thread says "Waiting for room on pool-01 (2 of 2 busy), 1st in line". Rosa's
+thread shows the starting rows (pool-01 has room, started a sandbox from the image with 1500 MB, made a copy of `app` on
+`cowork/what-is-the-function-in-1`, connected; starting `opencode acp`), then the answer streams with a tool row `read src/tax.ts` and names
+`roundTax`. After 25 idle seconds a container goes (`SandboxSuspended`), its volume stays, and Alex's waiting thread starts in the freed slot.
+Rosa replies; her sandbox resumes on the same volume, the runner logs `loaded session ses_…`, and researcher answers "`roundTax`" without
+reading the file again. Inside the container: the environment names only `COWORK_*` settings and the thread token, no `auth.json` or pool or
+runner config anywhere, neither the GitHub token nor the pool token in its volume or its changed files, and OpenCode's config takes the token
+by name (`{env:COWORK_THREAD_TOKEN}`). The gateway recorded each thread's calls and tokens, per turn, on behalf of whoever asked.
+
+**What changed**
+- **Contract** (`CoWork.Contracts`, Substrate-shaped): `CreateSandbox` / `ResumeSandbox` carry a `SandboxSpec` (the template's image, harness
+  and model; the thread's workspace; limits; network rules as an `EgressPolicy` of hosts and `replaceHeaders` with header, prefix and a
+  credential reference; a fresh thread token); `SuspendSandbox`, `DeleteSandbox`; `SandboxStateReport` (`suspended`, `resuming`, `running`,
+  `suspending`, `failed`, `deleted`, with how long the volume and the container took); `PoolEnrolRequest/Response`, `PoolHello`.
+- **Templates:** an agent with `placement = pool`, an image and a model (`AgentCreated` carries them; migration `011_pools.sql`). Admins
+  make them (they spend the server's models). No runner, no code; routing treats "has a runner token or is a template" as able to work.
+  The agent dialog has **Runs on: a runner I connect / a pool**; edit shows image and model for a template.
+- **Pools** (`pool-{id}`: `PoolCreated`, `PoolCodeIssued`, `PoolEnrolled`, `PoolConnected`, `PoolDisconnected`, `PoolRemoved`; `pools`
+  projection; `pool_secrets` holds hashes). The pool token opens `/hubs/pool` only: there it receives sandbox commands and reports its own
+  sandboxes' state; a report about a sandbox the server didn't place on it is ignored. **Where agents run** lists pools (slots, memory,
+  running sandboxes) and runners; **Add a pool** gives the code and command.
+- **Thread tokens** (`thread_tokens`, hashes only, never in an event): minted per create and per resume, bound to sandbox, agent, project
+  and thread; revoked on suspend, failure, delete, the template's removal or leaving the project. The runner hub accepts one and binds the
+  connection to its thread: it is sent only that thread's deliveries, and `Stream` / `RequestPermission` for any other thread throw. A
+  revoked token's live connection is told and aborted.
+- **Scheduler** (`Sandboxes.cs`): a delivery for a template with no connected sandbox in its thread `Ensure`s one: `SandboxRequested`
+  (it waits in a global FIFO queue), then `PlaceWaiting` gives the oldest a slot on the online pool with the most room (`SandboxPlaced`),
+  mints its token and sends Create or Resume. The pool's report becomes `SandboxStarted` / `SandboxResumed`; the runner inside connecting
+  is `SandboxConnected`, and the queued message goes. `SandboxReaper` (every second) suspends a running sandbox with no open turn and nothing
+  queued once it has been idle for the server's idle time (`SandboxIdleSet`, default 15 minutes): `SandboxSuspending` (token revoked at
+  once) and, when the pool says the container is gone, `SandboxSuspended`; a freed slot goes to the next in line, and a message that arrived
+  meanwhile resumes it. A failure is `SandboxFailed` plus `TurnStarted`/`TurnFailed` for each waiting message ("researcher's sandbox
+  couldn't start: …"). Every sandbox event names the person it's for (`on_behalf_of`).
+- **The starting card**: a post of kind `sandbox` (from `SandboxRequested`) whose rows the projection rewrites as the events arrive; a resume
+  gets a new card. The thread's session line says "team template · sandbox on pool-01 · `cowork/<slug>` · started by Rosa" and the state
+  (waiting for room, starting…, stopped, volume kept). The thread panel now decides whether to follow the end before new rows grow it.
+- **The pool** (`cowork-runner pool`, `Pool.cs`): one `git clone --mirror` per repository, fetched before each new thread; a volume per
+  thread prepared by a short-lived container of the image (`/work/repo`: a copy of the mirror on `cowork/<slug>` with the real URL as
+  origin, `/work/home`: the harness's home); then `podman run` with `--memory`/`--memory-swap`, `--pids-limit 512`, the labels, and only
+  `COWORK_SERVER`, `COWORK_AGENT`, `COWORK_HANDLE`, `COWORK_THREAD`, `COWORK_MODEL`, `COWORK_WORKSPACE` and `COWORK_THREAD_TOKEN` (passed
+  by name, so the value isn't on podman's command line). On connect it says which sandboxes it runs (the server reconciles), and it notices
+  a container that stopped by itself. It only removes containers and volumes carrying its `cowork.pool` label.
+- **The runner inside** (`cowork-runner sandbox`, the image's entry point): writes OpenCode's config for the gateway, connects with the
+  thread token, serves the one workspace the pool made, keeps its session map in the volume (so a resume calls `session/load`), and exits
+  when the token is revoked.
+- **The image**: `deploy/sandbox/Containerfile` and `build.sh` (551 MB): `debian:trixie-slim`, git, ripgrep, curl, the runner published
+  self-contained for linux-x64, OpenCode 2.4.1, user `cowork` (uid 1000), `HOME` and the XDG folders in `/work/home`.
+- **The gateway** (`Gateway.cs`): `POST /gateway/v1/chat/completions` and `GET /gateway/v1/models`, thread token as the key. It forwards
+  with the server's credential (OpenAI-compatible: base URL and key in `server_secrets`; Copilot: see below), asks for usage in the stream,
+  passes the server-sent events through line by line, and records `ModelUsageRecorded` (prompt, completion and total tokens; cost when the
+  provider says) in the turn in flight, for whoever asked; `model_usage` sums them per turn. **Server settings** has Models and Sandboxes.
+- Project settings show a template as "pool-01, a sandbox per thread", asks "Whoever started the thread, then Alex", sandboxed, and a rule
+  for templates. A template's boundary has its own sentences (works on the pool's mirror, reaches, asks, spends through the gateway,
+  remembers its volume, stops when idle) and a note instead of the unsandboxed warning.
+
+**Decisions**
+- **Reaching the server from a container:** rootless podman here uses pasta, and `host.containers.internal` (169.254.1.2) reaches the host's
+  network address, not its loopback, so a server on 127.0.0.1 refused the connection. With `--network pasta:--map-host-loopback=169.254.1.2`
+  it answers. The pool rewrites a loopback server address to `host.containers.internal` and adds that option; any other address is used as
+  it is. Checked 25 Nov 2026 with a server bound to 127.0.0.1.
+- **OpenCode 2.4.1 in the image:** it isn't on npm (that stops at 1.x), so `build.sh` copies the binary already on this machine
+  (`~/.weave/harnesses/opencode2/.opencode/bin/opencode`, only read; nothing else of `~/.weave`) into a build folder under `~/.cache`, and
+  refuses it unless it says `opencode v2.4.1` and matches the pinned SHA-256. `OPENCODE_BIN` / `OPENCODE_SHA256` point it at another copy.
+  Old builds of the image are removed by their label, never other images.
+- **Copilot as OpenCode 2.4.1 does it:** 2.4.1 doesn't exchange the sign-in for a Copilot token any more. Its `auth.json` keeps the GitHub
+  OAuth token (as `refresh` and `access`, `expires: 0`); it asks `api.github.com/copilot_internal/user` for the account's API address
+  (`endpoints.api`; this account's is an enterprise one) and calls `<api>/chat/completions` with the GitHub token as the bearer and
+  `X-GitHub-Api-Version: 2026-08-01`, `Openai-Intent: conversation-edits`, `x-initiator`. The gateway does exactly that, reading the file
+  each call (read only, never copied; `COWORK_COPILOT_AUTH` names another file). Copilot returns token counts but no cost, so `cost` is
+  null for it.
+- **OpenCode's provider in the sandbox:** `provider.cowork` with `npm: @ai-sdk/openai-compatible` (2.4.1 bundles it), `baseURL` the gateway,
+  `apiKey: {env:COWORK_THREAD_TOKEN}`, `enabled_providers: [cowork]`, `model` and `small_model` the template's; `OPENCODE_DISABLE_MODELS_FETCH`
+  and `OPENCODE_DISABLE_AUTOUPDATE` in the image. It worked on the first try.
+- **A copy, not a worktree,** in the volume: a worktree would point at the mirror outside the volume. The copy is made inside a short-lived
+  container with no network, trusting `/mirror` through a throwaway global git config (git refuses a repository owned by another uid).
+  There is no push credential in the sandbox, so no pre-push hook either; pushing is round 2's proxy.
+- **Names and labels** are `cowork-<server id>-p<pool>-sb-<id>`: the server makes an id once (`ServerIdAssigned`, at the first pool
+  enrolment) and returns it on enrolment. Keying on the server's address let a fresh scratch server reuse an old run's volume (and its saved
+  session) on the same port.
+- **`COWORK_RUNNER_CONFIG`**: a pool can't be given a scratch `XDG_CONFIG_HOME` / `XDG_DATA_HOME`, because rootless podman keeps its images
+  and settings there (the first smoke run found no image). The runner's config folder can now be named on its own.
+- **The thread token is a random 256-bit token stored as a hash**, like the runner's, not yet the signed JWT the design suggests for a proxy
+  that checks without asking the server; that comes with the proxy.
+- **Asks of a template** go to whoever started the thread (`ownerId` on the card is that person; `agentOwnerId` is the template's owner); the
+  project's leads may answer once 30 minutes have passed (`leadIds`, `leadAfter`, checked when they answer). Nobody is notified at 30
+  minutes yet: the lead sees the buttons when they look.
+- **Nothing retries a failed start by itself:** the waiting messages end with the reason, and the next message from a person tries again.
+  Otherwise any pump of the template would loop on a broken image.
+- **One queue for all pools,** oldest first; the waiting cards' "Nth in line" moves up as others are placed. A pool's slot counts a sandbox
+  that is starting, resuming, running or suspending.
+- **Usage is one event per model call,** in the turn's correlation (or the thread's last turn for a call between turns, such as a title);
+  "per turn" is the `model_usage` projection. Budgets read it in round 2.
+- Network rules travel in the command as data (the server and the gateway); nothing enforces them in round 1, and the boundary says the
+  rest of the network is open until the egress proxy.
+- A template's agents table entry has an empty `workspace` (the column is NOT NULL); the importer's answer comparison ignores the fields
+  brief 7 added.
+
+**Checked** (ports 5883–5888; containers, volumes and LiveKit only with my labels, removed by label; the `cowork` compose project, its
+volume and `~/.weave` untouched; OpenRouter never used)
+- `dotnet test`: 77 server (8 new in `SandboxTests`: the demo with a fake pool and sandbox; every "can't" of the thread token (another
+  thread's deliveries and events, the API, the pool hub, after suspend at the hub and the gateway, after the template's removal) and of the
+  pool token (runner hub, gateway, API, another pool's sandbox); a full pool's queue in order; idle suspend (5 s, waiting on the command) and
+  resume with a new token on the same sandbox; a failed start; the gateway against a fake provider on a real port (the server's key
+  upstream, the stream back, usage in the turn, for Rosa, no key in the log); asks to the thread's starter, then a lead; Where agents run
+  and a template's boundary), and the rebuild and no-secrets tests now run a pool and template through the busy server (in place and
+  from events only: identical tables). 27 runner (9 new: the loopback mapping, memory sizes, OpenCode's gateway config, the fixed
+  sandbox workspace with the fake ACP agent). `bun run test`: 33.
+- Live: **`phase9` 37 checks, twice** (screenshots in `docs/screens/brief7/`, dark and light, looked at; the second run after fixing
+  code chips that broke mid-name and the thread panel not following a new card). The earlier checks against this build, each on a fresh
+  scratch server: `phase1` 24, `phase2` 30 (real OpenCode 2.4.1 through Copilot), `phase4` 19 (LiveKit 1.13.11 as container `cwb7-lk`,
+  label `cwb7`, removed), `phase5` 22, `phase6` 27, `phase7` 31, `phase8` 31. phase7 first failed on my rewording of the project rule
+  "…go to its owner only…"; a project without templates now reads exactly as before, and one with a template gets a rule of its own. The old
+  scripts' own screenshots were restored.
+
+**Not done / next (round 2 and 3, as briefed)**
+- The egress proxy and the project's network list (sandboxes still have an open network), the setup command, budgets, Pause all agents.
+- A container that dies mid-turn fails the turn ("…'s sandbox stopped during this turn"); the design's "start it again once with
+  `session/load`" isn't built. A pool that goes away leaves its threads waiting for it; nothing moves them to another pool.
+- `DeleteSandbox` is in the contract and the pool, but nothing sends it yet ("7 days after done" needs a thread's outcome, round 3).
+- Nobody is told when a pool is missing, or when an ask passes to a lead after 30 minutes; they see it when they look.
+- The gateway is OpenAI-compatible only (no Anthropic-shaped endpoint); the thread token isn't a signed JWT yet; a pool is picked by free
+  slots alone (no matching of templates to pools).
+- CoWork's MCP tools in `session/new` are round 3.

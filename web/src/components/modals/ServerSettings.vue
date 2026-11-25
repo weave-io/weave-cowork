@@ -54,7 +54,7 @@ const saveIdle = () => run('sandboxes', () => put('/settings/sandboxes', { idleS
         <h3 class="m-0 mb-1 text-[14px] font-semibold">Sandboxes</h3>
         <p class="mt-0 text-[13px] text-muted">A sandbox with nothing to do stops after this long. Its volume stays, so the thread's next message picks up where it left off.</p>
         <div class="flex items-end gap-3">
-          <div class="w-40"><Field name="idleSeconds" label="Stop when idle for (seconds)" v-model="idle" type="number" /></div>
+          <div class="w-56"><Field name="idleSeconds" label="Stop when idle for (seconds)" v-model="idle" type="number" /></div>
           <span class="mb-5 text-[13px] text-muted">{{ idleLabel }}</span>
           <span v-if="saved === 'sandboxes'" class="mb-5 ml-auto text-[13px] text-running-text" data-testid="idle-saved">Saved.</span>
           <Button class="mb-3" :class="saved !== 'sandboxes' && 'ml-auto'" data-testid="save-idle" :disabled="busy || !(Number(idle) >= 5)" @click="saveIdle">Save</Button>

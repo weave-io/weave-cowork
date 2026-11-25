@@ -26,4 +26,6 @@ dotnet publish "$REPO/src/CoWork.Runner/CoWork.Runner.csproj" -c Release -r linu
   -p:PublishSingleFile=false -p:DebugType=none -o "$CTX/runner" --nologo -v quiet
 podman build --pull=missing -t "$TAG" --label cowork.image=sandbox-opencode -f "$CTX/Containerfile" "$CTX"
 rm -rf "$CTX"
+# an earlier build of this image is left untagged: remove those (only images carrying this label)
+podman images -q --filter dangling=true --filter label=cowork.image=sandbox-opencode | xargs -r podman rmi >/dev/null 2>&1 || true
 echo "Built $TAG"

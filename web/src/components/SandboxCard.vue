@@ -32,7 +32,7 @@ const footer = computed(() => {
         <Clock v-else-if="s.state === 'waiting'" :size="14" class="pulse shrink-0 text-idle-text" aria-label="Waiting" />
         <X v-else-if="s.state === 'failed'" :size="14" class="shrink-0 text-error-text" aria-label="Failed" />
         <Circle v-else :size="12" class="mx-px shrink-0 text-muted/60" aria-hidden="true" />
-        <span class="min-w-0" :class="s.state === 'todo' && 'text-muted'"><template v-for="(p, i) in parts(s.text)" :key="i"><code v-if="p.code" class="rounded-[4px] border border-border bg-panel-bg px-1 font-mono text-[12px]">{{ p.text }}</code><template v-else>{{ p.text }}</template></template></span>
+        <span class="min-w-0" :class="s.state === 'todo' && 'text-muted'"><template v-for="(p, i) in parts(s.text)" :key="i"><code v-if="p.code" class="inline-block max-w-full truncate rounded-[4px] border border-border bg-panel-bg px-1 align-bottom font-mono text-[12px] leading-[18px] whitespace-nowrap" :title="p.text">{{ p.text }}</code><template v-else>{{ p.text }}</template></template></span>
         <span v-if="s.secs != null && s.state === 'done'" class="ml-auto shrink-0 text-xs text-muted tabular-nums">{{ s.secs.toFixed(1) }} s</span>
       </div>
     </div>

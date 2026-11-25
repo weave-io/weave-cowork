@@ -15,10 +15,16 @@ const scroller = ref<HTMLElement | null>(null)
 const startedBy = computed(() => memberById(t.value?.startedBy ?? 0))
 const channelName = computed(() => store.channels.find(c => c.id === store.feed.channelId)?.name)
 
-watch(() => [t.value?.replies.length, t.value?.replies.at(-1)?.body.length], async () => {
+// follow the thread while the reader is at its end: whether they were is measured before the new rows grow it (a sandbox's card is tall)
+let atEnd = true
+watch(() => [t.value?.replies.length, t.value?.replies.at(-1)?.body.length, t.value?.replies.at(-1)?.meta?.state], () => {
+  const s = scroller.value
+  atEnd = !s || s.scrollHeight - s.scrollTop - s.clientHeight < 160
+}, { flush: 'pre' })
+watch(() => [t.value?.replies.length, t.value?.replies.at(-1)?.body.length, t.value?.replies.at(-1)?.meta?.state], async () => {
   await nextTick()
   const s = scroller.value
-  if (s && s.scrollHeight - s.scrollTop - s.clientHeight < 160) s.scrollTop = s.scrollHeight
+  if (s && atEnd) s.scrollTop = s.scrollHeight
 }, { flush: 'post' })
 watch(() => t.value?.rootId, async () => { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight })
 

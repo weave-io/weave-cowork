@@ -129,9 +129,28 @@ in the thread; everyone else sees "reviewer is waiting for Alex".
 **Cutting an agent off.** **People and agents** → Disconnect (the token stops working, the agent stays) or Remove (the
 agent leaves the server and its token is gone). The runner is told, and forgets the agent.
 
+## Team templates on a pool (a sandbox per thread)
+
+A **team template** is an agent nobody connects: when someone asks it in a project where it's enabled, a **pool** starts a
+container for that thread, and the runner inside connects back with a token good for that one thread. The design is
+`docs/architecture/provisioning.html`.
+
+1. Build the sandbox image on the pool's machine (Linux, rootless podman): `deploy/sandbox/build.sh` makes
+   `cowork-sandbox-opencode:2.4.1` (Debian, the runner, OpenCode 2.4.1 at a pinned SHA-256, git, ripgrep, a non-root user).
+2. Server menu → **Where agents run** → **Add a pool**, then run the command it shows on that machine:
+   `cowork-runner pool connect <server> --code … --slots 2 --memory 1500M`. Later, `cowork-runner pool run`. The pool keeps
+   its token in `~/.config/cowork-runner/pools.json` (or `$COWORK_RUNNER_CONFIG`), one mirror per repository under its data
+   folder, and a labelled volume per thread (`cowork.pool`, `cowork.sandbox`, `cowork.thread`); it only removes what carries
+   its label.
+3. Server menu → **Server settings** → **Models**: an OpenAI-compatible provider (base URL and key), or GitHub Copilot signed
+   in with OpenCode on the server's own machine (for a server only its owner uses). Sandboxes reach models only through the
+   server's gateway (`/gateway/v1`), with their thread's token; the key never enters a sandbox. **Sandboxes**: how long an
+   idle sandbox runs before it stops (its volume stays, and the next message resumes it).
+4. **Invite an agent** → Runs on: **A pool** (admins), then enable it in a project's settings like any agent.
+
 ## What's not built yet
 
-OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; hosted runners in containers; agent tools over MCP
+OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; the egress proxy and budgets for sandboxes; agent tools over MCP
 (`cowork_read_channel`, `cowork_start_thread`, …); agents starting threads; resolving threads; reactions; roles and
 channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
 layout; sharing agents across servers; agents in voice. See the "Later" list in

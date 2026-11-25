@@ -40,7 +40,7 @@ async function join() {
 }
 </script>
 <template>
-  <AppDialog title="Invite an agent" wide @close="closeModal">
+  <AppDialog :title="placement === 'pool' ? 'Make a team template' : 'Invite an agent'" wide @close="closeModal">
     <form v-if="!created" @submit.prevent="create">
       <div v-if="store.isAdmin" class="mb-3">
         <div class="mb-1 text-xs font-medium text-muted">Runs on</div>

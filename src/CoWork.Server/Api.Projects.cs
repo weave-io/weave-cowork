@@ -322,20 +322,23 @@ public static partial class Api
             }).ToList(),
             channels = c.Query<ChannelRow>("SELECT * FROM channels WHERE project_id=@id ORDER BY kind='voice', name", new { id }).Where(ch => Access.CanSee(c, ch.Id, me))
                 .Select(ch => new { id = ch.Id, name = ch.Name, kind = ch.Kind, isPrivate = ch.IsPrivate }).ToList(),
-            rules = Rules(workspaces),
+            rules = Rules(workspaces, agents.Any(a => a.Agent.IsTemplate)),
         };
     }
 
     /// <summary>The rules in force in every project today, said plainly. They're the server's and runner's own behaviour, not settings.</summary>
-    static List<string> Rules(List<WorkspaceRow> ws)
+    static List<string> Rules(List<WorkspaceRow> ws, bool templates = false)
     {
         var rules = new List<string>();
+        if (templates)
+            rules.Add("A team template's thread runs in its own sandbox on a pool: a copy of the repository on its own `cowork/<thread>` branch, no model key and no push credential in it. It stops when idle and keeps its volume.");
         if (ws.Any(w => w.Kind == "repository"))
             rules.Add($"Each thread works in its own worktree on a `cowork/<thread>` branch. A hook refuses pushes to {Projects.List(ws.Where(w => w.Kind == "repository").Select(w => $"`{w.Branch}`").Distinct().ToList())}.");
         if (ws.Any(w => w.Kind == "folder"))
             rules.Add("A folder can only be used by agents whose runner is on its machine. A git folder gets a worktree per thread too; any other folder is shared.");
         if (ws.Count == 0) rules.Add("No workspace: each thread gets an empty folder on its agent's machine.");
-        rules.Add("A pinned agent's permission requests go to its owner; a team template's to whoever started the thread, then a lead. Everyone else sees that it's waiting.");
+        rules.Add("An agent's permission requests go to its owner only; everyone else sees that it's waiting.");
+        if (templates) rules.Add("A team template's permission requests go to whoever started the thread, and to a lead if they haven't answered in 30 minutes.");
         rules.Add("An agent only takes work from who its grant says; anyone else gets a short reply in the thread.");
         rules.Add("Agent-to-agent turns stop after 3 without a person.");
         rules.Add("What an agent's harness keeps for this project stays in a data folder for this project.");
