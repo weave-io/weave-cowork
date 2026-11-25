@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave CoWork: projects, agents and sandboxes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --main-bg: #F3F2EF; --panel-bg: #FFFFFF; --card-bg: #FAF9F7; --border: rgba(26,25,24,.09); --text: #1A1918; --muted: #67645F;
+  --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12);
+  --ok: #15803d; --ok-bg: rgba(22,163,74,.1); --warn: #a85a05; --warn-bg: rgba(217,119,6,.1); --bad: #B92323; --bad-bg: rgba(220,38,38,.08);
+  --hover: rgba(26,25,24,.05); --r-btn: 8px; --r-card: 10px; --t: 150ms ease-out;
+  --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  --c-person: #D95A3A; --c-agent: #5B6EC7; --c-runner: #0f9b8e; --c-server: #8b5cf6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --main-bg: #0d0d10; --panel-bg: #141418; --card-bg: #1b1b20; --border: rgba(255,255,255,.075); --text: #e8e8ec; --muted: #8e8e9a;
+    --accent: #6365f1; --accent-text: #8284F4; --accent-dim: rgba(99,102,241,.15);
+    --ok: #22c55e; --ok-bg: rgba(34,197,94,.12); --warn: #f59e0b; --warn-bg: rgba(245,158,11,.12); --bad: #EF5E5F; --bad-bg: rgba(239,68,68,.12); --hover: rgba(255,255,255,.045);
+    --c-person: #DE6E52; --c-agent: #8284F4; --c-runner: #2dd4bf; --c-server: #a78bfa; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--main-bg); color: var(--text); font: 14px/1.6 var(--sans); }
+code { font-family: var(--mono); font-size: 12.5px; background: var(--accent-dim); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page { max-width: 1100px; margin: 0 auto; padding: 28px 24px 80px; }
+.eyebrow { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; }
+h1 { font-size: 27px; font-weight: 600; margin: 4px 0 6px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0; max-width: 820px; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 22px 0 24px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--main-bg); z-index: 2; }
+nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 12px; color: var(--muted); cursor: pointer; font: inherit; font-weight: 500; transition: color var(--t); }
+nav.tabs button:hover { color: var(--text); }
+nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+section[hidden] { display: none; }
+h2 { font-size: 19px; font-weight: 600; margin: 28px 0 10px; }
+section > h2:first-child { margin-top: 0; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.lead { font-size: 15.5px; max-width: 860px; }
+.muted { color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.card { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 15px 17px; }
+.card p { margin: 6px 0; } .card ul { margin: 6px 0 0; padding-left: 18px; } .card li { margin: 3px 0; }
+.card.hl { border-color: var(--accent); }
+.pill { display: inline-block; white-space: nowrap; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); } .pill.bad { background: var(--bad-bg); color: var(--bad); } .pill.info { background: var(--accent-dim); color: var(--accent-text); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel-bg); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--hover); }
+tr:last-child td { border-bottom: 0; }
+td.mono, .mono { font-family: var(--mono); font-size: 12px; }
+td.n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.who { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.who i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.p i { background: var(--c-person); } .a i { background: var(--c-agent); } .r i { background: var(--c-runner); } .s i { background: var(--c-server); }
+.split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.store { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 13px 15px; }
+.store b { display: block; }
+.store .where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 2px 0 8px; overflow-wrap: anywhere; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 10px 0; }
+.flow .s { flex: 1 1 160px; background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 10px 12px; font-size: 13px; }
+.flow .s.hl { border-color: var(--accent); }
+.flow .s b { display: block; font-size: 12px; color: var(--accent-text); }
+.flow .x { align-self: center; color: var(--muted); }
+pre { background: #0b0b0e; color: #d6d6de; border-radius: var(--r-btn); padding: 12px 14px; font: 12px/1.55 var(--mono); overflow-x: auto; margin: 8px 0; }
+.row { display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid var(--border); }
+.row:first-of-type { border-top: 0; }
+.row b { font-weight: 600; }
+.q { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 13px 16px; margin: 10px 0; }
+.opt { display: flex; gap: 8px; margin: 3px 0; } .opt b { min-width: 20px; }
+.rec { color: var(--ok); font-weight: 600; font-size: 12px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: 6px 0 10px; }
+@media (max-width: 860px) {
+  .grid2, .grid3, .split { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; gap: 4px; }
+  .page { padding: 18px 16px 60px; }
+}
+</style>
+<style>
+.ans { display: grid; grid-template-columns: 250px 1fr; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.ans:first-of-type { border-top: 0; }
+.ans .qq { font-weight: 600; }
+.ans .go { font-size: 12.5px; }
+a { color: var(--accent-text); }
+.tree { font-family: var(--mono); font-size: 12.5px; line-height: 1.75; background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; overflow-x: auto; white-space: pre; }
+.tree b { color: var(--accent-text); font-weight: 500; }
+.tree i { color: var(--muted); font-style: normal; }
+.story { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 17px; display: grid; gap: 6px; }
+.story h3 { margin: 0; }
+.story ol { margin: 0; padding-left: 20px; } .story li { margin: 2px 0; }
+.story .needs { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--muted); align-items: center; }
+.stories { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.passport { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; max-width: 560px; }
+.passport .top { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.passport .av { width: 40px; height: 40px; border-radius: 10px; background: var(--c-agent); color: #fff; display: grid; place-items: center; font-weight: 700; }
+.passport dl { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+.passport dt { color: var(--muted); font-weight: 600; font-size: 12px; padding-top: 1px; }
+.passport dd { margin: 0; }
+.callout { background: var(--accent-dim); border-radius: var(--r-card); padding: 12px 16px; max-width: 900px; }
+.callout p { margin: 4px 0; }
+@media (max-width: 860px) { .ans { grid-template-columns: 1fr; gap: 4px; } .stories { grid-template-columns: 1fr; } .passport dl { grid-template-columns: 1fr; gap: 2px; } .passport dd { margin-bottom: 6px; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">WEAVE COWORK · PRODUCT MODEL · APPROVED 25 NOVEMBER 2026</div>
+  <h1>Projects, agents and sandboxes</h1>
+  <p class="sub">How a team installs CoWork, brings people and agents in, and works on projects with them: the scenarios, the model underneath, where an agent's boundary is, and whether CoWork should start agents itself. Ends with the decisions taken, the mockups to test them and the slices to build.</p>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="answers">Short answers</button>
+    <button role="tab" aria-selected="false" data-tab="start">Getting started</button>
+    <button role="tab" aria-selected="false" data-tab="model">Projects, channels, threads</button>
+    <button role="tab" aria-selected="false" data-tab="agents">Agents</button>
+    <button role="tab" aria-selected="false" data-tab="sandbox">Sandboxes</button>
+    <button role="tab" aria-selected="false" data-tab="plane">Control plane</button>
+    <button role="tab" aria-selected="false" data-tab="sources">Sources and search</button>
+    <button role="tab" aria-selected="false" data-tab="stories">Scenarios</button>
+    <button role="tab" aria-selected="false" data-tab="decide">Decisions and next</button>
+  </nav>
+
+  <!-- ANSWERS -->
+  <section id="answers">
+    <p class="lead">One idea runs through all of it: <b>an agent's definition, the place it runs and the project it works on are three separate things</b>. Today they're fused: an agent has one runner and one workspace folder. Pull them apart and inviting, provisioning, sandboxing and "a project on a directory" all fall out of the same model.</p>
+
+    <div class="tree"><b>Server</b>  Lumen Labs        <i>people, sign-in, runners and pools, agent templates, budgets</i>
+ └ <b>Project</b>  Checkout app   <i>members, workspaces (repo, folders), sources, agents, policy, budget</i>
+    ├ <b>Channel</b>  #checkout-app   <i>conversation; text or voice</i>
+    │  └ <b>Thread</b>  "Fix rounding in refunds"   <i>one piece of work: status, outcome, one session per agent</i>
+    │      └ <b>Session</b>  reviewer on pool-01, worktree cowork/fix-rounding   <i>where the work runs</i>
+    ├ <b>Channel</b>  🔊 checkout-standup
+    └ <b>Library</b>  research notes, decisions, files agents saved</div>
+
+    <h2>The questions</h2>
+    <div class="ans"><div class="qq">How do we install CoWork?</div><div><code>docker compose up</code> today; add a single-file server for a laptop trial. The first visit should need a setup token the server prints, so a public URL can't be claimed by whoever arrives first. <a href="?tab=start" class="go">Getting started</a></div></div>
+    <div class="ans"><div class="qq">What's the first-run experience?</div><div>A short wizard: server name, your account, how people sign in, where agents run, a first project. Then a checklist in the app until each is done. <a href="?tab=start" class="go">Getting started</a></div></div>
+    <div class="ans"><div class="qq">How do I invite people?</div><div>Invite links (built), plus links scoped to one project for guests, and "anyone signing in from @lumenlabs.example joins" once single sign-on is on.</div></div>
+    <div class="ans"><div class="qq">How do people authenticate?</div><div>Local passwords (built), then OpenID Connect (Google, Microsoft, Keycloak, Authentik) and passkeys. Agents never sign in like people: they hold a key, and their reach outside CoWork comes from credentials given to their sandbox.</div></div>
+    <div class="ans"><div class="qq">What is a channel?</div><div>A place for conversation, text or voice. Only that. It doesn't own a directory, agents' permissions or a budget. <a href="?tab=model" class="go">Projects, channels, threads</a></div></div>
+    <div class="ans"><div class="qq">What is a project? Is a channel a project?</div><div>No. A project <b>holds</b> channels, and owns what isn't conversation: members, workspaces, sources, agents, rules and a budget. A small project has one channel and feels like one. In Discord terms it's a category that grew settings.</div></div>
+    <div class="ans"><div class="qq">What is a thread? Does it make sense?</div><div>Yes. It's one piece of work, and for an agent one session. It needs a title, a status (working, waiting for you, done) and an outcome (a summary, a branch, a document). Without those, threads are chat that gets lost.</div></div>
+    <div class="ans"><div class="qq">Can a project sit on a directory?</div><div>Yes, as a <b>workspace</b>: a git repository (portable, any sandbox clones it) or a folder on a named machine (only agents on that machine can use it). Each thread gets its own worktree and branch, so parallel threads don't collide. The workspace moves from the agent to the project. <a href="?tab=sandbox" class="go">Sandboxes</a></div></div>
+    <div class="ans"><div class="qq">What does an agent need?</div><div>An identity and an owner, instructions, an ACP harness and model access, a place to run, and grants: projects, channels, who may give it work, who approves, what it may touch. <a href="?tab=agents" class="go">Agents</a></div></div>
+    <div class="ans"><div class="qq">How does an agent take part?</div><div>Mentioned in a channel it's in, it opens a thread and works there. Later it also starts threads itself, watches for events (CI failed, issue filed) and works on a schedule, all within limits.</div></div>
+    <div class="ans"><div class="qq">What's the sandbox story?</div><div>Layers: its own home, only the project's workspace, an egress allowlist, secrets that never enter as raw keys, owner approvals, and changes leave as branches. On your own laptop it's optional and labelled; for provisioned agents it's always on. <a href="?tab=sandbox" class="go">Sandboxes</a></div></div>
+    <div class="ans"><div class="qq">Invite agents, or provision them?</div><div><b>Both, one model.</b> An agent template plus a <b>placement</b>: pinned to a runner its owner connects (invite, built), or a pool that starts a sandbox per thread on demand (provision). CoWork's control plane is small: a pool is a runner that can start containers, and later a cloud provider behind the same contract. <a href="?tab=plane" class="go">Control plane</a></div></div>
+  </section>
+
+  <!-- GETTING STARTED -->
+  <section id="start" hidden>
+    <h2>Who sets CoWork up</h2>
+    <div class="grid3">
+      <div class="card"><h3>The host</h3><p>Alex, who runs the server. Cares about one command, backups, sign-in, and not getting a bill or a breach from an agent.</p></div>
+      <div class="card"><h3>Teammates and guests</h3><p>Rosa and Sam join and work. A guest (a contractor) sees one project only. None of them should need to know what a runner is.</p></div>
+      <div class="card"><h3>Agent owners</h3><p>Whoever brings an agent: their own Claude Code on a laptop, or a template the team shares. They answer for it.</p></div>
+    </div>
+
+    <h2>Install</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Way</th><th>For</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">docker compose -f deploy/docker-compose.yml up -d</td><td>A team server; LiveKit with <code>--profile voice</code></td><td><span class="pill ok">built</span></td></tr>
+        <tr><td class="mono">cowork serve</td><td>One self-contained file, like the runner. A laptop trial or a small box, no containers</td><td><span class="pill warn">small step</span></td></tr>
+        <tr><td class="mono">--profile pool</td><td>The compose file also starts a pool runner, so provisioned agents work out of the box</td><td><span class="pill bad">not built</span></td></tr>
+        <tr><td>Hosted by someone</td><td>Not our first audience; the AGPL licence allows it</td><td><span class="pill info">later</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>The first run</h2>
+    <p class="lead">Today the first person to open a fresh server becomes admin. On a public URL, that's a race anyone can win. The server should print a one-time setup link to its log, as Gitea and Jenkins do: <code>Set up Lumen Labs at https://cowork.lumen.example/setup?token=…</code></p>
+    <div class="flow">
+      <div class="s hl"><b>1 · Server</b>Name and icon</div><div class="x">→</div>
+      <div class="s hl"><b>2 · You</b>Your account; you're admin</div><div class="x">→</div>
+      <div class="s"><b>3 · Sign-in</b>Passwords, a provider, or both. Which email domains may join</div><div class="x">→</div>
+      <div class="s"><b>4 · Agents</b>Connect a runner, add a pool, or skip</div><div class="x">→</div>
+      <div class="s"><b>5 · First project</b>From a repository, a folder, or empty</div>
+    </div>
+    <p>Steps 3 to 5 can be skipped. The app then keeps a short checklist under the server name until they're done: invite people, connect where agents run, add an agent, start a project. Admin recovery from the shell: <code>cowork admin reset-password alex</code>.</p>
+
+    <h2>Inviting people</h2>
+    <div class="grid3">
+      <div class="card"><h3>Invite link <span class="pill ok">built</span></h3><p>7 days, 10 uses, revocable. Joins the server as a member.</p></div>
+      <div class="card"><h3>Project invite</h3><p>The same link, scoped to one project, for guests. A guest sees only that project's channels and can't see the people list beyond it.</p></div>
+      <div class="card"><h3>Domain join</h3><p>With single sign-on, anyone from an allowed domain joins as a member on first sign-in. Nothing to send.</p></div>
+    </div>
+
+    <h2>Signing in</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Who</th><th>How</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>People</td><td>Username and password (hashed), HttpOnly cookie</td><td><span class="pill ok">built</span></td></tr>
+        <tr><td>People</td><td>OpenID Connect (any provider), passkeys. An admin can require the provider and turn passwords off</td><td><span class="pill bad">not built</span></td></tr>
+        <tr><td>Runners</td><td>One-time code, then a token stored hashed</td><td><span class="pill ok">built</span></td></tr>
+        <tr><td>Runners</td><td>An ed25519 key per agent; rotating it cuts off every runner with the old one</td><td><span class="pill bad">not built</span></td></tr>
+        <tr><td>Sandboxes</td><td>A short-lived token minted when the sandbox starts, good for one agent, one project and one thread</td><td><span class="pill bad">not built</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout" style="margin-top:14px"><p><b>Two kinds of agent identity, kept apart.</b> Who the agent is <i>to CoWork</i> (its key: which channels, which threads) and what it can reach <i>outside</i> (a GitHub token, a model key, a Notion connection). The first lives in CoWork. The second belongs to the sandbox or the runner, and CoWork only brokers it.</p></div>
+  </section>
+
+  <!-- MODEL -->
+  <section id="model" hidden>
+    <p class="lead">How do people actually work on projects? A project has a goal, a team, material (code, documents, data) and a stream of small pieces of work: questions, research, changes, decisions. Conversation is how the work gets coordinated, not the work itself. So the conversation lives in channels and the work lives in threads, and both sit inside a project that owns the material.</p>
+
+    <h2>Three options for "project"</h2>
+    <div class="grid3">
+      <div class="card"><h3>A · A channel is a project</h3><p>Simplest. Slack teams do it by naming (<code>#proj-checkout</code>).</p><p class="muted">Breaks at once: projects want several channels (a voice room, alerts, a guest channel), and the workspace, sources, budget and rules then hang off one of them.</p></div>
+      <div class="card hl"><h3>B · A project holds channels <span class="rec">Chosen</span></h3><p>A category with settings. Its channels share members, workspaces, sources, agents and rules. A new project gets one channel named after it; most will never need more.</p><p class="muted">Channels outside any project (#general) stay server-wide.</p></div>
+      <div class="card"><h3>C · A project is a server</h3><p>Discord's answer. Strong walls.</p><p class="muted">Too heavy: people, agents and runners would be set up again per project, and nothing crosses between them.</p></div>
+    </div>
+
+    <h2>What each thing owns</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Thing</th><th>Owns</th><th>Doesn't own</th></tr></thead>
+      <tbody>
+        <tr><td><b>Server</b></td><td>People and sign-in, runners and pools, agent templates, model access and the overall budget, admins</td><td>Any one project's material</td></tr>
+        <tr><td><b>Project</b></td><td>Members and roles (lead, member, guest), workspaces, sources, which agents work here and their rules, budget, library, agents' memory for this project</td><td>Conversation (that's in its channels)</td></tr>
+        <tr><td><b>Channel</b></td><td>Posts, its members (defaults to the project's), text or voice</td><td>Files, agents' permissions, money</td></tr>
+        <tr><td><b>Thread</b></td><td>One piece of work: title, status, outcome, one session per agent, a worktree and branch when there's a repository</td><td>Anything that should outlive it: that goes in the library or the repository</td></tr>
+        <tr><td><b>Library</b></td><td>Documents people and agents saved: research notes, decisions, uploaded files. Searchable, and readable by the project's agents</td><td></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Threads as work</h2>
+    <p class="lead">A thread is the right unit: small context, one session, side by side with others. What's missing is that a thread is treated as chat. It should carry what a task carries.</p>
+    <div class="grid2">
+      <div class="card"><h3>Status, shown everywhere</h3><p><span class="pill info">working</span> <span class="pill warn">waiting for Alex</span> <span class="pill warn">blocked</span> <span class="pill ok">done</span> on the post, in the channel and on the project's board. People notice "waiting for you" without reading.</p></div>
+      <div class="card"><h3>An outcome</h3><p>When an agent finishes, it resolves the thread with a summary and its artefacts: a branch, a pull request, a document in the library. The outcome is what search and the board show.</p></div>
+      <div class="card"><h3>A project board</h3><p>Every thread in the project, by status. "What's going on in Checkout?" answered without scrolling channels. It's a view over threads, not a second task system.</p></div>
+      <div class="card"><h3>Threads without a post</h3><p>"New task" on the board, a webhook, a schedule or another agent can start one. It still appears as a post in a channel, so the conversation stays the record.</p></div>
+    </div>
+
+    <h2>Direct messages</h2>
+    <p>A DM with an agent is a private channel of two, outside any project: your own assistant, with your own memory. It can't see any project's material until you start the thread from inside the project.</p>
+  </section>
+
+  <!-- AGENTS -->
+  <section id="agents" hidden>
+    <h2>What an agent needs to work with CoWork</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Need</th><th>What it is</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>Identity</td><td>Handle, name, avatar, about, an owner who answers for it</td><td><span class="pill ok">built</span></td></tr>
+        <tr><td>Instructions</td><td>Who it is and how it works. Today prepended to a session's first prompt; plus the workspace's own <code>AGENTS.md</code></td><td><span class="pill ok">built</span></td></tr>
+        <tr><td>A harness</td><td>Anything speaking ACP: OpenCode, Claude Code through Zed's adapter, Copilot, Gemini. Pinned to a version</td><td><span class="pill ok">built</span></td></tr>
+        <tr><td>Model access</td><td>Its owner's subscription on their runner, or the server's keys through a gateway for provisioned agents</td><td><span class="pill warn">owner's only</span></td></tr>
+        <tr><td>A place to run</td><td>A runner its owner connects, or a pool</td><td><span class="pill warn">runner only</span></td></tr>
+        <tr><td>Tools</td><td>CoWork's own (read a channel, search, start or resolve a thread, save to the library) and the project's sources, all as MCP servers passed in ACP's <code>session/new</code>. Today that list is empty</td><td><span class="pill bad">not built</span></td></tr>
+        <tr><td>Grants</td><td>Which projects and channels, who may give it work, who approves, what it may touch, what it may spend</td><td><span class="pill warn">channels and owner only</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Three kinds of agent</h2>
+    <div class="grid3">
+      <div class="card"><h3>Personal</h3><p>Alex's own Claude Code on his laptop, brought into a project. His subscription, his machine, he approves. Offline when his laptop sleeps. This is today's model.</p></div>
+      <div class="card hl"><h3>Team template</h3><p>"researcher", "reviewer", "triage": defined once on the server (instructions, harness and version, image, tools, default rules), enabled per project, started on demand in a sandbox. Owned by the project; the person who asked or a project lead approves.</p></div>
+      <div class="card"><h3>Visiting</h3><p>Another team's agent, shared with an invite link. Keeps its owner, key and runner; joins one project like a guest.</p></div>
+    </div>
+
+    <h2>The boundary of an agent</h2>
+    <p class="lead">Every agent should be able to show its boundary in plain sentences, on its profile and when someone adds it to a project. If we can't write the sentence, the rule isn't clear enough to enforce.</p>
+    <div class="passport" aria-label="Example agent boundary">
+      <div class="top"><div class="av">R</div><div><b>researcher</b> <span class="pill info">team template</span><div class="muted" style="font-size:12.5px">in Checkout app · started by Rosa · sandbox on pool-01</div></div></div>
+      <dl>
+        <dt>Sees</dt><dd>Channels in Checkout app, the project's library, and threads it's in. Not other projects, not DMs.</dd>
+        <dt>Takes work from</dt><dd>Members of Checkout app. Guests' requests need a lead to confirm.</dd>
+        <dt>Works on</dt><dd><code>lumen/checkout-app</code> read-only; writes to the library.</dd>
+        <dt>Reaches</dt><dd>The web (search, fetch) and the model gateway. No other network.</dd>
+        <dt>Asks</dt><dd>Whoever started the thread; Alex (lead) if they don't answer in 30 minutes.</dd>
+        <dt>Spends</dt><dd>Up to $5 a thread, from the project's $200 a month.</dd>
+        <dt>Remembers</dt><dd>Notes kept in this project only. Nothing carries to other projects.</dd>
+        <dt>Stops</dt><dd>When the thread is done, after 15 minutes idle, or when a lead presses Pause.</dd>
+      </dl>
+    </div>
+    <p class="muted">Example data. The memory line matters more than it looks: Alex's personal Claude Code keeps one memory across everything he does. On a runner, a separate home per project keeps what it learns in one project out of another.</p>
+
+    <h2>How an agent takes part</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Mode</th><th>Looks like</th><th>Needs</th></tr></thead>
+      <tbody>
+        <tr><td><b>Ask</b></td><td>"@reviewer what does src/tax.ts do?" and an answer in a thread</td><td><span class="pill ok">built</span></td></tr>
+        <tr><td><b>Delegate</b></td><td>"@reviewer fix the rounding bug": it works for 20 minutes, asks once, resolves with a branch</td><td>Thread status and outcome, worktrees, notifications</td></tr>
+        <tr><td><b>Pair</b></td><td>Fast back and forth in a thread, or in a voice channel</td><td>Agents in voice (planned)</td></tr>
+        <tr><td><b>Review</b></td><td>One agent's branch reviewed by another, then by a person</td><td>Agents starting threads; loop limit (built)</td></tr>
+        <tr><td><b>Fan out</b></td><td>"Three researchers, one vendor each, then compare"</td><td>Provisioning, budgets, a depth limit</td></tr>
+        <tr><td><b>Watch</b></td><td>CI fails, an issue is filed: triage starts a thread in #checkout-alerts</td><td>Triggers (webhooks), strict budgets</td></tr>
+        <tr><td><b>Routine</b></td><td>A weekly digest of decisions in the project</td><td>Schedules</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- SANDBOX -->
+  <section id="sandbox" hidden>
+    <h2>What happens today</h2>
+    <p class="lead">The harness runs as the runner's user, in the agent's one workspace folder, for <b>every</b> thread (<code>AcpAdapter.cs</code> uses <code>m.Workspace</code> as each session's <code>cwd</code>). Two threads editing at once share the same files, and the harness can reach anything the runner's user can. The mockup promised "a worktree per thread"; that isn't built.</p>
+
+    <h2>The layers</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Layer</th><th>Rule</th><th>On your own runner</th><th>In a pool sandbox</th></tr></thead>
+      <tbody>
+        <tr><td>Process</td><td>Own process group; killed by its group</td><td>built</td><td>the container</td></tr>
+        <tr><td>Home</td><td>Its own <code>HOME</code> and <code>XDG_*</code> per agent and project: config, memory and harness sign-ins apart</td><td>by hand today; should be automatic</td><td>always</td></tr>
+        <tr><td>Files</td><td>Only the project's workspaces, a worktree and branch per thread; read-only where the project says</td><td>bubblewrap or Landlock on Linux, <code>sandbox-exec</code> on macOS, or off</td><td>only the mounts</td></tr>
+        <tr><td>Network</td><td>None, an allowlist (git host, package registries, model gateway, search), or open</td><td>usually open</td><td>through an egress proxy</td></tr>
+        <tr><td>Secrets</td><td>No raw keys inside. Model calls through a gateway with a per-thread token; git through a token scoped to one repository</td><td>the owner's own</td><td>brokered</td></tr>
+        <tr><td>Actions</td><td>ACP permission asks go to the approver; project rules decide what's asked, allowed or refused</td><td colspan="2">same everywhere (asking is built; rules are not)</td></tr>
+        <tr><td>Output</td><td>Changes leave as branches and pull requests, never a push to <code>main</code>; documents go to the library</td><td colspan="2">same everywhere</td></tr>
+        <tr><td>Limits</td><td>Memory, CPU, disk, time per turn, money per thread</td><td>memory cap via <code>systemd-run</code></td><td>container limits and the gateway</td></tr>
+      </tbody>
+    </table></div>
+    <p>On your own runner the sandbox is a choice (<code>cowork-runner run --sandbox</code>), and when it's off the thread says so: "runs unsandboxed on alex-laptop". People asking someone's personal agent to do something should know whose machine they're touching.</p>
+
+    <h2>A project on a directory</h2>
+    <div class="grid2">
+      <div class="card hl"><h3>A repository <span class="rec">Default</span></h3><p><code>git@github.com:lumen/checkout-app</code>, branch <code>main</code>. Any runner or sandbox clones it once and makes a worktree per thread on <code>cowork/&lt;thread&gt;</code>. Works with provisioned agents, survives machines, and the result is a branch someone can review.</p></div>
+      <div class="card"><h3>A folder on a machine</h3><p><code>~/source/checkout-app</code> on <b>build-01</b>. Only agents whose runner is on build-01 can work here; adding another agent says "researcher can't reach this folder". Worktrees per thread if it's a git folder; otherwise shared, read-only unless the project allows writes.</p></div>
+    </div>
+    <p>A project can have several workspaces (<code>app</code>, <code>docs</code>, a read-only <code>data</code> folder). The agent no longer has a workspace of its own: <b>the agent says how it works, the project says what it works on</b>. The same reviewer in two projects gets a different <code>cwd</code> per thread.</p>
+  </section>
+
+  <!-- CONTROL PLANE -->
+  <section id="plane" hidden>
+    <p class="lead">Your worry is right: if starting research means creating an agent, finding a machine, running a command and inviting it, nobody will do it twice. But "only provision" loses something real: people want to bring their own agent, with their subscription and their machine. So both, as two placements of the same thing.</p>
+
+    <div class="flow">
+      <div class="s"><b>Template</b>Who it is and how it works: instructions, harness and version, image, tools, default rules</div><div class="x">+</div>
+      <div class="s hl"><b>Placement</b><b style="color:var(--text);display:inline">Pinned</b> to a runner its owner connects, or a <b style="color:var(--text);display:inline">pool</b> that starts sandboxes on demand</div><div class="x">+</div>
+      <div class="s"><b>Enabled in a project</b>With the project's workspaces, sources, rules and budget</div><div class="x">=</div>
+      <div class="s"><b>A session per thread</b>Started when someone asks, stopped when idle</div>
+    </div>
+
+    <h2>The smallest control plane</h2>
+    <p class="lead">CoWork shouldn't grow into a scheduler. It needs one contract, kept as small as the runner's: <b>start a sandbox for (template, project, thread), stop it, tell me its state</b>. Inside the sandbox is the same <code>cowork-runner</code>, which connects out with a token minted for that one thread. No open ports, and the server holds no cloud credentials.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Provider</th><th>How</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pool runner</b></td><td><code>cowork-runner pool --max 4 --memory 2500M</code> on any Linux box. Asked for a sandbox, it starts a rootless podman container from the template's image with the runner inside. It connects out like any runner</td><td><span class="pill info">first</span></td></tr>
+        <tr><td>Kubernetes</td><td>The same pool, starting pods</td><td>later</td></tr>
+        <tr><td>Cloud sandboxes</td><td>Fly Machines, or a sandbox service (E2B, Daytona, Modal). The admin adds a key; the server or a pool calls the API</td><td>later</td></tr>
+        <tr><td>Weave Fleet</td><td>A Fleet machine offers itself as a pool, with Fleet's harness adapters</td><td>later</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Lifecycle</h2>
+    <div class="grid2">
+      <div class="card hl"><h3>A sandbox per thread <span class="rec">Chosen</span></h3><p>Strong isolation, threads run in parallel, nothing leaks between pieces of work. Its volume (worktree and the harness's own data) is kept, so a reply after it stopped resumes with <code>session/load</code>. Stops after 15 minutes idle; deleted some days after the thread is done.</p><p class="muted">Costs a cold start per thread: seconds with a warm image.</p></div>
+      <div class="card"><h3>A sandbox per agent and project</h3><p>Warm, one clone, threads share a machine with a worktree each.</p><p class="muted">Fewer starts, but one bad thread can affect the others, and memory piles up on a 14 GB host.</p></div>
+    </div>
+
+    <h2>Money and limits</h2>
+    <p>Provisioned agents spend the server's money, so they need what personal agents don't:</p>
+    <div class="grid3">
+      <div class="card"><h3>A model gateway</h3><p>The server holds provider keys; sandboxes get a per-thread token to a small proxy in CoWork that forwards and meters. Keys never enter a container, and spend is known per thread, agent and project.</p></div>
+      <div class="card"><h3>Budgets</h3><p>Per project a month, per thread a cap. At 80% the project's leads are told; at 100% new threads wait for a lead to raise it.</p></div>
+      <div class="card"><h3>Who may start agents</h3><p>A project grant ("members may start researcher"). Agents starting agents: depth 2, and the agent-to-agent turn limit (built) still holds. A Pause button for every agent in a project.</p></div>
+    </div>
+  </section>
+
+  <!-- SOURCES -->
+  <section id="sources" hidden>
+    <h2>Connecting sources</h2>
+    <p class="lead">People don't keep a project in one place: a repository, documents in Drive or Notion, issues in GitHub or Linear, a shared folder, the web. Agents pull from them with tools, as AGENTS.md says. The mechanism already exists in ACP: <code>session/new</code> takes a list of MCP servers, and CoWork passes an empty one today.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Source</th><th>Added as</th><th>Whose credentials</th></tr></thead>
+      <tbody>
+        <tr><td>Repository</td><td>A workspace (cloned, worktree per thread)</td><td>A deploy key or a token scoped to it, held by the project</td></tr>
+        <tr><td>CoWork itself</td><td>The <code>cowork</code> MCP server: read a channel, search, start and resolve threads, save to the library</td><td>The agent's own key; it sees only what it may</td></tr>
+        <tr><td>Documents, issues</td><td>An MCP server per connection, set on the project</td><td>Shown plainly: "Rosa's Notion, shared with Checkout app, read-only"</td></tr>
+        <tr><td>Files people drop in</td><td>Attachments land in the project's library</td><td>The project's</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout" style="margin-top:14px"><p><b>The trap:</b> a connection made with Rosa's account, used by an agent anyone in the project can ask, lets Sam read what Rosa can. A connection's page says whose it is and who can reach it through agents, and personal connections are off for guests' requests.</p></div>
+
+    <h2>Search</h2>
+    <div class="grid2">
+      <div class="card"><h3>People search</h3><p>Posts, threads by outcome and status, the library, people and agents. Filters: <code>in:#checkout-app</code>, <code>from:@reviewer</code>, <code>project:checkout</code>, <code>is:waiting</code>. SQLite FTS5 over the projections we already build from events. Results respect what you may see.</p></div>
+      <div class="card"><h3>Agent search</h3><p>The same index as a <code>cowork_search</code> tool, limited to the agent's boundary. "What did we decide about refunds?" goes to a thread with an agent that searches, reads and answers with links.</p></div>
+    </div>
+    <p>Thread outcomes do the heavy lifting: searching a summary finds the decision, where searching chat finds the argument about it.</p>
+  </section>
+
+  <!-- STORIES -->
+  <section id="stories" hidden>
+    <p class="lead">The scenarios to test the model against. Each is a candidate demo sentence. <span class="pill ok">built</span> works today, <span class="pill warn">partly</span> needs a step, <span class="pill bad">new</span> needs the model on these pages.</p>
+    <div class="stories">
+      <div class="story"><h3>1 · Alex sets up Lumen Labs <span class="pill warn">partly</span></h3><ol><li>Runs compose on a small box behind Caddy.</li><li>Opens the setup link from the log; names the server; signs in with the company's Google.</li><li>Allows <code>@lumenlabs.example</code>; skips agents; lands on a checklist.</li></ol><div class="needs">Needs: setup token, OIDC, domain join, checklist</div></div>
+      <div class="story"><h3>2 · A project from a repository <span class="pill bad">new</span></h3><ol><li>Alex: New project → Checkout app → from <code>lumen/checkout-app</code>.</li><li>It gets #checkout-app and 🔊 checkout-standup; Rosa and Sam are added.</li><li>He enables reviewer and researcher for it with a $200 budget.</li></ol><div class="needs">Needs: projects, workspaces, enabling templates</div></div>
+      <div class="story"><h3>3 · Alex brings his own Claude Code <span class="pill warn">partly</span></h3><ol><li>Invite an agent → runner command → connected (built).</li><li>He adds it to Checkout app; it clones the repository on his laptop.</li><li>The thread shows "runs unsandboxed on alex-laptop".</li></ol><div class="needs">Needs: agent in a project, per-project home, the label</div></div>
+      <div class="story"><h3>4 · Rosa kicks off research <span class="pill bad">new</span></h3><ol><li>"@researcher compare three tax-calculation APIs for EU refunds."</li><li>A thread opens: "starting researcher… 6 s". It searches the web, reads the repository.</li><li>It resolves with a summary and saves "Tax APIs compared" to the library. $1.40.</li></ol><div class="needs">Needs: templates, pool, gateway, library, outcomes</div></div>
+      <div class="story"><h3>5 · Fan out <span class="pill bad">new</span></h3><ol><li>Sam: "Spike each of the three, one thread each."</li><li>researcher starts three threads with three sandboxes, then a fourth that compares them.</li><li>Sam sees four rows on the board, three done, one working.</li></ol><div class="needs">Needs: agents starting threads, depth limit, board</div></div>
+      <div class="story"><h3>6 · A change, reviewed <span class="pill bad">new</span></h3><ol><li>Sam: "@reviewer fix rounding in refunds."</li><li>It works on <code>cowork/fix-rounding</code> in its own worktree; asks Alex before <code>git push</code>.</li><li>Resolves with a pull request link; a second thread reviews it.</li></ol><div class="needs">Needs: worktree per thread, rules, outcomes</div></div>
+      <div class="story"><h3>7 · A guest for one project <span class="pill bad">new</span></h3><ol><li>Alex sends a Checkout-only link to a contractor.</li><li>They see two channels and nothing else; agents they ask need a lead's confirmation for writes.</li></ol><div class="needs">Needs: project invites, guest role</div></div>
+      <div class="story"><h3>8 · CI goes red <span class="pill bad">new</span></h3><ol><li>A webhook reaches #checkout-alerts; triage starts a thread.</li><li>It finds the failing test, posts a cause, and waits for a person before doing more.</li></ol><div class="needs">Needs: triggers, budgets, the turn limit</div></div>
+      <div class="story"><h3>9 · "What did we decide?" <span class="pill bad">new</span></h3><ol><li>Rosa searches "refund rounding" and finds the resolved thread's outcome first.</li><li>Or asks an agent, which searches and answers with links.</li></ol><div class="needs">Needs: FTS search, cowork tools</div></div>
+      <div class="story"><h3>10 · Something goes wrong <span class="pill warn">partly</span></h3><ol><li>An agent loops on a flaky test; the project hits 80% of its budget and leads are told.</li><li>Alex presses Pause on the project's agents; sandboxes stop; threads say why.</li><li>Sam leaves the company: his personal agent goes with him, his threads stay, template agents carry on.</li></ol><div class="needs">Needs: Pause, budgets; removal is built</div></div>
+    </div>
+  </section>
+
+  <!-- DECIDE -->
+  <section id="decide" hidden>
+    <h2>Decisions</h2>
+    <p class="muted">Approved by the user on 25 November 2026: option A in all eight.</p>
+    <div class="q"><h3>1 · What is a project?</h3>
+      <div class="opt"><b>A</b><span>A project holds channels and owns workspaces, sources, agents, rules and budget. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>A channel is a project.</span></div>
+      <div class="opt"><b>C</b><span>A project is its own server.</span></div></div>
+    <div class="q"><h3>2 · Where does the workspace live?</h3>
+      <div class="opt"><b>A</b><span>On the project (repository or folder on a named machine), a worktree per thread. Agents no longer have one. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>On the agent, as today, with worktrees added.</span></div></div>
+    <div class="q"><h3>3 · Invite or provision?</h3>
+      <div class="opt"><b>A</b><span>Both: templates with a placement, pinned or pool. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>Provision only: every agent runs in CoWork's sandboxes.</span></div>
+      <div class="opt"><b>C</b><span>Invite only, as today.</span></div></div>
+    <div class="q"><h3>4 · The first pool</h3>
+      <div class="opt"><b>A</b><span>A pool runner starting rootless podman containers, on any Linux box. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>A cloud sandbox service first (Fly, E2B, Daytona).</span></div>
+      <div class="opt"><b>C</b><span>Kubernetes.</span></div></div>
+    <div class="q"><h3>5 · Sandbox lifetime</h3>
+      <div class="opt"><b>A</b><span>One per thread, volume kept, stops after 15 idle minutes. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>One per agent and project.</span></div></div>
+    <div class="q"><h3>6 · Model keys for provisioned agents</h3>
+      <div class="opt"><b>A</b><span>A metering gateway in CoWork; keys never enter a sandbox. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>Keys passed into the sandbox as environment variables; no metering.</span></div></div>
+    <div class="q"><h3>7 · Who approves for a team agent?</h3>
+      <div class="opt"><b>A</b><span>Whoever started the thread, if they're a project member; a lead if they don't answer or are a guest. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>The project's leads only.</span></div>
+      <div class="opt"><b>C</b><span>Server admins.</span></div></div>
+    <div class="q"><h3>8 · Threads as work</h3>
+      <div class="opt"><b>A</b><span>Status, outcome and a project board, all views over threads. <span class="rec">Chosen</span></span></div>
+      <div class="opt"><b>B</b><span>Keep threads as conversation; tasks belong in a tracker.</span></div></div>
+
+    <h2>Mockups to test it</h2>
+    <p>Click-through additions to <code>mockups/cowork/index.html</code>, in the app's look, with Alex, Rosa and Sam:</p>
+    <div class="grid2">
+      <div class="card"><h3>New project</h3><p>From a repository, a folder or empty; members; which agents; budget. Then the project's settings page.</p></div>
+      <div class="card"><h3>Agent boundary</h3><p>The profile card from the Agents tab, and the confirmation when someone adds an agent to a project.</p></div>
+      <div class="card"><h3>Starting a provisioned agent</h3><p>The thread from "@researcher …" through "starting…", working, asking, resolved with an outcome and cost.</p></div>
+      <div class="card"><h3>The project board and search</h3><p>Threads by status across the project; search with outcomes first.</p></div>
+    </div>
+
+    <h2>Slices</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Slice</th><th>Demo sentence</th></tr></thead>
+      <tbody>
+        <tr><td><b>1 · Projects and workspaces</b></td><td>Alex makes Checkout app from a repository; reviewer, on his runner, answers two threads at once, each in its own worktree and branch.</td></tr>
+        <tr><td><b>2 · CoWork tools</b></td><td>researcher reads #checkout-app with <code>cowork_read_channel</code>, saves a note to the library and resolves its thread with a summary.</td></tr>
+        <tr><td><b>3 · Templates and a pool</b></td><td>Rosa mentions researcher, a template no runner serves; a pool on this machine starts a container for the thread, it answers, and stops when idle.</td></tr>
+        <tr><td><b>4 · Gateway and budgets</b></td><td>The thread shows what it cost; a project at its cap holds new threads until Alex raises it.</td></tr>
+        <tr><td><b>5 · Sign-in for teams</b></td><td>A setup link from the log, OpenID Connect, domain join, and a guest who sees one project.</td></tr>
+        <tr><td><b>6 · Work and search</b></td><td>The project board, triggers from a webhook, and search that finds the decision.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+<script>
+const tabs = document.querySelectorAll('nav.tabs button');
+function show(name) {
+  tabs.forEach(x => x.setAttribute('aria-selected', String(x.dataset.tab === name)));
+  document.querySelectorAll('section').forEach(s => s.hidden = s.id !== name);
+}
+tabs.forEach(t => t.addEventListener('click', () => { show(t.dataset.tab); window.scrollTo({ top: 0 }); }));
+document.querySelectorAll('a.go').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault(); show(new URL(a.href).searchParams.get('tab')); window.scrollTo({ top: 0 });
+}));
+const tab = new URLSearchParams(location.search).get('tab');
+if (tab) show(tab);
+</script>
+</body>
+</html>
