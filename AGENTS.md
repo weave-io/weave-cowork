@@ -81,3 +81,7 @@ docs/                 build briefs, screenshots
 - **Harnesses here:** OpenCode 2.4.1 at `~/.weave/harnesses/opencode2/.opencode/bin/opencode` (`opencode acp`),
   Claude Code (`claude`) and Codex (`codex`) on PATH. **Don't touch `~/.weave`'s data or `~/.weave/fleet.db`**: they
   belong to the live Weave Fleet. Run harnesses for tests with a scratch `HOME`/`XDG_*` under `~/.cache/cowork-…`.
+- **Models for live checks:** OpenCode's free models hit their usage limits. The user agreed (25 Nov 2026) that live
+  checks use the GitHub Copilot subscription when it's signed in locally: `tests/live/lib.mjs` then links (never copies)
+  `~/.local/share/opencode/auth.json` into the scratch home and uses `github-copilot/claude-haiku-4.5`.
+  `OPENCODE_MODEL` picks another model; `OPENCODE_SIGN_IN=none` goes back to the free models.
