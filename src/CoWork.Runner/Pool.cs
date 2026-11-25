@@ -45,9 +45,9 @@ public sealed class PoolConfig
 /// connects out with the thread's token. Everything it makes carries its labels (`cowork.pool`, `cowork.sandbox`, `cowork.thread`), and it
 /// only ever removes what carries them.
 ///
-/// Reaching the server from a container: rootless podman here uses pasta, and `host.containers.internal` (169.254.1.2) reaches the host's
-/// network address, not its loopback. A server on 127.0.0.1 is only reachable with `--network pasta:--map-host-loopback=169.254.1.2`, so for a
-/// loopback server the pool rewrites the address to `host.containers.internal` and starts the container with that option (checked 25 Nov 2026).
+/// The network: a sandbox runs with `--network none`. Its only ways out are two unix sockets of its own <see cref="EgressProxy"/>, mounted at
+/// /run/cowork: one to the server (hub and gateway), one to an HTTP proxy that applies the project's network list. The runner inside offers
+/// them on loopback ports (<see cref="LoopbackForwarder"/>).
 /// </summary>
 public sealed class PoolLink : IAsyncDisposable
 {
@@ -58,6 +58,7 @@ public sealed class PoolLink : IAsyncDisposable
     private readonly string _podman;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
     private readonly ConcurrentDictionary<string, byte> _started = new();       // sandboxes this process started and hasn't stopped
+    private readonly ConcurrentDictionary<string, EgressProxy> _proxies = new();  // each running sandbox's way out
     private readonly CancellationTokenSource _stop = new();
     public event Action? Revoked;
     public Action<string> Log = Console.WriteLine;
@@ -77,6 +78,10 @@ public sealed class PoolLink : IAsyncDisposable
         _hub.On<ResumeSandbox>("ResumeSandbox", c => { _ = Task.Run(() => Start(c.Spec, resume: true)); });
         _hub.On<SuspendSandbox>("SuspendSandbox", c => { _ = Task.Run(() => Suspend(c.SandboxId)); });
         _hub.On<DeleteSandbox>("DeleteSandbox", c => { _ = Task.Run(() => Delete(c.SandboxId)); });
+        _hub.On<AllowEgress>("AllowEgress", a =>
+        {
+            if (_proxies.TryGetValue(a.SandboxId, out var p)) { p.Allow(a.Host, a.Once); Log($"[{pool.Name}] {a.SandboxId}: {a.Host} allowed {(a.Once ? "once" : "for the thread")}"); }
+        });
         _hub.On("Revoked", () => Revoked?.Invoke());
         _hub.Reconnected += async _ => { Log($"[{pool.Name}] reconnected"); await Hello(); };
         _hub.Reconnecting += _ => { Log($"[{pool.Name}] connection lost, reconnecting…"); return Task.CompletedTask; };
@@ -109,8 +114,16 @@ public sealed class PoolLink : IAsyncDisposable
         return true;
     }
 
+    private bool _swept;
     private async Task Hello()
     {
+        // a sandbox's only way out is this process's proxy: containers left running by an earlier pool process can't reach anything, so
+        // they stop (their volumes stay) and the server resumes them when their threads need them
+        if (!_swept)
+        {
+            _swept = true;
+            foreach (var id in await Running()) { Log($"[{_pool.Name}] {id} was left running by an earlier pool process; stopping it (volume kept)"); await RemoveContainer(id); }
+        }
         var running = await Running();
         foreach (var id in running) _started.TryAdd(id, 0);
         await _hub.InvokeAsync("Hello", new PoolHello(_pool.Slots, _pool.MemoryMb, running.ToArray()));
@@ -147,6 +160,7 @@ public sealed class PoolLink : IAsyncDisposable
                         if ((await Running()).Contains(id) || !_started.TryRemove(id, out _)) continue;
                         Log($"[{_pool.Name}] {id}'s container stopped by itself; its volume is kept");
                         await RemoveContainer(id);
+                        await CloseWay(id);
                         await Report(new SandboxStateReport(id, SandboxStates.Suspended, "its container stopped"));
                     }
                     finally { gate.Release(); }
@@ -177,29 +191,34 @@ public sealed class PoolLink : IAsyncDisposable
             var workspaceMs = t0.ElapsedMilliseconds;
 
             var t1 = Stopwatch.StartNew();
-            var (server, network) = ForContainer(_pool.Server);
+            // no network at all: the sandbox's ways out are the two sockets of its own proxy (the server, and the project's list)
+            var proxy = await OpenWay(s);
             var args = new List<string> { "run", "-d", "--name", name };
             args.AddRange(labels);
             args.AddRange(new[] { "--memory", $"{s.Limits.MemoryMb}m", "--memory-swap", $"{s.Limits.MemoryMb}m", "--pids-limit", "512" });
             if (s.Limits.Cpus is { } cpus) args.AddRange(new[] { "--cpus", cpus.ToString(System.Globalization.CultureInfo.InvariantCulture) });
-            if (network is not null) args.AddRange(new[] { "--network", network });
-            args.AddRange(new[] { "-v", $"{name}:/work" });
-            // what the runner inside needs: where the server is and the thread's token (by name only: the value comes from this process's
-            // environment, so it isn't on podman's command line), and who it is. No provider key, no sign-in, not the pool's token.
-            foreach (var (k, v) in new[] { ("COWORK_SERVER", server), ("COWORK_AGENT", s.AgentId.ToString()), ("COWORK_HANDLE", s.Handle),
-                         ("COWORK_THREAD", s.ThreadId.ToString()), ("COWORK_MODEL", s.Template.Model ?? ""), ("COWORK_WORKSPACE", "/work/repo") })
+            args.AddRange(new[] { "--network", "none", "-v", $"{name}:/work", "-v", $"{proxy.Folder}:/run/cowork:ro" });
+            // what the runner inside needs: where the server is (its loopback port onto server.sock) and the thread's token (by name only: the
+            // value comes from this process's environment, so it isn't on podman's command line), who it is, and the proxy for everything else.
+            // No provider key, no sign-in, not the pool's token.
+            const string Proxy = "http://127.0.0.1:3128";
+            foreach (var (k, v) in new[] { ("COWORK_SERVER", "http://127.0.0.1:3129"), ("COWORK_SERVER_SOCKET", "/run/cowork/" + EgressProxy.ServerSocket),
+                         ("COWORK_PROXY_SOCKET", "/run/cowork/" + EgressProxy.ProxySocket), ("COWORK_AGENT", s.AgentId.ToString()), ("COWORK_HANDLE", s.Handle),
+                         ("COWORK_THREAD", s.ThreadId.ToString()), ("COWORK_MODEL", s.Template.Model ?? ""), ("COWORK_WORKSPACE", "/work/repo"),
+                         ("HTTP_PROXY", Proxy), ("HTTPS_PROXY", Proxy), ("http_proxy", Proxy), ("https_proxy", Proxy), ("NO_PROXY", "127.0.0.1,localhost"), ("no_proxy", "127.0.0.1,localhost") })
                 args.AddRange(new[] { "-e", $"{k}={v}" });
             args.AddRange(new[] { "-e", "COWORK_THREAD_TOKEN" });
             args.Add(s.Template.Image);
             await Must(_podman, TimeSpan.FromMinutes(10), args.ToArray(), new() { ["COWORK_THREAD_TOKEN"] = s.ThreadToken });
             _started[s.SandboxId] = 0;
-            Log($"[{_pool.Name}] {s.SandboxId}: {(resume ? "resumed" : "started")} {name} from {s.Template.Image}, {s.Limits.MemoryMb} MB, server {server}");
+            Log($"[{_pool.Name}] {s.SandboxId}: {(resume ? "resumed" : "started")} {name} from {s.Template.Image}, {s.Limits.MemoryMb} MB, no network; it may reach {string.Join(", ", Hosts(s).DefaultIfEmpty("only the server"))}");
             await Report(new SandboxStateReport(s.SandboxId, SandboxStates.Running, null, workspaceMs, t1.ElapsedMilliseconds));
         }
         catch (Exception e)
         {
             Log($"[{_pool.Name}] {s.SandboxId}: couldn't start: {e.Message}");
             try { await RemoveContainer(s.SandboxId); } catch { }
+            await CloseWay(s.SandboxId);
             try { await Report(new SandboxStateReport(s.SandboxId, SandboxStates.Failed, Short(e.Message))); } catch { }
         }
         finally { gate.Release(); }
@@ -271,6 +290,7 @@ public sealed class PoolLink : IAsyncDisposable
         {
             _started.TryRemove(sandboxId, out _);
             await RemoveContainer(sandboxId);
+            await CloseWay(sandboxId);
             Log($"[{_pool.Name}] {sandboxId}: suspended; volume {Name(sandboxId)} kept");
             await Report(new SandboxStateReport(sandboxId, SandboxStates.Suspended));
         }
@@ -286,6 +306,7 @@ public sealed class PoolLink : IAsyncDisposable
         {
             _started.TryRemove(sandboxId, out _);
             await RemoveContainer(sandboxId);
+            await CloseWay(sandboxId);
             var name = Name(sandboxId);
             if (await LabelOf("volume", name) == _key) await Must(_podman, TimeSpan.FromMinutes(2), "volume", "rm", name);
             Log($"[{_pool.Name}] {sandboxId}: deleted with its volume");
@@ -310,13 +331,24 @@ public sealed class PoolLink : IAsyncDisposable
         return code == 0 ? o.Trim() : null;
     }
 
-    /// <summary>The server's address as a container sees it, and the network option that makes it reachable (see the class summary).</summary>
-    public static (string Server, string? Network) ForContainer(string server)
+    /// <summary>The hosts a sandbox may reach (the project's list and what was allowed for its thread); the server and gateway always.</summary>
+    public static IEnumerable<string> Hosts(SandboxSpec s) => s.Network.Rules.SelectMany(r => r.Hosts).Where(h => h is not ("cowork-server" or "cowork-gateway")).Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The sandbox's proxy, made fresh for each start with the hosts in its command.</summary>
+    private async Task<EgressProxy> OpenWay(SandboxSpec s)
     {
-        var u = new Uri(server);
-        if (u.IsLoopback || u.Host == "localhost")
-            return (new UriBuilder(u) { Host = "host.containers.internal" }.Uri.ToString().TrimEnd('/'), "pasta:--map-host-loopback=169.254.1.2");
-        return (server.TrimEnd('/'), null);
+        await CloseWay(s.SandboxId);
+        var server = new Uri(_pool.Server);
+        var p = new EgressProxy(Path.Combine(_root, "sockets", s.SandboxId), server.Host, server.Port, Hosts(s),
+            (host, port) => _hub.InvokeAsync("EgressRefused", new EgressRefusal(s.SandboxId, host, port))) { Log = m => Log($"[{_pool.Name}] {s.SandboxId}: {m}") };
+        p.Start();
+        _proxies[s.SandboxId] = p;
+        return p;
+    }
+
+    private async Task CloseWay(string sandboxId)
+    {
+        if (_proxies.TryRemove(sandboxId, out var p)) await p.DisposeAsync();
     }
 
     /// <summary>A failure as the thread shows it: its first two lines, at most 300 characters.</summary>
@@ -354,7 +386,12 @@ public sealed class PoolLink : IAsyncDisposable
         return (p.ExitCode, await o, await e);
     }
 
-    public async ValueTask DisposeAsync() { _stop.Cancel(); await _hub.DisposeAsync(); }
+    public async ValueTask DisposeAsync()
+    {
+        _stop.Cancel();
+        foreach (var id in _proxies.Keys.ToList()) await CloseWay(id);
+        await _hub.DisposeAsync();
+    }
 
     private sealed class Backoff : IRetryPolicy
     {

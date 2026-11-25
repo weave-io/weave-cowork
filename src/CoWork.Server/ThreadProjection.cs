@@ -92,6 +92,8 @@ public sealed class ThreadProjection : IInlineProjection
                 Meta(x, id, e.Position, m =>
                 {
                     if (e.Type == "ToolCallFinished") m["status"] = e.Str("status") ?? "completed";
+                    // a sandbox's setup command shows what it printed (its end, at most 4,000 characters)
+                    if (e.Type == "ToolCallFinished" && e.Str("toolId") == "cowork-setup" && e.Str("output") is { } output) m["output"] = output.Length > 4000 ? "…" + output[^4000..] : output;
                     if (!string.IsNullOrEmpty(title)) m["title"] = title;
                 });
                 if (!string.IsNullOrEmpty(title)) x.Execute("UPDATE posts SET body=@title WHERE id=@id", new { title, id });

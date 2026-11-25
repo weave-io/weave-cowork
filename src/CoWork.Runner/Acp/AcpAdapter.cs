@@ -69,6 +69,7 @@ public sealed class AcpAdapter : IAsyncDisposable
             var key = m.ProjectId is { } project && !_sandbox ? $"project-{project}" : "agent";
             var proc = await EnsureProcess(key, m);
             var (sessionId, first) = await EnsureSession(proc, key, m);
+            if (_sandbox && !string.IsNullOrWhiteSpace(m.SetupCommand)) await Setup(m);
             // the agent's instructions go in the first prompt of each session, before the first message
             var text = first && !string.IsNullOrWhiteSpace(m.Instructions) ? $"{m.Instructions.Trim()}\n\n{m.Text}" : m.Text;
             var result = await proc.Client.Request("session/prompt", new JsonObject
@@ -90,6 +91,42 @@ public sealed class AcpAdapter : IAsyncDisposable
             Emit(new StreamEvent(m.ThreadId, StreamKinds.TurnEnded));
             gate.Release();
         }
+    }
+
+    /// <summary>Where a sandbox remembers that its thread's setup ran: in its home, on the thread's volume.</summary>
+    public string SetupMarker { get; init; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cowork", "setup.json");
+    public const string SetupToolId = "cowork-setup";
+
+    /// <summary>The project's setup command, once per thread, before the first prompt: in the thread's workspace, through the sandbox's proxy
+    /// like everything else. It shows as a tool row with its output; its result stays in the volume (and the marker says it ran).</summary>
+    private async Task Setup(DeliverMessage m)
+    {
+        var marker = SetupMarker;
+        if (File.Exists(marker)) return;
+        var cwd = _workspaces.GetValueOrDefault(m.ThreadId) ?? _places.Fixed ?? ".";
+        var title = $"setup: {m.SetupCommand}";
+        Emit(new StreamEvent(m.ThreadId, StreamKinds.ToolStart, null, SetupToolId, title, "execute", "running"));
+        var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(m.SetupCommand!);
+        var output = new System.Text.StringBuilder(); var code = -1;
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            p.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.AppendLine(e.Data); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.AppendLine(e.Data); };
+            p.BeginOutputReadLine(); p.BeginErrorReadLine();
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+            try { await p.WaitForExitAsync(cts.Token); code = p.ExitCode; }
+            catch (OperationCanceledException) { try { p.Kill(entireProcessTree: true); } catch { } lock (output) output.AppendLine("cowork: the setup command took longer than 15 minutes and was stopped."); }
+        }
+        catch (Exception e) { lock (output) output.AppendLine("cowork: couldn't run the setup command: " + e.Message); }
+        string text; lock (output) text = output.ToString();
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(text);
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+        Emit(new StreamEvent(m.ThreadId, StreamKinds.ToolEnd, null, SetupToolId, title, null, code == 0 ? "completed" : "failed", bytes, sha, Cap(text)));
+        Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+        File.WriteAllText(marker, System.Text.Json.JsonSerializer.Serialize(new { command = m.SetupCommand, exitCode = code, at = DateTimeOffset.UtcNow }));
+        Log?.Invoke($"thread {m.ThreadId}: setup '{m.SetupCommand}' exited {code}");
     }
 
     private async Task<AcpAgentProcess> EnsureProcess(string key, DeliverMessage m)

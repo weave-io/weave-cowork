@@ -36,6 +36,10 @@ export interface ThreadAgent {
   placement?: 'runner' | 'pool'
   /** a team template's sandbox for this thread: its state and its pool */
   sandbox?: { state: SandboxState; pool: string | null; starts: number } | null
+  /** Pause all agents: who paused this thread's project */
+  pausedBy?: string | null
+  /** what a template's thread has used through the gateway */
+  usage?: { calls: number; tokens: number; cost: number | null } | null
 }
 export type SandboxState = 'waiting' | 'starting' | 'resuming' | 'running' | 'suspending' | 'suspended' | 'failed' | 'deleted'
 /** One row of a sandbox's starting card, as the server wrote it. Text between backticks is code. */

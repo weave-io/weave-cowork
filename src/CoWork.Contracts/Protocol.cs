@@ -12,7 +12,8 @@ public record DeliverMessage(
     string Text,
     bool RecordToolOutput = false,    // the agent's switch "Record full tool output": only then does the runner send a tool's output text
     long? ProjectId = null,           // the thread's channel is in this project: the harness keeps its data for it apart (a data folder per agent and project)
-    ThreadWorkspace? ThreadWorkspace = null);   // where the thread works, when its channel is in a project; else `Workspace` (the agent's own folder)
+    ThreadWorkspace? ThreadWorkspace = null,    // where the thread works, when its channel is in a project; else `Workspace` (the agent's own folder)
+    string? SetupCommand = null);               // a sandbox: the project's setup command, run once per thread before the first prompt
 
 /// <summary>Where a thread in a project works. Kind: repository (cloned once per agent and repository, a worktree per thread on
 /// <see cref="Branch"/>), folder (a git folder gets a worktree too; any other folder is used as it is), none (an empty folder per thread).</summary>
@@ -86,6 +87,12 @@ public record DeleteSandbox(string SandboxId);
 /// <summary>Pool → server: a sandbox's state. <see cref="WorkspaceMs"/> and <see cref="ContainerMs"/>: how long preparing the volume and starting
 /// the container took (for the thread's starting rows).</summary>
 public record SandboxStateReport(string SandboxId, string State, string? Reason = null, long? WorkspaceMs = null, long? ContainerMs = null);
+
+/// <summary>Server → pool: let the sandbox reach a host it was refused, for one connection or for the rest of the thread (someone allowed it).</summary>
+public record AllowEgress(string SandboxId, string Host, bool Once);
+
+/// <summary>Pool → server: the sandbox tried to reach a host that isn't on its list; the proxy refused it.</summary>
+public record EgressRefusal(string SandboxId, string Host, int Port);
 
 public static class SandboxStates
 {

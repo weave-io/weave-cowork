@@ -69,6 +69,11 @@ public static class Effects
                     if (e.LongOrNull("postId") is { } placed) Post(EffectKind.PostUpdated, placed, e.Position);
                     foreach (var w in c.Query<long>("SELECT post_id FROM sandboxes WHERE state='waiting' AND post_id IS NOT NULL")) Post(EffectKind.PostUpdated, w, e.Position);     // the queue moved up
                     Thread(t, e.Position); break;
+                case "EgressRefused": case "BudgetReached": case "ThreadBudgetRaised":
+                    if (e.LongOrNull("postId") is { } created) Post(EffectKind.PostCreated, created, e.Position);
+                    Thread(t, e.Position); break;
+                case "EgressAllowed": case "EgressDenied":
+                    Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); break;
                 case "SandboxStarted": case "SandboxResumed": case "SandboxConnected": case "SandboxSuspending": case "SandboxSuspended": case "SandboxFailed": case "SandboxDeleted":
                     if (e.LongOrNull("postId") is { } card) Post(EffectKind.PostUpdated, card, e.Position);
                     Thread(t, e.Position); break;
@@ -115,6 +120,10 @@ public sealed class ThreadViews
             {
                 id = a.Id, handle = a.Handle, displayName = a.DisplayName, online = a.IsTemplate ? _sandboxes.ConnectionOf(a.Id, rootId) is not null : _runners.IsOnline(a.Id),
                 placement = a.Placement,
+                // Pause all agents: who paused this thread's project
+                pausedBy = c.ExecuteScalar<string?>(@"SELECT m.display_name FROM threads t JOIN channels ch ON ch.id=t.channel_id JOIN projects p ON p.id=ch.project_id JOIN members m ON m.id=p.paused_by
+                    WHERE t.root_id=@rootId AND p.paused_at IS NOT NULL", new { rootId }),
+                usage = a.IsTemplate ? c.QueryFirstOrDefault<ThreadUsage>("SELECT COALESCE(SUM(calls),0) AS Calls, COALESCE(SUM(prompt_tokens+completion_tokens),0) AS Tokens, SUM(cost) AS Cost FROM model_usage WHERE thread_id=@rootId AND agent_id=@id", new { rootId, id = a.Id }) : null,
                 // a template's sandbox for this thread: where it is and what state it's in
                 sandbox = a.IsTemplate ? c.QueryFirstOrDefault<ThreadSandbox>("SELECT s.state, p.name AS pool, s.starts FROM sandboxes s LEFT JOIN pools p ON p.id=s.pool_id WHERE s.thread_id=@rootId AND s.agent_id=@id", new { rootId, id = a.Id }) : null,
                 busy = c.ExecuteScalar<int>("SELECT COUNT(*) FROM open_turns WHERE thread_id=@rootId AND agent_id=@id", new { rootId, id = a.Id }) > 0,
@@ -125,6 +134,8 @@ public sealed class ThreadViews
             }).ToList();
     }
 }
+
+public sealed class ThreadUsage { public long Calls { get; set; } public long Tokens { get; set; } public double? Cost { get; set; } }
 
 public sealed class ThreadSandbox { public string State { get; set; } = ""; public string? Pool { get; set; } public int Starts { get; set; } }
 

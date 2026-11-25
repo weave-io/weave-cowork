@@ -8,7 +8,7 @@ public static class Projections
     {
         "open_turns", "runner_positions", "thread_agents", "threads", "posts", "channel_members", "channels",
         "invites", "agents", "people", "members", "settings", "projects", "project_members", "project_agents", "workspaces",
-        "pools", "sandboxes", "model_usage",
+        "pools", "sandboxes", "model_usage", "project_network", "thread_egress", "budgets", "thread_budgets", "project_usage",
     };
 
     public static void Clear(ProjectionContext x)

@@ -171,7 +171,8 @@ try {
   expect(waitingText.startsWith('Waiting for room on pool-01 (2 of 2 busy), 1st in line'), 'the third thread says: ' + waitingText)
   expect(clean(await a.textContent('[data-testid=thread-panel] [data-testid=agent-status]')) === 'waiting for room', 'its session line says "waiting for room"')
   await shots(a, '6-waiting-for-room')
-  const [rosaThread, samThread, alexThread] = sql("select root_id from threads order by root_id").map(x => x[0])
+  const threadOf = (handle) => sql(`select t.root_id from threads t join members m on m.id=t.started_by where m.handle='${handle}'`)[0][0]      // Rosa and Sam posted at the same moment: either may be first
+  const [rosaThread, samThread, alexThread] = ['rosa', 'sam', 'alex'].map(threadOf)
   await until('two sandboxes running at once', () => running().length === 2, 90000)
   expect(running().sort().join() === [container(sandboxOf(rosaThread)[0]), container(sandboxOf(samThread)[0])].sort().join(), 'two containers run side by side, one per thread: ' + running().join(', '))
   const limits = podman('inspect', '--format', '{{.HostConfig.Memory}} {{index .Config.Labels "cowork.thread"}}', container(sandboxOf(rosaThread)[0]))

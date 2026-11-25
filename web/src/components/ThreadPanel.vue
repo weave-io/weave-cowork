@@ -36,10 +36,12 @@ function shortCommand(cmd: string[]) {
 // a team template is online in a thread while its sandbox's runner is connected; a pinned agent while its runner is
 const isOnline = (a: ThreadAgent) => a.placement === 'pool' ? a.online : memberById(a.id)?.online ?? a.online
 function dot(a: ThreadAgent) {
+  if (a.pausedBy) return 'offline'
   if (a.placement === 'pool' && !a.online) return ['waiting', 'starting', 'resuming'].includes(a.sandbox?.state ?? '') ? 'waiting' : 'offline'
   return !isOnline(a) ? (a.queued > 0 ? 'waiting' : 'offline') : a.busy ? 'working' : 'online'
 }
 function status(a: ThreadAgent) {
+  if (a.pausedBy) return `paused by ${a.pausedBy}`
   if (a.placement === 'pool' && !a.online)
     return ({ waiting: 'waiting for room', starting: 'starting…', resuming: 'resuming…', suspending: 'stopping…', suspended: 'stopped, volume kept', failed: "couldn't start", deleted: 'deleted' } as Record<string, string>)[a.sandbox?.state ?? ''] ?? 'starting…'
   if (!isOnline(a)) return a.queued > 0 ? 'waiting for the runner' : 'offline'
@@ -68,6 +70,7 @@ async function send(text: string) {
         <span v-if="a.workspace?.branch" class="flex items-center gap-1" data-testid="session-branch">· <GitBranch :size="12" aria-hidden="true" /><code class="font-mono text-[11.5px]">{{ a.workspace.branch }}</code></span>
         <span v-if="a.placement !== 'pool' && (a.workspace?.host ?? a.runnerHost)" :class="!(a.workspace?.sandboxed) && 'text-idle-text'" data-testid="session-where">· {{ a.workspace?.sandboxed ? 'sandboxed' : 'unsandboxed' }} on {{ a.workspace?.host ?? a.runnerHost }}</span>
         <span v-if="startedBy">· started by {{ startedBy.displayName }}</span>
+        <span v-if="a.usage?.tokens" data-testid="session-usage">· {{ a.usage.tokens.toLocaleString() }} tokens<template v-if="a.usage.cost != null"> · ${{ a.usage.cost.toFixed(2) }}</template></span>
         <span class="ml-auto flex items-center gap-1.5" data-testid="agent-status">
           <StatusDot :state="dot(a)" />
           {{ status(a) }}

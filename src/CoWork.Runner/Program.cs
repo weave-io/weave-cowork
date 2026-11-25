@@ -119,6 +119,9 @@ static class Cli
         void Stop() { try { stop.Cancel(); } catch (ObjectDisposedException) { } }
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Stop();
         using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; Stop(); });
+        // the sandbox has no network: the pool's two sockets are its ways out, offered here on loopback (the server on 3129, the proxy on 3128)
+        if (Env("COWORK_SERVER_SOCKET") is { Length: > 0 } serverSocket) LoopbackForwarder.Start(3129, serverSocket, stop.Token);
+        if (Env("COWORK_PROXY_SOCKET") is { Length: > 0 } proxySocket) LoopbackForwarder.Start(3128, proxySocket, stop.Token);
         var link = new ServerLink(new SavedAgent(server, agentId, handle, token), "sandbox",
             sessions: new SessionStore(Path.Combine(configHome, "cowork-runner", "sessions.json")),
             agentRoot: Path.Combine(home, ".local", "share", "cowork-runner"), sandboxWorkspace: workspace);

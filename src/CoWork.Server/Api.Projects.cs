@@ -323,6 +323,7 @@ public static partial class Api
             channels = c.Query<ChannelRow>("SELECT * FROM channels WHERE project_id=@id ORDER BY kind='voice', name", new { id }).Where(ch => Access.CanSee(c, ch.Id, me))
                 .Select(ch => new { id = ch.Id, name = ch.Name, kind = ch.Kind, isPrivate = ch.IsPrivate }).ToList(),
             rules = Rules(workspaces, agents.Any(a => a.Agent.IsTemplate)),
+            locked = Locked(c, id),
         };
     }
 
@@ -331,7 +332,7 @@ public static partial class Api
     {
         var rules = new List<string>();
         if (templates)
-            rules.Add("A team template's thread runs in its own sandbox on a pool: a copy of the repository on its own `cowork/<thread>` branch, no model key and no push credential in it. It stops when idle and keeps its volume.");
+            rules.Add("A team template's thread runs in its own sandbox on a pool: a copy of the repository on its own `cowork/<thread>` branch, no model key and no push credential in it, and no network but the server and the project's list. It stops when idle and keeps its volume.");
         if (ws.Any(w => w.Kind == "repository"))
             rules.Add($"Each thread works in its own worktree on a `cowork/<thread>` branch. A hook refuses pushes to {Projects.List(ws.Where(w => w.Kind == "repository").Select(w => $"`{w.Branch}`").Distinct().ToList())}.");
         if (ws.Any(w => w.Kind == "folder"))

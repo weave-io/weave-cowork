@@ -142,6 +142,18 @@ public sealed class Gateway
         JsonObject body;
         try { body = (await JsonNode.ParseAsync(ctx.Request.Body, cancellationToken: ct))!.AsObject(); }
         catch { await Refuse(400, "The body isn't a chat completion request.").ExecuteAsync(ctx); return; }
+        // the project's budget, before the call: a thread or a month at its cap gets no more model calls, and the thread says why
+        if (t.ProjectId is { } project)
+        {
+            Budgets.Reached? reached;
+            using (var c = _db.Open()) reached = Budgets.Check(c, t.ThreadId, project, Db.Now());
+            if (reached is not null)
+            {
+                RecordReached(t, project, reached);
+                await Results.Json(new { error = new { message = reached.Text, type = "budget_exceeded", code = "budget_exceeded" } }, statusCode: 402).ExecuteAsync(ctx);
+                return;
+            }
+        }
         var up = await Resolve(ct);
         if (up is null) { await Refuse(503, "No model provider is set up on this server. An admin sets one in Server settings → Models.").ExecuteAsync(ctx); return; }
 
@@ -200,6 +212,28 @@ public sealed class Gateway
             if (res.IsSuccessStatusCode) Record(t, model, usage);
             else _log.LogWarning("the model provider said {Status} for thread {Thread}", (int)res.StatusCode, t.ThreadId);
         }
+    }
+
+    /// <summary>The thread says once per turn that it stopped at a cap (`BudgetReached`, a notice with a Raise button for leads).</summary>
+    private void RecordReached(ThreadTokenRow t, long project, Budgets.Reached r)
+    {
+        try
+        {
+            _store.Append(ctx =>
+            {
+                var turn = ctx.Query<(string? Turn, long? Behalf)>("SELECT turn, behalf FROM open_turns WHERE thread_id=@t AND agent_id=@a", new { t = t.ThreadId, a = t.AgentId }).FirstOrDefault();
+                var stream = $"thread-{t.ThreadId}";
+                if (turn.Turn is not null && ctx.Scalar<int>("SELECT COUNT(*) FROM events WHERE stream_id=@stream AND type='BudgetReached' AND correlation=@c", new { stream, c = turn.Turn }) > 0)
+                    return Array.Empty<NewEvent>();
+                var leads = ctx.Query<long>("SELECT member_id FROM project_members WHERE project_id=@project AND role='lead' ORDER BY member_id", new { project }).ToArray();
+                return new[] { new NewEvent(stream, "BudgetReached", new
+                {
+                    agentId = t.AgentId, projectId = project, channelId = ctx.Scalar<long>("SELECT channel_id FROM threads WHERE root_id=@t", new { t = t.ThreadId }),
+                    postId = ctx.NextId("posts"), scope = r.Scope, unit = r.Unit, limit = r.Limit, used = r.Used, text = r.Text, leadIds = leads,
+                }, t.AgentId, turn.Behalf, turn.Turn) };
+            });
+        }
+        catch (Exception e) { _log.LogWarning(e, "couldn't record a budget stop for thread {Thread}", t.ThreadId); }
     }
 
     /// <summary>One call, counted against the thread and the turn it belongs to (the one in flight, else the thread's last), for whoever asked.</summary>

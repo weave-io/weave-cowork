@@ -14,12 +14,12 @@ public class SandboxModeTests : IDisposable
     public void Dispose() { try { Directory.Delete(_dir, recursive: true); } catch { } }
 
     [Fact]
-    public void A_server_on_loopback_is_reached_through_the_hosts_loopback_mapping_and_any_other_address_as_it_is()
+    public void Container_names_and_hosts_from_the_command()
     {
-        Assert.Equal(("http://host.containers.internal:5884", "pasta:--map-host-loopback=169.254.1.2"), PoolLink.ForContainer("http://127.0.0.1:5884"));
-        Assert.Equal(("http://host.containers.internal:5884", "pasta:--map-host-loopback=169.254.1.2"), PoolLink.ForContainer("http://localhost:5884/"));
-        Assert.Equal(("https://cowork.lumen.example", (string?)null), PoolLink.ForContainer("https://cowork.lumen.example/"));
         Assert.Equal("cowork-ab12cd34-p1-sb-7", PoolLink.ContainerName("ab12cd34-p1", "sb-7"));
+        var spec = new SandboxSpec("sb-7", 42, 7, "researcher", 9, new SandboxTemplate("img", new[] { "opencode", "acp" }, "m"), new SandboxWorkspace("none", null, null, null, "cowork/x"),
+            new SandboxLimits(1500), new EgressPolicy(new[] { new EgressRule(new[] { "cowork-server", "cowork-gateway" }), new EgressRule(new[] { "github.com", "*.npmjs.org", "GitHub.com" }) }), "t");
+        Assert.Equal(new[] { "github.com", "*.npmjs.org" }, PoolLink.Hosts(spec));
     }
 
     [Theory]

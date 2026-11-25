@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CoWork.Contracts;
 using Dapper;
@@ -47,7 +48,10 @@ public sealed class Dispatcher
 
     public Dispatcher(Db db, IEventStore store, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> runnerHub, LiveQueue live, ThreadViews views,
         SandboxRegistry sandboxConns, Sandboxes sandboxes)
-    { _db = db; _store = store; _rt = rt; _runners = runners; _runnerHub = runnerHub; _live = live; _views = views; _sandboxConns = sandboxConns; _sandboxes = sandboxes; }
+    {
+        _db = db; _store = store; _rt = rt; _runners = runners; _runnerHub = runnerHub; _live = live; _views = views; _sandboxConns = sandboxConns; _sandboxes = sandboxes;
+        _sandboxes.Lost += SandboxLost;
+    }
 
     /// <summary>Where a message for this agent in this thread goes: a template's sandbox for that thread, else the agent's runner.</summary>
     private string? ConnectionFor(MemberRow agent, long threadId) => agent.IsTemplate ? _sandboxConns.ConnectionOf(agent.Id, threadId) : _runners.ConnectionOf(agent.Id);
@@ -184,6 +188,8 @@ public sealed class Dispatcher
                 var evs = new List<NewEvent>();
                 // the runner catches up from its position: what is queued after it, the oldest per thread, in threads where this agent is idle
                 var busy = ctx.Query<long>("SELECT thread_id FROM open_turns WHERE agent_id=@agentId", new { agentId }).ToHashSet();
+                // Pause all agents: a paused project's messages wait until its agents are resumed
+                busy.UnionWith(ctx.Query<long>(@"SELECT t.root_id FROM threads t JOIN channels c ON c.id=t.channel_id JOIN projects p ON p.id=c.project_id WHERE p.paused_at IS NOT NULL"));
                 var seen = new HashSet<long>();
                 foreach (var r in ctx.Query<Deliveries.Row>(Deliveries.Queued, new { agentId }))
                 {
@@ -194,8 +200,9 @@ public sealed class Dispatcher
                     var host = agent.IsTemplate ? ctx.Scalar<string?>("SELECT p.name FROM sandboxes s JOIN pools p ON p.id=s.pool_id WHERE s.thread_id=@t AND s.agent_id=@agentId", new { t = r.ThreadId, agentId }) : agent.RunnerHost;
                     evs.Add(new NewEvent($"thread-{r.ThreadId}", "TurnStarted", new { agentId, deliveryId = r.Position, host }, agentId, r.Behalf, turn, r.Position));
                     var (project, where) = WorkspaceOf(ctx, r.ThreadId, agent, forPool: agent.IsTemplate);
+                    var setup = agent.IsTemplate && project is { } sp ? ctx.Scalar<string?>("SELECT setup_command FROM projects WHERE id=@sp", new { sp }) : null;
                     sends.Add((r, turn, new DeliverMessage(r.Position, r.ThreadId, agentId, agent.Handle, agent.Instructions ?? "",
-                        JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace ?? "", r.Text, record, project, where), to));
+                        JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace ?? "", r.Text, record, project, where, string.IsNullOrWhiteSpace(setup) ? null : setup), to));
                 }
                 return evs;
             });
@@ -260,10 +267,54 @@ public sealed class Dispatcher
     public async Task SandboxDisconnected(long agentId, long threadId, string conn)
     {
         if (!_sandboxConns.Remove(agentId, threadId, conn)) return;
-        string handle;
-        using (var c = _db.Open()) handle = c.ExecuteScalar<string>("SELECT handle FROM members WHERE id=@agentId", new { agentId }) ?? "the agent";
-        FailInFlight(agentId, $"{handle}'s sandbox stopped during this turn", threadId);
+        await SandboxLost(agentId, threadId);
+    }
+
+    /// <summary>A sandbox went away while a turn may have been running in it. Paused: the message goes back in line and waits for the resume.
+    /// Otherwise its container died: the message is tried once more (the sandbox resumes on its volume and the runner loads the session), and
+    /// the turn fails the second time (the design's "When things go wrong").</summary>
+    public async Task SandboxLost(long agentId, long threadId)
+    {
+        _turns.TryGetValue((threadId, agentId), out var st);
+        var requeued = false;
+        lock (st?.Gate ?? new object())
+        {
+            var close = st is null ? null : CloseEvent(st);
+            _store.Append(ctx =>
+            {
+                requeued = false;
+                var open = ctx.Query<InFlight>("SELECT o.thread_id, t.channel_id, o.turn, o.behalf, o.cause FROM open_turns o JOIN threads t ON t.root_id=o.thread_id WHERE o.thread_id=@threadId AND o.agent_id=@agentId",
+                    new { threadId, agentId }).FirstOrDefault();
+                if (open is null) return Array.Empty<NewEvent>();
+                var evs = new List<NewEvent>(); if (close is not null) evs.Add(close);
+                var handle = ctx.Scalar<string>("SELECT handle FROM members WHERE id=@agentId", new { agentId }) ?? "the agent";
+                var pausedBy = ctx.Scalar<string?>(@"SELECT m.display_name FROM threads t JOIN channels c ON c.id=t.channel_id JOIN projects p ON p.id=c.project_id JOIN members m ON m.id=p.paused_by
+                    WHERE t.root_id=@threadId AND p.paused_at IS NOT NULL", new { threadId });
+                var turn = open.Turn ?? NewTurn();
+                if (pausedBy is not null)
+                {
+                    requeued = true;
+                    evs.Add(new NewEvent($"thread-{threadId}", "TurnInterrupted", new { agentId, channelId = open.ChannelId, postId = ctx.NextId("posts"), requeued = true,
+                        reason = $"Paused by {pausedBy}. {handle} picks this up again when the agents are resumed." }, agentId, open.Behalf, turn, open.Cause));
+                    return evs;
+                }
+                var delivered = ctx.Scalar<long?>("SELECT causation FROM events WHERE position=@cause", new { cause = open.Cause });
+                var restarts = ctx.Scalar<int>(@"SELECT COUNT(*) FROM events i JOIN events s ON s.position=i.causation
+                    WHERE i.type='TurnInterrupted' AND json_extract(i.data,'$.restart')=1 AND s.causation=@delivered", new { delivered });
+                if (restarts == 0)
+                {
+                    requeued = true;
+                    evs.Add(new NewEvent($"thread-{threadId}", "TurnInterrupted", new { agentId, channelId = open.ChannelId, postId = ctx.NextId("posts"), requeued = true, restart = true,
+                        reason = $"{handle}'s sandbox stopped unexpectedly. Trying again." }, agentId, open.Behalf, turn, open.Cause));
+                }
+                else evs.Add(new NewEvent($"thread-{threadId}", "TurnFailed", new { agentId, channelId = open.ChannelId, postId = ctx.NextId("posts"),
+                    reason = $"{handle}'s sandbox stopped unexpectedly again, so this turn ended.", ended = true }, agentId, open.Behalf, turn, open.Cause));
+                return evs;
+            });
+            if (st is not null) { Retire(st); _turns.TryRemove((threadId, agentId), out _); }
+        }
         await BroadcastThread(threadId);
+        if (requeued) await Pump(agentId);
     }
 
     /// <summary>An agent went online or offline: every thread it's in shows its new status.</summary>
@@ -457,7 +508,7 @@ public sealed class Dispatcher
                     else
                     {
                         string? output = null; var truncated = false;
-                        if (RecordsOutput(agentId) && e.Output is not null) (output, truncated) = Cap(e.Output);
+                        if ((RecordsOutput(agentId) || e.ToolId == "cowork-setup") && e.Output is not null) (output, truncated) = Cap(e.Output);       // a sandbox's setup always keeps its output
                         _store.Append(new[] { Ev(st, "ToolCallFinished", new { postId = tp, toolId = e.ToolId, status = e.Status ?? "completed", title = e.Title, outputBytes = e.OutputBytes, outputSha256 = e.OutputSha256, output, outputTruncated = truncated }) });
                     }
                 }
@@ -594,7 +645,7 @@ public sealed class Dispatcher
     public static long LeadAfterMs = 30 * 60_000;
 
     /// <summary>Who answers an agent's asks: a pinned agent's owner; a template's in a project, whoever started the thread, and its leads as a fallback.</summary>
-    private static (long Answerer, long[] Leads) Answerers(IDecisionContext ctx, long agentId, long threadId, long owner)
+    internal static (long Answerer, long[] Leads) Answerers(IDecisionContext ctx, long agentId, long threadId, long owner)
     {
         if (ctx.Scalar<string?>("SELECT placement FROM agents WHERE member_id=@agentId", new { agentId }) != "pool") return (owner, Array.Empty<long>());
         var started = ctx.Scalar<long?>("SELECT started_by FROM threads WHERE root_id=@threadId", new { threadId }) ?? owner;
@@ -606,10 +657,10 @@ public sealed class Dispatcher
     /// <summary>The owner's answer to an ask card. Returns false if the caller may not answer.</summary>
     public async Task<(bool ok, string? error)> Answer(long postId, long callerId, string? optionId)
     {
-        string? error = null; string requestId = ""; long agentId = 0;
+        string? error = null; string requestId = ""; long agentId = 0; string? egress = null, scope = null; long? sandboxId = null;
         _store.Append(ctx =>
         {
-            error = null;
+            error = null; egress = null; scope = null; sandboxId = null;
             var p = ctx.Query<PostRow>("SELECT * FROM posts WHERE id=@postId", new { postId }).FirstOrDefault();
             if (p is null || p.Kind != "ask" || p.Meta is null) { error = "not found"; return Array.Empty<NewEvent>(); }
             var meta = System.Text.Json.Nodes.JsonNode.Parse(p.Meta)!.AsObject();
@@ -619,11 +670,36 @@ public sealed class Dispatcher
             var canSee = ctx.Scalar<int>("SELECT COUNT(*) FROM channels ch WHERE ch.id=@ch AND " + Access.SeesChannel, new { ch = p.ChannelId, m = callerId });
             if (canSee == 0) { error = "forbidden"; return Array.Empty<NewEvent>(); }
             agentId = (long)meta["agentId"]!; requestId = (string)meta["requestId"]!;
+            if (meta["egress"] is JsonValue eg && eg.GetValue<bool>())
+            {
+                // a host the sandbox's proxy refused: allow it once or for the thread (the agent is told it may try again), or not
+                egress = (string?)meta["host"]; sandboxId = (long?)meta["sandboxId"];
+                var reqE = ctx.Query<(long Position, string? Correlation, long? Behalf)>(
+                    "SELECT position, correlation, on_behalf_of FROM events WHERE stream_id=@s AND type='EgressRefused' AND json_extract(data,'$.postId')=@postId", new { s = $"thread-{p.ThreadId}", postId }).FirstOrDefault();
+                var stream = $"thread-{p.ThreadId}";
+                if (optionId is "once" or "thread")
+                {
+                    scope = optionId;
+                    var who = ctx.Scalar<string>("SELECT display_name FROM members WHERE id=@callerId", new { callerId });
+                    var text = $"<cowork-system thread=\"{p.ThreadId}\">{who} allowed {egress} {(optionId == "once" ? "once" : "for this thread")}. Try again.</cowork-system>";
+                    return new[]
+                    {
+                        new NewEvent(stream, "EgressAllowed", new { postId, host = egress, scope = optionId, agentId, sandboxId }, callerId, reqE.Behalf, reqE.Correlation, reqE.Position == 0 ? null : reqE.Position),
+                        new NewEvent(stream, "MessageDelivered", new { agentId, postId, chained = false, system = true, text }, null, reqE.Behalf ?? callerId, NewTurn(), CausedByIndex: 0),
+                    };
+                }
+                return new[] { new NewEvent(stream, "EgressDenied", new { postId, host = egress, agentId, sandboxId }, callerId, reqE.Behalf, reqE.Correlation, reqE.Position == 0 ? null : reqE.Position) };
+            }
             var req = ctx.Query<(long Position, string? Correlation, long? Behalf)>(
                 "SELECT position, correlation, on_behalf_of FROM events WHERE stream_id=@s AND type='PermissionRequested' AND json_extract(data,'$.postId')=@postId", new { s = $"thread-{p.ThreadId}", postId }).FirstOrDefault();
             return new[] { new NewEvent($"thread-{p.ThreadId}", optionId is null ? "PermissionDenied" : "PermissionGranted", new { postId, requestId, agentId, optionId }, callerId, req.Behalf, req.Correlation, req.Position == 0 ? null : req.Position) };
         });
         if (error is not null) return (false, error);
+        if (egress is not null)
+        {
+            if (scope is not null && sandboxId is { } sb) { await _sandboxes.AllowEgress(sb, egress, scope == "once"); await Pump(agentId); }
+            return (true, null);
+        }
         string? conn;
         using (var c = _db.Open())
         {

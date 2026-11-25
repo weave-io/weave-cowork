@@ -16,6 +16,7 @@ public sealed class SandboxProjection : IInlineProjection
 {
     public void Apply(ProjectionContext x, StoredEvent e)
     {
+        Locked(x, e);
         switch (e.Type)
         {
             // ---- the server's settings for sandboxes and models ----
@@ -132,8 +133,8 @@ public sealed class SandboxProjection : IInlineProjection
                 });
                 break;
             case "SandboxSuspending":
-                x.Execute("UPDATE sandboxes SET state='suspending' WHERE id=@id", new { id = e.Long("sandboxId") });
-                Card(x, e, m => { m["state"] = "suspending"; m["idleSeconds"] = e.LongOrNull("idleSeconds"); });
+                x.Execute("UPDATE sandboxes SET state='suspending', reason=@r WHERE id=@id", new { r = e.Str("reason"), id = e.Long("sandboxId") });
+                Card(x, e, m => { m["state"] = "suspending"; m["idleSeconds"] = e.LongOrNull("idleSeconds"); m["why"] = e.Str("reason"); m["by"] = e.LongOrNull("by"); });
                 break;
             case "SandboxSuspended":
                 x.Execute("UPDATE sandboxes SET state='suspended' WHERE id=@id", new { id = e.Long("sandboxId") });
@@ -156,6 +157,11 @@ public sealed class SandboxProjection : IInlineProjection
             case "TurnStarted": case "TurnEnded": case "TurnFailed": case "TurnInterrupted": case "ModelUsageRecorded":
                 if (e.StreamId.StartsWith("thread-") && e.Data.TryGetProperty("agentId", out _))
                     x.Execute("UPDATE sandboxes SET last_active=@at WHERE thread_id=@t AND agent_id=@a AND state='running'", new { at = e.OccurredAt, t = ThreadProjection.ThreadOf(e), a = e.Long("agentId") });
+                if (e.Type == "ModelUsageRecorded" && e.LongOrNull("projectId") is { } usedIn)
+                    x.Execute(@"INSERT INTO project_usage(project_id, month, agent_id, calls, tokens, cost) VALUES (@p,@month,@a,1,@tokens,@cost)
+                                ON CONFLICT(project_id, month, agent_id) DO UPDATE SET calls=calls+1, tokens=tokens+@tokens, cost=CASE WHEN @cost IS NULL THEN cost ELSE COALESCE(cost,0)+@cost END",
+                        new { p = usedIn, month = Budgets.Month(e.OccurredAt), a = e.Long("agentId"), tokens = (e.LongOrNull("promptTokens") ?? 0) + (e.LongOrNull("completionTokens") ?? 0),
+                              cost = e.Data.TryGetProperty("cost", out var pc) && pc.ValueKind == JsonValueKind.Number ? pc.GetDouble() : (double?)null });
                 if (e.Type == "ModelUsageRecorded")
                     x.Execute(@"INSERT INTO model_usage(thread_id, agent_id, turn, project_id, model, calls, prompt_tokens, completion_tokens, cost) VALUES (@t,@a,@turn,@p,@model,1,@pt,@ct,@cost)
                                 ON CONFLICT(thread_id, agent_id, turn) DO UPDATE SET calls=calls+1, prompt_tokens=prompt_tokens+@pt, completion_tokens=completion_tokens+@ct,
@@ -164,6 +170,74 @@ public sealed class SandboxProjection : IInlineProjection
                               pt = e.LongOrNull("promptTokens") ?? 0, ct = e.LongOrNull("completionTokens") ?? 0, cost = e.Data.TryGetProperty("cost", out var cv) && cv.ValueKind == JsonValueKind.Number ? cv.GetDouble() : (double?)null });
                 break;
         }
+    }
+
+    /// <summary>Round 2: the network list, asks to reach a host, the setup command, budgets and pausing.</summary>
+    public static void Locked(ProjectionContext x, StoredEvent e)
+    {
+        switch (e.Type)
+        {
+            case "ProjectNetworkChanged":
+            {
+                var p = e.Long("projectId");
+                x.Execute("DELETE FROM project_network WHERE project_id=@p", new { p });
+                foreach (var h in e.Data.GetProperty("hosts").EnumerateArray()) x.Execute("INSERT OR IGNORE INTO project_network VALUES (@p,@h)", new { p, h = h.GetString() });
+                break;
+            }
+            case "SetupCommandChanged":
+                x.Execute("UPDATE projects SET setup_command=@c WHERE id=@p", new { c = e.Str("command"), p = e.Long("projectId") });
+                break;
+            case "ProjectAgentsPaused":
+                x.Execute("UPDATE projects SET paused_by=@by, paused_at=@at WHERE id=@p", new { by = e.ActorId, at = e.OccurredAt, p = e.Long("projectId") });
+                break;
+            case "ProjectAgentsResumed":
+                x.Execute("UPDATE projects SET paused_by=NULL, paused_at=NULL WHERE id=@p", new { p = e.Long("projectId") });
+                break;
+            case "BudgetSet":
+                x.Execute("INSERT OR REPLACE INTO budgets VALUES (@p,@mt,@mu,@tt,@tu)", new { p = e.Long("projectId"), mt = e.LongOrNull("monthTokens"), mu = Num(e, "monthUsd"), tt = e.LongOrNull("threadTokens"), tu = Num(e, "threadUsd") });
+                break;
+            case "ThreadBudgetRaised":
+                x.Execute(@"INSERT INTO thread_budgets VALUES (@t,@tokens,@usd) ON CONFLICT(thread_id) DO UPDATE SET extra_tokens=extra_tokens+@tokens, extra_usd=extra_usd+@usd",
+                    new { t = ThreadProjection.ThreadOf(e), tokens = e.LongOrNull("tokens") ?? 0, usd = Num(e, "usd") ?? 0 });
+                Notice(x, e, e.ActorId, e.Str("text"), null);
+                break;
+            case "BudgetReached":
+                Notice(x, e, e.LongOrNull("agentId"), e.Str("text"), new JsonObject { ["budget"] = true, ["scope"] = e.Str("scope"), ["leadIds"] = JsonNode.Parse(e.Data.GetProperty("leadIds").GetRawText()) });
+                break;
+            case "EgressRefused":
+            {
+                var meta = new JsonObject
+                {
+                    ["egress"] = true, ["host"] = e.Str("host"), ["port"] = e.LongOrNull("port"), ["requestId"] = e.Str("host"), ["agentId"] = e.Long("agentId"), ["sandboxId"] = e.Long("sandboxId"),
+                    ["ownerId"] = e.Long("ownerId"), ["why"] = e.Str("why"), ["status"] = "pending",
+                    ["options"] = new JsonArray(
+                        new JsonObject { ["id"] = "once", ["name"] = "Allow once", ["kind"] = "allow_once" },
+                        new JsonObject { ["id"] = "thread", ["name"] = "Allow for this thread", ["kind"] = "allow_always" },
+                        new JsonObject { ["id"] = "deny", ["name"] = "Deny", ["kind"] = "reject_once" }),
+                };
+                if (e.Data.TryGetProperty("leadIds", out var leads) && leads.GetArrayLength() > 0) { meta["leadIds"] = JsonNode.Parse(leads.GetRawText()); meta["leadAfter"] = e.LongOrNull("leadAfter"); }
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@body,'ask',@meta,@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadProjection.ThreadOf(e), a = e.Long("agentId"), body = $"reach {e.Str("host")}", meta = meta.ToJsonString(), at = e.OccurredAt, pos = e.Position });
+                break;
+            }
+            case "EgressAllowed":
+                if (e.Str("scope") == "thread")
+                    x.Execute("INSERT OR IGNORE INTO thread_egress VALUES (@t,@a,@h)", new { t = ThreadProjection.ThreadOf(e), a = e.Long("agentId"), h = e.Str("host") });
+                Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "answered"; m["answer"] = e.Str("scope"); }, kind: "ask");
+                break;
+            case "EgressDenied":
+                Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "denied"; m["answer"] = null; }, kind: "ask");
+                break;
+        }
+    }
+
+    static double? Num(StoredEvent e, string k) => e.Data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+
+    static void Notice(ProjectionContext x, StoredEvent e, long? author, string? text, JsonObject? meta)
+    {
+        if (e.LongOrNull("postId") is not { } id) return;
+        x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@body,'notice',@meta,@at,@pos)",
+            new { id, ch = e.Long("channelId"), t = ThreadProjection.ThreadOf(e), a = author, body = text ?? "", meta = meta?.ToJsonString(), at = e.OccurredAt, pos = e.Position });
     }
 
     static string WaitingText(string? waiting, int line) => $"{waiting ?? "Waiting for a pool"}, {Ordinal(line)} in line";
@@ -185,9 +259,9 @@ public sealed class SandboxProjection : IInlineProjection
     {
         if (e.LongOrNull("postId") is { } post) Meta(x, post, e.Position, change);
     }
-    static void Meta(ProjectionContext x, long postId, long position, Action<JsonObject> change)
+    static void Meta(ProjectionContext x, long postId, long position, Action<JsonObject> change, string kind = "sandbox")
     {
-        var old = x.Scalar<string>("SELECT meta FROM posts WHERE id=@postId AND kind='sandbox'", new { postId });
+        var old = x.Scalar<string>("SELECT meta FROM posts WHERE id=@postId AND kind=@kind", new { postId, kind });
         if (old is null) return;
         var node = JsonNode.Parse(old)!.AsObject();
         change(node);
@@ -291,6 +365,8 @@ public sealed class Sandboxes
             {
                 var row = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE thread_id=@threadId AND agent_id=@agentId", new { threadId, agentId }).FirstOrDefault();
                 if (row is not null && row.State is "waiting" or "starting" or "resuming" or "running" or "suspending") return Array.Empty<NewEvent>();
+                if (ctx.Scalar<int>(@"SELECT COUNT(*) FROM threads t JOIN channels c ON c.id=t.channel_id JOIN projects p ON p.id=c.project_id
+                    WHERE t.root_id=@threadId AND p.paused_at IS NOT NULL", new { threadId }) > 0) return Array.Empty<NewEvent>();        // its project's agents are paused: the message waits
                 var agent = ctx.Query<MemberRow>(Q.MemberSelect + " WHERE m.id=@agentId", new { agentId }).FirstOrDefault();
                 if (agent is null || agent.Removed || !agent.IsTemplate) return Array.Empty<NewEvent>();
                 var channelId = ctx.Scalar<long>("SELECT channel_id FROM threads WHERE root_id=@threadId", new { threadId });
@@ -350,7 +426,8 @@ public sealed class Sandboxes
                 _store.Append(ctx =>
                 {
                     placed = null;
-                    var w = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE state='waiting' ORDER BY requested_at, id LIMIT 1").FirstOrDefault();
+                    var w = ctx.Query<SandboxRow>(@"SELECT s.* FROM sandboxes s LEFT JOIN projects p ON p.id=s.project_id WHERE s.state='waiting' AND p.paused_at IS NULL
+                        ORDER BY s.requested_at, s.id LIMIT 1").FirstOrDefault();
                     if (w is null) return Array.Empty<NewEvent>();
                     var pool = Candidates(ctx).FirstOrDefault(c => c.Busy < c.Slots);
                     if (pool is null) return Array.Empty<NewEvent>();
@@ -386,7 +463,7 @@ public sealed class Sandboxes
                 new SandboxTemplate(agent.Image ?? DefaultImage, cmd, agent.Model),
                 where is { Kind: "repository" } ? new SandboxWorkspace("repository", where.Name, where.Url, where.BaseBranch, where.Branch) : new SandboxWorkspace("none", null, null, null, where?.Branch ?? s.Branch ?? "cowork/thread"),
                 new SandboxLimits(memoryMb),
-                Network(c, project),
+                Network(c, project, s.ThreadId, s.AgentId),
                 token);
         }
         var conn = _pools.Get(poolId)?.Connection;
@@ -400,22 +477,73 @@ public sealed class Sandboxes
         catch (Exception e) { await Fail(s.Id, poolId, $"the pool couldn't be reached ({e.Message})"); }
     }
 
-    /// <summary>The project's network list as Substrate-shaped rules. Round 1 carries the gateway and the server only; the egress proxy (round 2)
-    /// enforces the project's list.</summary>
-    private static EgressPolicy Network(Microsoft.Data.Sqlite.SqliteConnection c, long? project) =>
-        new(new[] { new EgressRule(new[] { "cowork-server", "cowork-gateway" }) });
+    /// <summary>What the sandbox may reach, as Substrate-shaped rules: the server and its gateway always (the pool gives them their own socket),
+    /// then the project's network list and what someone allowed for this thread. The pool's proxy enforces it.</summary>
+    public static EgressPolicy Network(Microsoft.Data.Sqlite.SqliteConnection c, long? project, long threadId, long agentId)
+    {
+        var listed = project is null ? new List<string>() : c.Query<string>("SELECT host FROM project_network WHERE project_id=@project ORDER BY host", new { project }).ToList();
+        var allowed = c.Query<string>("SELECT host FROM thread_egress WHERE thread_id=@threadId AND agent_id=@agentId ORDER BY host", new { threadId, agentId }).ToList();
+        return new(new[] { new EgressRule(new[] { "cowork-server", "cowork-gateway" }), new EgressRule(listed.Concat(allowed).Distinct().ToArray()) });
+    }
+
+    /// <summary>A sandbox stopped while a turn may have been running in it (it died, or was paused): the dispatcher decides what the turn does.</summary>
+    public event Func<long, long, Task>? Lost;
+
+    /// <summary>Pool: the sandbox tried a host that isn't on its list. Whoever started the thread is asked (once per host while it's pending).</summary>
+    public async Task OnEgressRefused(long poolId, EgressRefusal r)
+    {
+        if (Parse(r.SandboxId) is not { } id) return;
+        var host = r.Host.Trim().TrimEnd('.').ToLowerInvariant();
+        _store.Append(ctx =>
+        {
+            var s = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE id=@id", new { id }).FirstOrDefault();
+            if (s is null || s.PoolId != poolId || host.Length == 0) return Array.Empty<NewEvent>();
+            if (ctx.Scalar<int>(@"SELECT COUNT(*) FROM posts WHERE thread_id=@t AND kind='ask' AND json_extract(meta,'$.egress')=1 AND json_extract(meta,'$.host')=@host
+                AND json_extract(meta,'$.status')='pending'", new { t = s.ThreadId, host }) > 0) return Array.Empty<NewEvent>();
+            var owner = ctx.Scalar<long>("SELECT owner_id FROM agents WHERE member_id=@a", new { a = s.AgentId });
+            var (answerer, leads) = Dispatcher.Answerers(ctx, s.AgentId, s.ThreadId, owner);
+            var project = s.ProjectId is { } pid ? ctx.Scalar<string>("SELECT name FROM projects WHERE id=@pid", new { pid }) : null;
+            var who = ctx.Scalar<string>("SELECT display_name FROM members WHERE id=@answerer", new { answerer });
+            var handle = ctx.Scalar<string>("SELECT handle FROM members WHERE id=@a", new { a = s.AgentId });
+            var turn = ctx.Query<(string? Turn, long? Behalf)>("SELECT turn, behalf FROM open_turns WHERE thread_id=@t AND agent_id=@a", new { t = s.ThreadId, a = s.AgentId }).FirstOrDefault();
+            return new[] { new NewEvent($"thread-{s.ThreadId}", "EgressRefused", new
+            {
+                sandboxId = id, agentId = s.AgentId, host, port = r.Port, postId = ctx.NextId("posts"), channelId = ctx.Scalar<long>("SELECT channel_id FROM threads WHERE root_id=@t", new { t = s.ThreadId }),
+                ownerId = answerer, leadIds = leads, leadAfter = leads.Length == 0 ? (long?)null : Db.Now() + Dispatcher.LeadAfterMs,
+                why = $"It isn't on {project ?? "the project"}'s network list. Asked by {handle}, for {who}'s thread.",
+            }, s.AgentId, turn.Behalf ?? s.RequestedBy, turn.Turn) };
+        });
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Someone allowed a host: the sandbox's proxy is told at once (a "for this thread" allowance is also in its next start's rules).</summary>
+    public async Task AllowEgress(long sandboxId, string host, bool once)
+    {
+        long? poolId;
+        using (var c = _db.Open()) poolId = c.ExecuteScalar<long?>("SELECT pool_id FROM sandboxes WHERE id=@sandboxId AND state IN ('starting','resuming','running')", new { sandboxId });
+        if (poolId is { } p && _pools.Get(p)?.Connection is { } conn)
+            try { await _poolHub.Clients.Client(conn).SendAsync("AllowEgress", new AllowEgress(Name(sandboxId), host, once)); } catch (Exception e) { _log.LogWarning(e, "couldn't tell pool {Pool}", p); }
+    }
+
+    /// <summary>Pause all agents: every sandbox of the project stops (volumes kept); new deliveries wait (the dispatcher holds them).</summary>
+    public async Task PauseProject(long projectId, long by)
+    {
+        List<long> ids;
+        using (var c = _db.Open()) ids = c.Query<long>("SELECT id FROM sandboxes WHERE project_id=@projectId AND state='running'", new { projectId }).ToList();
+        foreach (var id in ids) await Suspend(id, "paused", 0, by);
+    }
 
     /// <summary>What a pool says about one of its sandboxes. A pool can only report on sandboxes the server placed on it.</summary>
     public async Task OnReport(long poolId, SandboxStateReport r)
     {
         if (Parse(r.SandboxId) is not { } id) return;
-        var pump = false; var freed = false;
+        var pump = false; var freed = false; var unexpected = false; var pausedNow = false;
         await _lock.WaitAsync();
         try
         {
             _store.Append(ctx =>
             {
-                pump = false; freed = false;
+                pump = false; freed = false; unexpected = false; pausedNow = false;
                 var s = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE id=@id", new { id }).FirstOrDefault();
                 if (s is null || s.PoolId != poolId) return Array.Empty<NewEvent>();
                 var stream = $"thread-{s.ThreadId}";
@@ -423,6 +551,7 @@ public sealed class Sandboxes
                 {
                     case SandboxStates.Running when s.State is "starting" or "resuming":
                     {
+                        pausedNow = s.ProjectId is { } sp && ctx.Scalar<long?>("SELECT paused_at FROM projects WHERE id=@sp", new { sp }) is not null;
                         var (_, where) = Dispatcher.WorkspaceOf(ctx, s.ThreadId, ctx.Query<MemberRow>(Q.MemberSelect + " WHERE m.id=@a", new { a = s.AgentId }).First(), forPool: true);
                         var pool = ctx.Scalar<string>("SELECT name FROM pools WHERE id=@poolId", new { poolId });
                         return new[] { new NewEvent(stream, s.State == "resuming" ? "SandboxResumed" : "SandboxStarted", new
@@ -432,7 +561,7 @@ public sealed class Sandboxes
                         }, s.AgentId, s.RequestedBy) };
                     }
                     case SandboxStates.Suspended when s.State is "suspending" or "running" or "starting" or "resuming":
-                        freed = true; pump = true;
+                        freed = true; pump = true; unexpected = s.State != "suspending";
                         ctx.Execute("UPDATE thread_tokens SET revoked_at=@now WHERE sandbox_id=@id AND revoked_at IS NULL", new { now = Db.Now(), id });
                         return new[] { new NewEvent(stream, "SandboxSuspended", new { sandboxId = id, agentId = s.AgentId, postId = s.PostId, poolId }, s.AgentId, s.RequestedBy) };
                     case SandboxStates.Deleted when s.State != "deleted":
@@ -447,6 +576,13 @@ public sealed class Sandboxes
             });
         }
         finally { _lock.Release(); }
+        if (pausedNow) await Suspend(id, "paused", 0);
+        if (unexpected && Lost is { } lost)
+        {
+            SandboxRow? gone;
+            using (var c = _db.Open()) gone = c.QueryFirstOrDefault<SandboxRow>("SELECT * FROM sandboxes WHERE id=@id", new { id });
+            if (gone is not null) await lost(gone.AgentId, gone.ThreadId);        // its container died: the turn in it is tried again once
+        }
         if (freed) { await _conns.CutOff(id, _runnerHub); await PlaceWaiting(); }
         if (pump) await ResumeIfQueued(id);
     }
@@ -502,7 +638,7 @@ public sealed class Sandboxes
 
     /// <summary>An idle sandbox stops: its token is revoked at once, the runner inside is cut off, and the pool is asked to stop the container and
     /// keep the volume. It becomes `suspended` when the pool says the container is gone.</summary>
-    public async Task Suspend(long sandboxId, string reason, int idleSeconds)
+    public async Task Suspend(long sandboxId, string reason, int idleSeconds, long? by = null)
     {
         long? poolId = null;
         await _lock.WaitAsync();
@@ -515,11 +651,17 @@ public sealed class Sandboxes
                 if (s is null || s.State != "running") return Array.Empty<NewEvent>();
                 poolId = s.PoolId;
                 ctx.Execute("UPDATE thread_tokens SET revoked_at=@now WHERE sandbox_id=@sandboxId AND revoked_at IS NULL", new { now = Db.Now(), sandboxId });
-                return new[] { new NewEvent($"thread-{s.ThreadId}", "SandboxSuspending", new { sandboxId, agentId = s.AgentId, postId = s.PostId, poolId = s.PoolId, reason, idleSeconds }, s.AgentId, s.RequestedBy) };
+                return new[] { new NewEvent($"thread-{s.ThreadId}", "SandboxSuspending", new { sandboxId, agentId = s.AgentId, postId = s.PostId, poolId = s.PoolId, reason, idleSeconds, by }, by ?? s.AgentId, s.RequestedBy) };
             });
         }
         finally { _lock.Release(); }
         if (poolId is null) return;
+        if (reason == "paused" && Lost is { } lost)
+        {
+            SandboxRow? s;
+            using (var c = _db.Open()) s = c.QueryFirstOrDefault<SandboxRow>("SELECT * FROM sandboxes WHERE id=@sandboxId", new { sandboxId });
+            if (s is not null) await lost(s.AgentId, s.ThreadId);            // a turn in flight waits for the resume
+        }
         await _conns.CutOff(sandboxId, _runnerHub);
         if (_pools.Get(poolId.Value)?.Connection is { } conn)
             try { await _poolHub.Clients.Client(conn).SendAsync("SuspendSandbox", new SuspendSandbox(Name(sandboxId))); } catch (Exception e) { _log.LogWarning(e, "couldn't ask pool {Pool} to suspend {Id}", poolId, sandboxId); }
@@ -621,6 +763,7 @@ public sealed class PoolHub : Hub
     }
 
     public Task Report(SandboxStateReport r) => _sandboxes.OnReport(PoolId, r);
+    public Task EgressRefused(EgressRefusal r) => _sandboxes.OnEgressRefused(PoolId, r);
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {

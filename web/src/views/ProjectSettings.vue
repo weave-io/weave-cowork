@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { GitBranch, Folder, Plus, Settings2, Hash, Volume2, Lock, X, Menu, ShieldAlert } from 'lucide-vue-next'
+import { GitBranch, Folder, Plus, Settings2, Hash, Volume2, Lock, X, Menu, ShieldAlert, Pause, Play } from 'lucide-vue-next'
 import { get, post, put, del, ApiError } from '../api'
 import { store, memberById, openModal } from '../store'
 import { isPhone, navOpen } from '../layout'
@@ -23,6 +23,10 @@ interface Settings {
     placement?: 'runner' | 'pool'; pools?: string[] | null }[]
   channels: { id: number; name: string; kind: string; isPrivate: boolean }[]
   rules: string[]
+  locked: {
+    network: string[]; setupCommand: string | null; paused: { by: string; at: number } | null
+    budget: { monthTokens: number | null; monthUsd: number | null; threadTokens: number | null; threadUsd: number | null; month: string; usedTokens: number; usedCost: number | null; costReported: boolean; byAgent: { handle: string; tokens: number; cost: number | null }[] }
+  }
 }
 const props = defineProps<{ projectId: number }>()
 const s = ref<Settings | null>(null), error = ref(''), notFound = ref(false)
@@ -54,6 +58,37 @@ async function removeAgent(a: Settings['agents'][number]) {
   if (!(await confirmAction({ title: `Take ${a.handle} out of ${s.value?.name}?`, body: 'It stops taking work in this project’s channels. Its threads stay.', confirmLabel: 'Take it out', destructive: true }))) return
   await guard(() => del(`/projects/${props.projectId}/agents/${a.id}`))
 }
+// round 2: the sandboxes' network list and setup command, the budget, pausing
+const newHost = ref(''), setup = ref(''), caps = ref({ monthTokens: '', monthUsd: '', threadTokens: '', threadUsd: '' }), savedWhat = ref('')
+watch(s, v => {
+  if (!v) return
+  setup.value = v.locked.setupCommand ?? ''
+  const b = v.locked.budget, str = (n: number | null) => n == null ? '' : String(n)
+  caps.value = { monthTokens: str(b.monthTokens), monthUsd: str(b.monthUsd), threadTokens: str(b.threadTokens), threadUsd: str(b.threadUsd) }
+})
+const num = (x: string) => x.trim() === '' ? null : Number(x.replace(/[,$\s]/g, ''))
+const setHosts = (hosts: string[]) => guard(() => put(`/projects/${props.projectId}/network`, { hosts }))
+const addHost = () => guard(async () => { if (newHost.value.trim()) await put(`/projects/${props.projectId}/network`, { hosts: [...s.value!.locked.network, newHost.value.trim()] }); newHost.value = '' })
+const saveSetup = () => guard(async () => { await put(`/projects/${props.projectId}/setup`, { command: setup.value }); savedWhat.value = 'setup' })
+const saveBudget = () => guard(async () => {
+  await put(`/projects/${props.projectId}/budget`, { monthTokens: num(caps.value.monthTokens), monthUsd: num(caps.value.monthUsd), threadTokens: num(caps.value.threadTokens), threadUsd: num(caps.value.threadUsd) })
+  savedWhat.value = 'budget'
+})
+async function togglePause() {
+  if (!s.value) return
+  if (s.value.locked.paused) return guard(() => post(`/projects/${props.projectId}/resume`))
+  if (!(await confirmAction({ title: `Pause ${s.value.name}'s agents?`, body: 'Every sandbox in the project stops (volumes are kept) and new messages wait until you resume.', confirmLabel: 'Pause all agents', destructive: true }))) return
+  await guard(() => post(`/projects/${props.projectId}/pause`))
+}
+// what the budget card shows: dollars when the provider reports cost, else tokens
+const meter = computed(() => {
+  const b = s.value?.locked.budget; if (!b) return null
+  const usd = b.costReported && b.monthUsd != null
+  const cap = usd ? b.monthUsd : b.monthTokens, used = usd ? b.usedCost ?? 0 : b.usedTokens
+  const fmt = (n: number) => usd ? `$${n.toFixed(2)}` : `${Math.round(n).toLocaleString()} tokens`
+  return { label: cap != null ? `${fmt(used)} of ${fmt(cap)}` : `${fmt(used)} this month`, pct: cap ? Math.min(100, used / cap * 100) : 0, usd,
+    parts: b.byAgent.map(a => ({ handle: a.handle, text: usd ? `$${(a.cost ?? 0).toFixed(2)}` : `${a.tokens.toLocaleString()} tokens`, pct: cap ? Math.min(100, (usd ? a.cost ?? 0 : a.tokens) / cap * 100) : 0 })) }
+})
 // workspaces
 const adding = ref(false), wsKind = ref<'repository' | 'folder'>('repository'), wsName = ref(''), wsUrl = ref(''), wsBranch = ref('main'), wsPath = ref(''), wsHost = ref('')
 const addWorkspace = () => guard(async () => {
@@ -74,7 +109,12 @@ async function removeWorkspace(w: Settings['workspaces'][number]) {
       <Settings2 :size="16" class="text-muted" aria-hidden="true" />
       <h2 class="m-0 text-[15px] font-semibold whitespace-nowrap" data-testid="project-title">{{ s?.name ?? '' }}</h2>
       <span v-if="s" class="truncate border-l border-border pl-2.5 text-[13px] text-muted" data-testid="project-role">Project settings<template v-if="roleLine"> · {{ roleLine }}</template></span>
+      <Button v-if="s?.canEdit" size="sm" variant="outline" class="ml-auto" :class="!s.locked.paused && 'text-error-text'" data-testid="pause-agents" @click="togglePause">
+        <component :is="s.locked.paused ? Play : Pause" :size="14" />{{ s.locked.paused ? 'Resume agents' : 'Pause all agents' }}</Button>
     </header>
+    <div v-if="s?.locked.paused" class="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]" style="background: color-mix(in srgb, var(--idle) 10%, transparent)" data-testid="paused-banner">
+      <Pause :size="14" class="text-idle-text" aria-hidden="true" />Agents paused by {{ s.locked.paused.by }}. Their sandboxes are stopped (volumes kept) and new messages wait.
+    </div>
 
     <div class="thin-scrollbar min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-4">
       <p v-if="notFound" class="text-[13px] text-muted">This project doesn't exist, or you aren't in it.</p>
@@ -160,6 +200,50 @@ async function removeWorkspace(w: Settings['workspaces'][number]) {
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- sandboxes: the network list and the setup command -->
+        <div class="card" data-testid="project-sandboxes">
+          <div class="card-head"><h3>Sandboxes</h3><span class="desc">For team templates: what a thread's sandbox may reach, and what runs in it first</span></div>
+          <div class="row">
+            <div class="mb-1 text-[13px] font-medium">Network for sandboxes</div>
+            <p class="m-0 mb-2 text-xs text-muted">A sandbox has no network of its own. It reaches the server and its model gateway, these hosts, and anything someone allows when it asks.</p>
+            <div class="flex flex-wrap items-center gap-1.5" data-testid="network-list">
+              <span v-for="h in s.locked.network" :key="h" class="inline-flex items-center gap-1 rounded-[5px] border border-border bg-card-bg px-1.5 font-mono text-[12px]" :data-host="h">{{ h }}
+                <button v-if="s.canEdit" type="button" class="text-muted hover:text-error-text" :aria-label="`Remove ${h}`" @click="setHosts(s.locked.network.filter(x => x !== h))"><X :size="11" /></button></span>
+              <span class="inline-flex items-center gap-1 rounded-[5px] border border-dashed border-border px-1.5 font-mono text-[12px] text-muted">server, model gateway</span>
+              <form v-if="s.canEdit" class="flex items-center gap-1" @submit.prevent="addHost"><Input v-model="newHost" name="networkHost" placeholder="registry.npmjs.org" class="h-7 w-48 font-mono text-[12px]" /><Button size="sm" variant="outline" type="submit" data-testid="add-host"><Plus :size="13" />Add</Button></form>
+            </div>
+          </div>
+          <div class="row border-t border-border">
+            <div class="mb-1 text-[13px] font-medium">Setup command</div>
+            <p class="m-0 mb-2 text-xs text-muted">Runs once in each thread's sandbox, in the repository, before the first prompt. Its output shows in the thread; what it installs stays in the thread's volume.</p>
+            <form class="flex items-center gap-2" @submit.prevent="saveSetup"><Input v-model="setup" name="setupCommand" :disabled="!s.canEdit" placeholder="sh scripts/agent-setup.sh" class="h-8 font-mono text-[12.5px]" />
+              <Button v-if="s.canEdit" size="sm" variant="outline" type="submit" data-testid="save-setup">Save</Button><span v-if="savedWhat === 'setup'" class="text-[13px] text-running-text" data-testid="setup-saved">Saved.</span></form>
+          </div>
+        </div>
+
+        <!-- budget for team templates -->
+        <div class="card" data-testid="project-budget">
+          <div class="card-head"><h3>Budget</h3><span class="desc">{{ s.locked.budget.month }}</span><span class="ml-auto font-mono text-[13px] tabular-nums" data-testid="budget-used">{{ meter?.label }}</span></div>
+          <div class="row">
+            <div class="flex h-2.5 overflow-hidden rounded-full bg-text/8" role="img" :aria-label="meter?.label"><i v-for="(p, i) in meter?.parts ?? []" :key="p.handle" class="block h-full" :style="{ width: p.pct + '%', background: ['var(--accent)', 'var(--running)', 'var(--idle)'][i % 3] }" /></div>
+            <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+              <span v-for="(p, i) in meter?.parts ?? []" :key="p.handle" class="flex items-center gap-1.5"><i class="inline-block size-2 rounded-full" :style="{ background: ['var(--accent)', 'var(--running)', 'var(--idle)'][i % 3] }" />{{ p.handle }} {{ p.text }}</span>
+              <span>Pinned agents use their owners' own access: not counted.</span>
+            </div>
+            <form class="mt-3 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2" @submit.prevent="saveBudget">
+              <label class="text-xs text-muted">A month, tokens<Input v-model="caps.monthTokens" name="monthTokens" :disabled="!s.canEdit" placeholder="no cap" class="mt-1 h-8 font-mono text-[12.5px]" /></label>
+              <label class="text-xs text-muted">A month, dollars<Input v-model="caps.monthUsd" name="monthUsd" :disabled="!s.canEdit" placeholder="no cap" class="mt-1 h-8 font-mono text-[12.5px]" /></label>
+              <label class="text-xs text-muted">A thread at most, tokens<Input v-model="caps.threadTokens" name="threadTokens" :disabled="!s.canEdit" placeholder="no cap" class="mt-1 h-8 font-mono text-[12.5px]" /></label>
+              <label class="text-xs text-muted">A thread at most, dollars<Input v-model="caps.threadUsd" name="threadUsd" :disabled="!s.canEdit" placeholder="no cap" class="mt-1 h-8 font-mono text-[12.5px]" /></label>
+              <div class="col-span-full flex items-center gap-3">
+                <span class="text-xs text-muted">{{ s.locked.budget.costReported ? 'The provider reports cost, so both kinds of cap apply.' : 'The model provider reports no cost (GitHub Copilot doesn\'t), so the token caps are what hold.' }} At a cap the gateway stops the thread and says why; a lead can raise it.</span>
+                <span v-if="savedWhat === 'budget'" class="ml-auto text-[13px] text-running-text" data-testid="budget-saved">Saved.</span>
+                <Button v-if="s.canEdit" size="sm" variant="outline" type="submit" :class="savedWhat !== 'budget' && 'ml-auto'" data-testid="save-budget">Save budget</Button>
+              </div>
+            </form>
           </div>
         </div>
 

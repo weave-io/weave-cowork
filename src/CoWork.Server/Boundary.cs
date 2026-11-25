@@ -82,9 +82,14 @@ public static class Boundary
         lines.Add(new("worksOn", "Works on", chosen is null
             ? $"An empty workspace in each thread's own sandbox on {where}."
             : $"`{chosen.Name}` (`{chosen.Url}`, branch `{chosen.Branch}`): {where} keeps a mirror, and each thread gets a copy on its own `cowork/<thread>` branch in its sandbox's volume. The sandbox holds no push credential."));
-        lines.Add(new("reaches", "Reaches", "The server and its model gateway. For now the rest of the network is open too: the project's network list is enforced by the egress proxy, in the next round."));
+        var hosts = c.Query<string>("SELECT host FROM project_network WHERE project_id=@p ORDER BY host", new { p = project.Id }).Select(h => $"`{h}`").ToList();
+        lines.Add(new("reaches", "Reaches", $"Only the server, its model gateway and {project.Name}'s network list ({(hosts.Count == 0 ? "empty so far" : Projects.List(hosts))}). The sandbox has no network of its own; for any other host the pool's proxy asks whoever started the thread."));
         lines.Add(new("asks", "Asks", $"Whoever started the thread; {(leads.Count == 0 ? "an admin" : Projects.List(leads))} if they haven't answered in 30 minutes. Everyone else sees that it's waiting."));
-        lines.Add(new("spends", "Spends", "The server's model access, through CoWork's gateway, counted per thread. No key is ever in the sandbox."));
+        var caps = Budgets.Of(c, project.Id);
+        var capText = new List<string>();
+        if (caps.ThreadTokens is { } tt || caps.ThreadUsd is not null) capText.Add("a thread at most " + string.Join(" or ", new[] { caps.ThreadTokens is { } a ? Budgets.Count(a, "tokens") : null, caps.ThreadUsd is { } b ? Budgets.Count(b, "usd") : null }.Where(x => x is not null)));
+        if (caps.MonthTokens is not null || caps.MonthUsd is not null) capText.Add("a month " + string.Join(" or ", new[] { caps.MonthTokens is { } a ? Budgets.Count(a, "tokens") : null, caps.MonthUsd is { } b ? Budgets.Count(b, "usd") : null }.Where(x => x is not null)));
+        lines.Add(new("spends", "Spends", $"The server's model access, through CoWork's gateway, counted per thread{(capText.Count == 0 ? "" : ": " + string.Join(", ", capText) + ", then it stops and a lead can raise it")}. No key is ever in the sandbox."));
         lines.Add(new("remembers", "Remembers", "Each thread's volume on its pool: the copy of the repository and the harness's session, kept when the sandbox stops."));
         lines.Add(new("stops", "Stops", $"When its turn ends; after {Duration(idleSeconds)} idle the sandbox stops and its volume stays, so the next message picks up where it left off. Agent-to-agent turns stop after 3 without a person."));
         return new

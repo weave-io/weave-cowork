@@ -176,6 +176,7 @@ public sealed class FakePool : IAsyncDisposable
         p.Conn.On<ResumeSandbox>("ResumeSandbox", c => p.Commands.Writer.TryWrite(c));
         p.Conn.On<SuspendSandbox>("SuspendSandbox", c => p.Commands.Writer.TryWrite(c));
         p.Conn.On<DeleteSandbox>("DeleteSandbox", c => p.Commands.Writer.TryWrite(c));
+        p.Conn.On<AllowEgress>("AllowEgress", c => p.Commands.Writer.TryWrite(c));
         await p.Conn.StartAsync();
         await p.Conn.InvokeAsync("Hello", new PoolHello(slots, memoryMb, Array.Empty<string>()));
         return p;
@@ -196,6 +197,7 @@ public sealed class FakePool : IAsyncDisposable
         return c is T t ? t : throw new Xunit.Sdk.XunitException($"expected {typeof(T).Name}, got {c.GetType().Name}");
     }
     public bool HasMore => Commands.Reader.TryPeek(out _);
+    public Task Refused(string sandboxId, string host, int port = 443) => Conn!.InvokeAsync("EgressRefused", new EgressRefusal(sandboxId, host, port));
     public Task Report(string sandboxId, string state, string? reason = null) => Conn!.InvokeAsync("Report", new SandboxStateReport(sandboxId, state, reason, 120, 340));
     public async ValueTask DisposeAsync() { if (Conn is not null) await Conn.DisposeAsync(); }
 }

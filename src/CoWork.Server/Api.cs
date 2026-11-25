@@ -208,6 +208,7 @@ public static partial class Api
         MapPeople(authed);
         MapAgents(api, authed);
         MapPools(api, authed);
+        MapLocked(authed);
         MapViews(authed);
         MapProjects(authed);
     }
