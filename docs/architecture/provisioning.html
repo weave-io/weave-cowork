@@ -120,12 +120,13 @@ svg.seq .arrowhead { fill: var(--muted); }
 </head>
 <body>
 <div class="page">
-  <div class="eyebrow">WEAVE COWORK · ARCHITECTURE · 25 NOVEMBER 2026 · PROPOSAL</div>
+  <div class="eyebrow">WEAVE COWORK · ARCHITECTURE · APPROVED 25 NOVEMBER 2026</div>
   <h1>How a provisioned agent works</h1>
   <p class="sub">What happens between Rosa typing "@researcher …" and an answer, when no runner is serving researcher and nothing is running yet. One request, step by step, across every part involved. Then what has to be set up once, how it differs from today's pinned agents, and what happens when things go wrong.</p>
 
   <nav class="tabs" role="tablist">
     <button role="tab" aria-selected="true" data-tab="flow">One request, step by step</button>
+    <button role="tab" aria-selected="false" data-tab="auth">Who may do what</button>
     <button role="tab" aria-selected="false" data-tab="setup">Set up once</button>
     <button role="tab" aria-selected="false" data-tab="compare">Pinned and pool</button>
     <button role="tab" aria-selected="false" data-tab="wrong">When things go wrong</button>
@@ -147,6 +148,38 @@ svg.seq .arrowhead { fill: var(--muted); }
     </div>
     <p class="muted" style="margin:0 0 8px;font-size:12.5px">Click any arrow, or use ← and → on the keyboard. <span class="oldtag">exists</span> works like this today; <span class="newtag">new</span> is to build.</p>
     <div class="seqwrap"><svg class="seq" id="seq" role="img" aria-label="Sequence of one request to a provisioned agent"></svg></div>
+  </section>
+
+  <section id="auth" hidden>
+    <p class="lead">A provisioned agent never <i>has</i> permissions of its own. It gets a token that names exactly one thread, and the server checks everything the token's holder does against that thread's project, the agent's grants there, and the person who asked. Each credential below can do one thing and dies on its own schedule.</p>
+
+    <h2>Where the permission comes from</h2>
+    <div class="flow">
+      <div class="s"><b>Alex, a lead</b>enabled researcher in Checkout app, with its grants: members may give it work, whoever starts a thread approves</div><div class="x">→</div>
+      <div class="s"><b>Rosa, a member</b>mentions researcher. The server checks she's in the project and the grant allows her</div><div class="x">→</div>
+      <div class="s hl"><b>The server</b>records the turn on behalf of Rosa and mints a token for researcher, Checkout app, thread 42</div><div class="x">→</div>
+      <div class="s"><b>The sandbox</b>can do what researcher may do in Checkout app, in thread 42. Anything more (a shell command, a host not on the list) is asked of Rosa</div>
+    </div>
+
+    <h2>Every credential, who holds it and what it can do</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Credential</th><th>Held by</th><th>Can</th><th>Can't</th><th>Dies when</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pool enrolment code</b></td><td>The admin, for 10 minutes</td><td>Be exchanged once for a pool token</td><td>Anything else</td><td>Used, or 10 minutes pass</td></tr>
+        <tr><td><b>Pool token</b></td><td>The pool's machine (its config file); the server keeps a hash</td><td>Receive create, resume, suspend and delete for sandboxes; report slots and state</td><td>Read a channel, post, act as any agent, call the gateway. It never sees a thread's messages</td><td>The admin removes or rotates the pool</td></tr>
+        <tr><td><b>Thread token</b></td><td>One container, in its environment; the server keeps a hash</td><td>Connect as researcher for thread 42 only; receive that thread's messages and post its events; call CoWork's tools inside researcher's boundary in Checkout app; call the gateway, charged to thread 42</td><td>See another thread, another project or a DM; reach the pool or other sandboxes</td><td>The sandbox suspends (a fresh one is minted on every resume), the thread is paused, researcher leaves the project, or the sandbox is deleted</td></tr>
+        <tr><td><b>Model provider key</b></td><td>The server only, in its secrets table (never in events)</td><td>Used by the gateway to forward a sandbox's model calls</td><td>Leave the server</td><td>The admin replaces it</td></tr>
+        <tr><td><b>Repository access</b></td><td>The pool's machine (a deploy key there), for fetching its mirror</td><td>Fetch; the thread's copy is made from the mirror</td><td>Push from a sandbox. Later: the proxy adds a push credential for <code>cowork/*</code> branches by placeholder, so the sandbox never holds it</td><td>The admin removes the key</td></tr>
+        <tr><td><b>A person's sign-in</b></td><td>Their browser (an HttpOnly cookie)</td><td>Ask agents in projects they're in; answer asks for threads they started</td><td>Give an agent more than the project grants it</td><td>They sign out, or are removed</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Why it's built this way</h2>
+    <div class="grid3">
+      <div class="card"><h3>A leak is small</h3><p>The sandbox can read its own token: any program in it can. So the token is worth little: one thread, one project, charged to that thread's budget, and replaced at every resume.</p></div>
+      <div class="card"><h3>Nothing to steal in the box</h3><p>No provider key, no push credential, no pool token inside a sandbox. Those stay with the server, the gateway and the pool's machine.</p></div>
+      <div class="card"><h3>Every act has a person</h3><p>Each turn is recorded on behalf of whoever asked, and each allow by whoever answered, so the audit can say "researcher, for Rosa, reached api.levy.example once, allowed by Rosa".</p></div>
+    </div>
   </section>
 
   <section id="setup" hidden>
@@ -268,14 +301,8 @@ svg.seq .arrowhead { fill: var(--muted); }
     <h2>Decided</h2>
     <div class="q"><h3>1 · The first harness in sandboxes <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">OpenCode only, with the gateway as its model provider.</p></div>
     <div class="q"><h3>2 · The network in the first version <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">The egress proxy with the project's list and asks, from day one.</p></div>
-    <h2>Still open</h2>
-    <div class="q"><h3>3 · Where the tools a project needs come from</h3><p class="muted" style="margin:4px 0">See the Images tab.</p>
-      <div class="opt"><b>A</b><span>A stock image per harness, plus the project's setup command, run once per thread and cached. <span class="rec">Recommended</span></span></div>
-      <div class="opt"><b>B</b><span>The repository's <code>.devcontainer</code>, built into an image on the pool.</span></div>
-      <div class="opt"><b>C</b><span>Each template brings its own Dockerfile.</span></div></div>
-    <div class="q"><h3>4 · How CoWork's pool contract is shaped</h3><p class="muted" style="margin:4px 0">See the Agent Substrate tab.</p>
-      <div class="opt"><b>A</b><span>Substrate-shaped from the start (create, resume, suspend, delete; network rules and credential references as data), with podman as the first provider. <span class="rec">Recommended</span></span></div>
-      <div class="opt"><b>B</b><span>Our own start and stop now; reshape it if we add Substrate.</span></div></div>
+    <div class="q"><h3>3 · Where the tools a project needs come from <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">A stock image per harness, plus the project's setup command, run once per thread and kept.</p></div>
+    <div class="q"><h3>4 · How the pool contract is shaped <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">Like Agent Substrate's: create, resume, suspend, delete; network rules and credential references as data. Podman first.</p></div>
   </section>
 </div>
 
