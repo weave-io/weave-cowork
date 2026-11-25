@@ -762,6 +762,13 @@ containers, the `cowork` compose project and `~/.weave` untouched)
   Copilot), `phase4` 19 (LiveKit 1.13.11 as container `cwb8-lk`, label `cwb8`, on 7980–7982, removed), `phase5` 22, `phase6` 27, `phase7` 31,
   `phase8` 31, `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 31. The older scripts' own screenshots were restored.
 
+**Follow-up: threads the way Discord lists them** (the user showed Discord's channel list as the example). Each thread is its own row directly
+under its channel, indented to where the channel's name starts and joined to it by a thin └ line drawn from the channel's `#` (one continuous
+spine down the channel's threads, a curve into each); the row shows the thread's name, with CoWork's additions kept small on the same row (the
+agent's avatar at three quarters size, the status dot, unread in bold with a count), and the open thread's row is highlighted like an open
+channel. "All threads" sits under the last one, without a line. Only `ChannelEntry.vue` changed (the line is two pseudo-elements per row, in a
+token mixed from `--muted`, so it follows both themes). `phase12` again: 32 checks; its screenshots in `docs/screens/brief8/` are this look.
+
 **Not done / next**
 - A post whose thread holds only a refused mention's reply says "0 replies" on its card (notices aren't counted as replies); the reply is in
   the thread, which opens for whoever posted.

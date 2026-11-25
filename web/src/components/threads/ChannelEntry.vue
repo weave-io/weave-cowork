@@ -37,11 +37,12 @@ const hover = (t: ThreadSummary) => `${t.title} · ${threadState(t.status, store
       <ChevronRight v-if="folded" :size="14" aria-hidden="true" /><ChevronDown v-else :size="14" aria-hidden="true" />
     </button>
   </div>
+  <!-- Discord's way: each thread its own row under its channel, joined to it by a thin └ line; the open one highlighted like an open channel -->
   <ul v-if="entry?.total && !folded" class="m-0 mb-1 list-none p-0" :data-threads="channel.name">
-    <li v-for="t in threads" :key="t.rootId">
+    <li v-for="(t, i) in threads" :key="t.rootId" class="branch" :class="{ last: i === threads.length - 1 }">
       <button type="button" class="thr" :class="{ active: activeThread === t.rootId, unread: t.unread > 0 }" :title="hover(t)" :data-thread="t.rootId" :data-thread-title="t.title"
         :aria-current="activeThread === t.rootId ? 'page' : undefined" data-testid="thread-row" @click="go(threadPath(channel.id, t.rootId))">
-        <MemberAvatar :member="who(t)" size="xs" class="scale-[.8]" />
+        <MemberAvatar :member="who(t)" size="xs" class="-mx-0.5 scale-[.75]" />
         <span class="min-w-0 flex-1 truncate" data-testid="thread-row-title">{{ t.title }}</span>
         <span v-if="t.unread > 0" class="tcount" data-testid="thread-unread" :aria-label="`${t.unread} unread`">{{ t.unread > 99 ? '99+' : t.unread }}</span>
         <ThreadDot :status="t.status" />
@@ -65,11 +66,16 @@ const hover = (t: ThreadSummary) => `${t.title} · ${threadState(t.status, store
 .count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--accent-foreground, #fff); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .fold { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
 .fold:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
-.thr { width: 100%; min-width: 0; min-height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 22px; margin: 0; border: 0; border-radius: var(--radius-btn); background: transparent; color: var(--muted); text-align: left; cursor: pointer; font-size: 12.5px; transition: background var(--transition), color var(--transition); }
+/* a thread's row starts where the channel's name does; its └ comes down from the channel's # (centred 17px in) */
+.branch { position: relative; }
+.branch::before { content: ""; position: absolute; left: 17px; top: -3px; height: calc(50% + 3px); width: 9px; border-left: 1.5px solid var(--thread-line); border-bottom: 1.5px solid var(--thread-line); border-bottom-left-radius: 7px; pointer-events: none; }
+.branch:not(.last)::after { content: ""; position: absolute; left: 17px; top: calc(50% - 8px); bottom: 0; border-left: 1.5px solid var(--thread-line); pointer-events: none; }
+ul { --thread-line: color-mix(in srgb, var(--muted) 42%, transparent); }
+.thr { width: calc(100% - 30px); min-width: 0; min-height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; margin: 0 0 0 30px; border: 0; border-radius: var(--radius-btn); background: transparent; color: var(--muted); text-align: left; cursor: pointer; font-size: 13px; transition: background var(--transition), color var(--transition); }
 .thr:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
 .thr.active { background: var(--accent-dim); color: var(--text); font-weight: 600; }
 .thr.unread { color: var(--text); font-weight: 600; }
-.thr.more { padding-left: 49px; font-size: 12px; color: var(--accent-text); }
+.thr.more { min-height: 24px; font-size: 12px; color: var(--accent-text); }
 .tcount { min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--accent-foreground, #fff); font-size: 10.5px; font-weight: 600; line-height: 16px; text-align: center; }
 @media (max-width: 767px) { .thr { min-height: 34px; } .chan { min-height: 38px; } }
 </style>
