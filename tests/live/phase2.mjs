@@ -1,22 +1,19 @@
 // Journey steps 7-10 with a REAL runner and a REAL harness (OpenCode 2 under a scratch HOME).
 //   BASE=http://127.0.0.1:5882 DB=~/.cache/cowork-scratch/p2/cowork.db node tests/live/phase2.mjs
-import { launch, person, BASE, SHOTS, expect, ok } from './lib.mjs'
+import { launch, person, BASE, SHOTS, expect, ok, freshHarnessHome } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
-import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 
 const HOME = homedir()
 const DB = process.env.DB ?? `${HOME}/.cache/cowork-scratch/p2/cowork.db`
-const OC = `${HOME}/.cache/cowork-oc2`
+const SCRATCH = freshHarnessHome('p2')        // this run's own runner and harness state, deleted at the end
+const OC = SCRATCH.dir
 const REPO = new URL('../../', import.meta.url).pathname.replace(/\/$/, '')
 const RUNNER = `${REPO}/src/CoWork.Runner/bin/Debug/net10.0/cowork-runner.dll`
 const WORKSPACE = process.env.WORKSPACE ?? REPO
 const HARNESS = process.env.HARNESS ?? `${HOME}/.weave/harnesses/opencode2/.opencode/bin/opencode acp`
-const ENV = { ...process.env, HOME: `${OC}/home`, XDG_CONFIG_HOME: `${OC}/config`, XDG_DATA_HOME: `${OC}/data`, XDG_STATE_HOME: `${OC}/state`, XDG_CACHE_HOME: `${OC}/cache` }
-mkdirSync(`${OC}/home`, { recursive: true })
-// the runner's saved sessions outlive the scratch database: a stale one (a thread 6 of an earlier run, in which the model refused the shell command) would be reloaded by thread 6 of this run
-mkdirSync(`${OC}/config/cowork-runner`, { recursive: true })
-for (const f of readdirSync(`${OC}/config/cowork-runner`)) if (/^sessions-.*\.json$/.test(f)) rmSync(`${OC}/config/cowork-runner/${f}`)
+const ENV = SCRATCH.env
 const LONG = 150000
 const sql = (q) => execFileSync('python3', ['-I', '-c', 'import sqlite3,sys,json;c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute(sys.argv[2]).fetchall()))', DB, q]).toString()
 
@@ -185,4 +182,5 @@ try {
   finished = true
   await stopRunner()
   await browser.close()
+  SCRATCH.cleanup()
 }

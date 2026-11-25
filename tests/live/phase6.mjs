@@ -3,10 +3,10 @@
 // to run `git log -3`. Alex allowed it once. It ran on build-01." from the causation chain, with its filters; agent activity on reviewer's
 // profile; a rebuild of each view from zero that changes nothing. Starts its own server (default port 5887).
 //   node tests/live/phase6.mjs          (screenshots go to docs/screens/round3/)
-import { launch, person, expect, ok } from './lib.mjs'
+import { launch, person, expect, ok, freshHarnessHome } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
-import { rmSync, mkdirSync, readdirSync } from 'node:fs'
+import { rmSync, mkdirSync } from 'node:fs'
 
 const HOME = homedir()
 const PORT = process.env.PORT ?? '5887'
@@ -14,17 +14,15 @@ const BASE = `http://127.0.0.1:${PORT}`
 const REPO = new URL('../../', import.meta.url).pathname.replace(/\/$/, '')
 const DIR = `${HOME}/.cache/cowork-p6`
 const DB = `${DIR}/data/cowork.db`
-const OC = `${HOME}/.cache/cowork-oc2`
+const SCRATCH = freshHarnessHome('p6')        // this run's own runner and harness state, deleted at the end
 const SHOTS = `${REPO}/docs/screens/round3/`
 const HOST = 'build-01'                      // the name the runner reports: a made-up one, so no screenshot or doc shows this machine's own
 const SERVER = `${REPO}/src/CoWork.Server/bin/Debug/net10.0/CoWork.Server.dll`
 const RUNNER = `${REPO}/src/CoWork.Runner/bin/Debug/net10.0/cowork-runner.dll`
 const HARNESS = process.env.HARNESS ?? `${HOME}/.weave/harnesses/opencode2/.opencode/bin/opencode acp`
-const ENV = { ...process.env, HOME: `${OC}/home`, XDG_CONFIG_HOME: `${OC}/config`, XDG_DATA_HOME: `${OC}/data`, XDG_STATE_HOME: `${OC}/state`, XDG_CACHE_HOME: `${OC}/cache` }
+const ENV = SCRATCH.env
 const LONG = 150000
 rmSync(DIR, { recursive: true, force: true }); mkdirSync(`${DIR}/data`, { recursive: true }); mkdirSync(SHOTS, { recursive: true })
-mkdirSync(`${OC}/home`, { recursive: true }); mkdirSync(`${OC}/config/cowork-runner`, { recursive: true })
-for (const f of readdirSync(`${OC}/config/cowork-runner`)) if (/^(sessions|agents)-?.*\.json$/.test(f)) rmSync(`${OC}/config/cowork-runner/${f}`)      // the runner's saved sessions and agents outlive the scratch database
 const sql = (q) => JSON.parse(execFileSync('python3', ['-I', '-c', 'import sqlite3,sys,json;c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute(sys.argv[2]).fetchall()))', DB, q]).toString())
 const until = async (what, probe, ms = 40000) => { const end = Date.now() + ms; for (;;) { const v = await probe(); if (v) return v; if (Date.now() > end) throw new Error('FAILED: timed out waiting for ' + what); await new Promise(r => setTimeout(r, 100)) } }
 const clean = (t) => t.replace(/\s+/g, ' ').trim()
@@ -196,4 +194,5 @@ try {
 } finally {
   await stopGroup(runner); await stopGroup(server)
   await browser.close()
+  SCRATCH.cleanup()
 }
