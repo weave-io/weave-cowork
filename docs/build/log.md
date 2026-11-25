@@ -659,3 +659,24 @@ untouched; OpenRouter never used)
 - A project library (`cowork_save_doc`) and more tools (`cowork_start_thread`); web search in sandboxes; credentials by placeholder in the
   proxy; a signed thread token; an Anthropic-compatible gateway endpoint; notifications (80% of a budget, an ask passing to a lead, no pool
   online); a board of threads by status (the mockup's). A `deleting` sandbox whose pool restarts mid-delete stays `deleting`.
+
+## Brief 7, round 3 follow-up: naming MCP tool rows reliably
+
+**The report:** a phase11 run on 2f66421 failed at step 9: Rosa's thread had two rows reading "tool execute", though `CoworkToolCalled`
+recorded both calls. That run's database showed each call's two `in_progress` updates arriving (two `ToolCallDetailed`) and still naming
+nothing. With a temporary trace of every tool update in the sandbox runner, phase11 failed again on its first run, and the trace showed why:
+the model wrote `await tools["cowork"].cowork_read_channel({ channel: "#checkout-app" })`, bracket access, which the parser (`tools.x.y(`)
+didn't read. The code in `rawInput.code` is the model's, so its shape varies from run to run. The `completed` update is OpenCode's own:
+`rawOutput.metadata.toolCalls: [{ tool: "cowork.cowork_read_channel", status: "completed", input: { channel: "#checkout-app" } }]`.
+
+**The fix:** the finished row's title comes from that record (`AcpAdapter.Called`: the tool without its server, and its first string
+argument), so a row is always named when it finishes; the in-progress parser also reads `tools["s"].t(`, `tools.s["t"](` and
+`tools["s"]["t"](`, so it is usually named while it runs. The temporary trace is gone; a tool the adapter can only name by its bare title
+is still logged, and phase11 can keep the sandbox runner's log (`DUMP_LOGS=<file>`).
+
+**Checked:** a runner test replays the nine updates recorded from the failing sandbox (`tests/CoWork.Runner.Tests/oc2-mcp-tool-calls.jsonl`)
+and a code shape no parser reads (the model destructuring `tools`): both rows end named. 37 runner tests. `phase11` three runs in a row,
+19 checks each, every call named while running.
+Then the full regression on this build: `phase1` 24, `phase2` 30, `phase4` 19, `phase5` 22, `phase6` 27, `phase7` 31, `phase8` 31,
+`phase9` 37, `phase10` 27, `phase11` 19 (a fourth run in a row); `dotnet test` 37 runner and 86 server, `bun run test` 33. Nothing labelled
+left in podman. The round 3 screenshots are from that phase11 run.
