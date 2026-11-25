@@ -794,3 +794,99 @@ same titles), then the whole regression again on this build: `phase1` 24, `phase
   happens leaves at the next change. `/api/thread-list` and `views-changed` go to every browser: fine at this size, worth batching later.
 - An agent that mentions an agent it can't reach is silent (only people's mentions get the reply).
 - The mockup's board (every thread in a project by status) is still to come; All threads is per channel.
+
+## Brief 9: artifacts and markdown
+
+**Demo:** `tests/live/phase13.mjs` (32 checks; Alex, Rosa and Sam in browsers; a real pool with real containers and real OpenCode 2.4.1 for the
+researcher template, model calls through the gateway to this machine's Copilot sign-in; a real runner on `build-01` with real OpenCode 2.4.1
+for Alex's pinned reviewer). Rosa asks researcher for a report she can share with finance and opens the thread's full view; Alex opens it too.
+researcher writes `reports/tax-apis/index.html`, `style.css` and `chart.svg` and calls `cowork_show`: `ArtifactPublished` names the three files
+by SHA-256. Its answer renders as markdown (a heading, a list, a table, `roundTax` as inline code, a link with `target=_blank` and
+`rel=noopener noreferrer nofollow`), and its message has a card: thumbnail, "Tax APIs compared", HTML, "page · v1 · 9 KB · shown 10:34 PM".
+Rosa started the thread and is looking, so her canvas opens by itself with the report in a tab (its stylesheet and image load); Alex sees
+only the card, and clicking it opens the canvas for him (`?a=1`). Full screen gives the canvas the whole area; copy link puts
+`/c/2/threads/1?a=1` on the clipboard; download gives `tax-apis-compared-v1.zip`; "Open full view" shows it at `/artifacts/1`; close removes
+the canvas and `?a=`. From inside the report, `document.cookie` throws SecurityError, `fetch('/api/bootstrap')` (relative and absolute) and
+`fetch('https://example.com/')` are refused, storage throws, and its origin is "null". Sam, not in Checkout app, gets 404 for the artifact and
+its download, and its page says "No such artifact". Rosa types "add the cost for 50,000 refunds a month" under the canvas: it's posted in the
+thread as her reply, "About Tax APIs compared · v1", and researcher hears `artifact="Tax APIs compared" version="1"
+path="reports/tax-apis/index.html"`. researcher edits the page and shows it again: v2; Rosa's and Alex's open tabs and both cards show v2
+live, v2 has the 50,000-refund costs, the picker lists v2 and v1, and v1 is still as it was. Alex asks his pinned reviewer for a markdown
+review: it shows `reviews/tax/review.md` from its worktree on build-01, and Alex's canvas opens with the document rendered. The audit has every
+version: "researcher (Alex's agent) showed “Tax APIs compared” v2 (html, 10 KB) in #checkout-app, for Rosa." On a phone the canvas fills the
+screen with a back button.
+
+**What changed**
+- **The tool** (`Artifacts.cs`, `Mcp.cs`): `cowork_show({ path, title, open })` on CoWork's MCP server, described so a harness knows when to use
+  it (a report, document, chart or table people should look at; show it again after changing it). The server asks the agent's runner over the
+  runner hub (`CollectArtifact`, to its sandbox's connection or its pinned runner's) and waits for the upload (2 minutes at most).
+- **The runner** (`ArtifactFiles.cs`): reads the file in the thread's workspace; a page (HTML or markdown) brings its folder (subfolders too),
+  nothing hidden, no `node_modules`, no link out of the workspace (symlinks resolved), at most 25 MB and 500 files; a page at the workspace's
+  top level, and anything that isn't a page, brings only itself. It uploads a manifest and the files to `/api/runner/artifacts/{request}` with
+  its own token (a sandbox's thread token; a pinned runner's token and `X-Cowork-Thread`), or says why it couldn't, and the agent hears that.
+- **Storage** (migration `015`, `ArtifactProjection`): `ArtifactPublished` on the thread's stream (artifact, version, thread, channel, project,
+  path, entry, title, kind, size, each file's path, SHA-256, size and type, the card's post, open; by the agent, on behalf of whoever asked).
+  The bytes are in `<data>/artifacts/ab/abcdef…` (content-addressed, kept once), never in events. The same path in the same thread is the
+  next version. A card post (kind `artifact`) carries what the thread shows, and every card of an artifact shows its latest version.
+  `ArtifactRedacted` (the agent's owner or an admin) removes a version's files and keeps the fact; deleting the channel removes the rows and
+  then the bytes nobody names. Both are in the audit.
+- **Serving**: short-lived signed addresses (`/a/{id}-{version}-{expiry}-{hmac}/{path}`, 30 minutes, the key a file in the artifacts folder),
+  so a page's relative files work; with `default-src 'self'`, `connect-src 'none'`, `frame-ancestors` the app, `form-action 'none'`,
+  `base-uri 'none'` and a CSP `sandbox allow-scripts` (an opaque origin even when opened on its own), nosniff and no referrer. The app frames
+  it with `sandbox="allow-scripts"` and no `allow-same-origin`. `COWORK_ARTIFACT_ORIGIN` puts it on a host name of its own (then `/a/` answers
+  only there) and `COWORK_APP_ORIGIN` is who may frame it. Markdown, CSV and JSON are served there as text; the app reads them from
+  `/api/artifacts/{id}/versions/{v}/raw/…` (cookie, membership, attachment, never rendered). SVG is served as an image with a sandbox and no
+  scripts. `GET /api/artifacts/{id}` (404 unless the person sees the channel), `…/download` (a file, or a page and its files as a zip),
+  `POST …/redact`.
+- **Replies about an artifact**: a post may quote an artifact of its thread and a version (`quote` on `MessagePosted`, refused for another
+  thread's); the agent's `<cowork-message>` carries `artifact`, `version`, `path` and a short note to show it again if it changes.
+  `cowork_read_channel` on a thread lists what was shown in it.
+- **Markdown** (`render.ts`): markdown-it with `html: false`, highlight.js and DOMPurify, Weave Fleet's choices; task lists, tables in a
+  scrolling wrapper, links in a new tab, mentions of known handles. Only real addresses become links ("Levy.io" in a sentence doesn't). A post
+  never loads an image itself (it becomes a link). Search indexes the text as written.
+- **Web** (`artifacts.ts`, `components/artifacts/`, `ui/kind-chip`): `ArtifactCard`, `ArtifactCanvas` (tabs, version picker, full screen, Open
+  full view, copy link, download, redact, close, "Ask … to change this…"), `ArtifactView` (by kind), `ArtifactPage` (`/artifacts/:id`),
+  `QuoteLine` on a reply. The full view's header says "N artifacts". The member list steps aside while the canvas is open.
+
+**Decisions**
+- **The canvas opens by itself only for whoever started the thread** (as decided before this brief), when the card was shown with
+  `open: "canvas"` and the person is looking at the thread. From the quick look that means moving to the full view, where the canvas sits.
+  Everyone else sees the card.
+- **The runner fetches, the server asks.** CoWork's tools are an MCP endpoint on the server (brief 7), but the file is on the runner, so the
+  tool call goes server → runner hub → upload over HTTP with the runner's own token, and the tool answers when the upload is in.
+- **Only agents show artifacts for now**; people attaching files comes with the project library (option C), as decided.
+- **No popups from a report**: the frame has no `allow-popups`, so a link inside a report doesn't open. A script could otherwise open a window
+  to anywhere with what it holds.
+- **A PDF** is framed without a sandbox and served without the CSP sandbox (the browser's viewer refuses sandboxed documents); nosniff keeps
+  it a PDF. Not live-checked (headless Chromium has no PDF viewer).
+- **The agent has to be told to show a change.** In the first live run researcher edited the page after Rosa's reply and said it was updated
+  without showing it, so nobody saw v2. The fix is in the product, not the test's prompt: the tool's description and answer say a change is
+  seen only when shown again, and a reply quoting an artifact says so too. The next runs showed v2 every time.
+- **Web tests that use DOMPurify run in jsdom**: happy-dom 21 made DOMPurify drop headings and `pre`.
+
+**Checked** (ports 5881–5888 only, LiveKit as `cwb9-lk` on 7980–7982 labelled `cwb9`, every container and volume removed by its label; the
+trial on 5889, its data, pool, image and containers, the `cowork` compose project and `~/.weave` untouched; the sandbox image
+`cowork-sandbox-opencode:2.4.1` rebuilt with this runner)
+- `dotnet test`: 101 server (4 new in `ArtifactTests`: a sandbox shows a page with its files, the event names them by SHA-256 and holds no
+  bytes, the card, the signed address and its policy, a forged or expired address and Jo outside the project get 404, the raw text is an
+  attachment, a quoted reply and what the agent hears, another thread's quote refused, v2 with v1 kept as it was, the zip, a thread read lists
+  both versions, the audit, a rebuild to identical tables; a pinned agent's CSV with its runner's token, the runner's reason passed on, someone
+  else's token or request refused, an unsafe path and more than 25 MB refused; redaction keeps a file v2 still names and removes the rest,
+  the fact stays, Rosa can't, deleting the channel removes everything; an artifact host name: `/a/` answers only there, framed only by the
+  app), and `WorkTests` lists four tools. 41 runner (4 new in `ArtifactFilesTests`: a page's folder without hidden files or `node_modules`, a
+  page at the top level and a CSV alone, nothing outside the workspace through `..`, an absolute path or a symlink, missing, hidden, a folder
+  or too big refused, the upload's manifest, files, token and thread). `bun run test` 50 (8 markdown, 7 artifacts: who the canvas opens for,
+  the quick look moving to the full view, tabs and versions, a redacted version skipped, links, CSV and JSON tables).
+- Live: **`phase13` 32 checks**, three runs: the first stopped at step 5 (researcher edited without showing v2; fixed in the product, above),
+  then 32 and 32, the last on the final build. Screenshots `docs/screens/brief9/01-…` to `10-…`, dark and light, looked at; fixed from them:
+  table cells in a narrow column broke words letter by letter ("Provide r"); they now wrap at words and the table scrolls.
+- The whole regression on the final build, each on a fresh scratch server or its own: `phase1` 24, `phase2` 30, `phase4` 19, `phase5` 22,
+  `phase6` 27, `phase7` 31, `phase8` 31, `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 35. The older scripts' screenshots went to a
+  scratch folder (phase6 and phase8 still write their own; restored).
+
+**Not done / next**
+- Search doesn't find artifacts by title or text yet; the project library (option C) and people attaching files come next.
+- A report's links don't open (no popups from the frame, on purpose); a page that loads anything from the internet shows without it.
+- A PDF in the canvas wasn't live-checked (headless Chromium has no PDF viewer).
+- Thumbnails are the page itself in a small frame, so a thread with many cards runs each page's scripts.
+- An upload whose runner disconnects mid-way leaves the agent waiting the full 2 minutes before it hears so.
