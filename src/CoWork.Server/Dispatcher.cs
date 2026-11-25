@@ -287,6 +287,10 @@ public sealed class Dispatcher
                     new { threadId, agentId }).FirstOrDefault();
                 if (open is null) return Array.Empty<NewEvent>();
                 var evs = new List<NewEvent>(); if (close is not null) evs.Add(close);
+                // tool calls that were running when it went won't finish now
+                foreach (var tool in ctx.Query<(long Id, string? ToolId)>(@"SELECT id, json_extract(meta,'$.toolId') FROM posts WHERE thread_id=@threadId AND author_id=@agentId AND kind='tool'
+                    AND json_extract(meta,'$.status')='running'", new { threadId, agentId }))
+                    evs.Add(new NewEvent($"thread-{threadId}", "ToolCallFinished", new { postId = tool.Id, toolId = tool.ToolId, status = "failed" }, agentId, open.Behalf, open.Turn, open.Cause));
                 var handle = ctx.Scalar<string>("SELECT handle FROM members WHERE id=@agentId", new { agentId }) ?? "the agent";
                 var pausedBy = ctx.Scalar<string?>(@"SELECT m.display_name FROM threads t JOIN channels c ON c.id=t.channel_id JOIN projects p ON p.id=c.project_id JOIN members m ON m.id=p.paused_by
                     WHERE t.root_id=@threadId AND p.paused_at IS NOT NULL", new { threadId });
@@ -528,6 +532,10 @@ public sealed class Dispatcher
                 }
                 break;
             case StreamKinds.Error:
+                // the harness repeating the gateway's budget stop ("Internal error: Reached this thread's cap…") adds nothing: the thread said it once
+                using (var c = _db.Open())
+                    if (c.Query<string>("SELECT json_extract(data,'$.text') FROM events WHERE stream_id=@s AND type='BudgetReached' AND correlation=@turn", new { s = $"thread-{e.ThreadId}", turn = st.Turn })
+                        .Any(t => (e.Text ?? "").Contains(t))) break;
                 lock (st.Gate)
                 {
                     var close = CloseEvent(st);

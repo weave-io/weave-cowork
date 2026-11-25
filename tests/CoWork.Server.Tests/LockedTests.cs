@@ -117,6 +117,11 @@ public class LockedTests
         Assert.Equal((HttpStatusCode)402, (await Call()).StatusCode);
         Assert.Equal(2, up.Seen.Count);                                     // nothing more reached the provider
         Assert.Equal(1, Count(w.App, "SELECT COUNT(*) FROM events WHERE type='BudgetReached'"));        // said once in this turn
+        // the harness then fails its prompt with the gateway's words: that isn't said a second time
+        await box.Conn.InvokeAsync("Stream", new StreamEvent(thread, StreamKinds.Error, "Internal error: Reached this thread's cap of 200 tokens. A lead can raise it."));
+        await box.End();
+        await Until(() => Count(w.App, "SELECT COUNT(*) FROM events WHERE type='TurnEnded'") == 1, "the turn's end");
+        Assert.Equal(0, Count(w.App, "SELECT COUNT(*) FROM events WHERE type='TurnFailed'"));
         var notice = w.App.Sql().QueryFirst<(string Body, string Meta, long Author)>("SELECT body, meta, author_id FROM posts WHERE kind='notice'");
         Assert.Equal(("Reached this thread's cap of 200 tokens. A lead can raise it.", w.ResearcherId), (notice.Body, notice.Author));
         Assert.Equal(new[] { w.Alex.Id }, JsonDocument.Parse(notice.Meta).RootElement.GetProperty("leadIds").EnumerateArray().Select(x => x.GetInt64()));
@@ -183,10 +188,13 @@ public class LockedTests
         var (thread, create, box) = await Started(w, w.Rosa, "@researcher read src/tax.ts");
         await box.NextDelivery();
         await box.Say("Reading…");
+        await box.Conn.InvokeAsync("Stream", new StreamEvent(thread, StreamKinds.ToolStart, null, "t1", "read src/tax.ts", "read", "running"));
+        await Until(() => Count(w.App, "SELECT COUNT(*) FROM posts WHERE kind='tool'") == 1, "the tool row");
         await box.DisposeAsync();                                                      // the container died: its runner's connection is gone
         await w.Pool.Report(create.Spec.SandboxId, SandboxStates.Suspended, "its container stopped");
         await Until(() => Count(w.App, "SELECT COUNT(*) FROM posts WHERE kind='notice'") == 1, "the notice");
         Assert.Equal("researcher's sandbox stopped unexpectedly. Trying again.", w.App.Sql().ExecuteScalar<string>("SELECT body FROM posts WHERE kind='notice'"));
+        Assert.Equal("failed", w.App.Sql().ExecuteScalar<string>("SELECT json_extract(meta,'$.status') FROM posts WHERE kind='tool'"));     // it won't finish now
         var resume = await w.Pool.Next<ResumeSandbox>();                               // the same sandbox, its volume, a new token
         Assert.Equal(create.Spec.SandboxId, resume.Spec.SandboxId);
         await w.Pool.Report(resume.Spec.SandboxId, SandboxStates.Running);

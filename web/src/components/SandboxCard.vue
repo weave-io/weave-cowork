@@ -13,11 +13,13 @@ const steps = computed<SandboxStep[]>(() => meta.value.steps ?? [])
 const asker = computed(() => memberById(meta.value.askedBy ?? 0))
 const parts = (t: string) => t.split('`').map((text, i) => ({ text, code: i % 2 === 1 }))
 const idle = (s: number | undefined) => s == null ? 'a while' : s >= 60 && s % 60 === 0 ? `${s / 60} minute${s === 60 ? '' : 's'}` : `${s} seconds`
+const paused = computed(() => meta.value.why === 'paused' ? memberById(meta.value.by ?? 0)?.displayName ?? 'A lead' : null)
 const footer = computed(() => {
   switch (meta.value.state) {
     case 'waiting': case 'starting': case 'resuming': return 'The message goes in as soon as the harness is ready. Replies sent now wait in order.'
-    case 'suspending': return `Stopping: nothing happened for ${idle(meta.value.idleSeconds)}.`
-    case 'suspended': return `Stopped after ${idle(meta.value.idleSeconds)} idle. Its volume is kept, so the next message picks up where it left off.`
+    case 'suspending': return paused.value ? `Stopping: ${paused.value} paused the project's agents.` : `Stopping: nothing happened for ${idle(meta.value.idleSeconds)}.`
+    case 'suspended': return paused.value ? `Stopped: ${paused.value} paused the project's agents. Its volume is kept, so it picks up where it left off when they're resumed.`
+      : `Stopped after ${idle(meta.value.idleSeconds)} idle. Its volume is kept, so the next message picks up where it left off.`
     case 'failed': return meta.value.reason ? `It couldn't start: ${meta.value.reason}` : "It couldn't start."
     default: return ''
   }
