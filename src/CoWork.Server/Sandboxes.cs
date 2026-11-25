@@ -75,7 +75,7 @@ public sealed class SandboxProjection : IInlineProjection
                     ["steps"] = new JsonArray(
                         Step("pool", "waiting", WaitingText(e.Str("waiting"), line)),
                         Step("container", "todo", resume ? "Resume the sandbox on its volume" : $"Start a sandbox from `{e.Str("image")}`"),
-                        Step("workspace", "todo", resume ? $"Pick up its volume on `{e.Str("branch")}`" : ws is null ? "Make an empty workspace" : $"Copy `{ws}` onto `{e.Str("branch")}`"),
+                        Step("workspace", "todo", resume ? $"Pick up its volume on `{e.Str("branch")}`" : ws is null ? NoRepository(x, e) ?? "Make an empty workspace" : $"Copy `{ws}` onto `{e.Str("branch")}`"),
                         Step("harness", "todo", $"Start `{harness}`")),
                 };
                 x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@body,'sandbox',@meta,@at,@pos)",
@@ -117,7 +117,7 @@ public sealed class SandboxProjection : IInlineProjection
                     m["state"] = "running";
                     var wsMs = e.LongOrNull("workspaceMs"); var ctMs = e.LongOrNull("containerMs");
                     SetStep(m, "workspace", "done", resumed ? $"Its volume still has `{e.Str("branch")}` and the session"
-                        : ws is null ? "Made an empty workspace on its volume" : $"Made a copy of `{ws}` on `{e.Str("branch")}`", wsMs is { } w ? w / 1000.0 : null);
+                        : ws is null ? (NoRepository(x, e) is { } none ? $"Made an empty workspace. {none}" : "Made an empty workspace on its volume") : $"Made a copy of `{ws}` on `{e.Str("branch")}`", wsMs is { } w ? w / 1000.0 : null);
                     SetStep(m, "container", "done", resumed ? $"Resumed the sandbox from `{e.Str("image")}` on its volume, {e.LongOrNull("memoryMb")} MB"
                         : $"Started a sandbox from `{e.Str("image")}`, {e.LongOrNull("memoryMb")} MB", ctMs is { } c ? c / 1000.0 : null);
                     SetStep(m, "harness", "running", null, null);
@@ -277,6 +277,15 @@ public sealed class SandboxProjection : IInlineProjection
         var post = x.Scalar<long?>("SELECT id FROM posts WHERE thread_id=@t AND kind='outcome' ORDER BY id DESC LIMIT 1", new { t });
         if (post is null) return;
         Meta(x, post.Value, e.Position, m => { if (m["branch"] is JsonObject b) { b["state"] = state; b["reason"] = reason; } }, kind: "outcome");
+    }
+
+    /// <summary>A sandbox for a project with no repository has nothing to work on: its starting card says so, and where to add one.</summary>
+    static string? NoRepository(ProjectionContext x, StoredEvent e)
+    {
+        var sandbox = x.Query<(long? Project, long Agent)>("SELECT project_id, agent_id FROM sandboxes WHERE id=@id", new { id = e.Long("sandboxId") }).FirstOrDefault();
+        if (sandbox.Project is null) return null;
+        var handle = x.Scalar<string>("SELECT handle FROM members WHERE id=@a", new { a = sandbox.Agent }) ?? "the agent";
+        return $"No repository: add one in the project's settings to give {handle} something to work on.";
     }
 
     static double? Num(StoredEvent e, string k) => e.Data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;

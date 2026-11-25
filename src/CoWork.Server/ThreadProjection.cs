@@ -24,8 +24,12 @@ public sealed class ThreadProjection : IInlineProjection
                 break;
             }
             case "ThreadStarted":
-                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by, agent_chain, slug) VALUES (@r,@ch,@by,@chain,@slug)",
-                    new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy"), chain = e.LongOrNull("agentChain") ?? 0, slug = e.Str("slug") });      // agentChain: only an imported thread starts with a count
+                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by, agent_chain, slug, last_at, last_position) VALUES (@r,@ch,@by,@chain,@slug,@at,@pos)",
+                    new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy"), chain = e.LongOrNull("agentChain") ?? 0, slug = e.Str("slug"), at = e.OccurredAt, pos = e.Position });      // agentChain: only an imported thread starts with a count
+                break;
+            case "ThreadRenamed":
+                // anyone in the thread may name it; an empty name goes back to the automatic one
+                x.Execute("UPDATE threads SET title=@title, titled_at=@at WHERE root_id=@t", new { title = string.IsNullOrWhiteSpace(e.Str("title")) ? null : e.Str("title"), at = e.OccurredAt, t = ThreadOf(e) });
                 break;
             case "AgentJoinedThread":
                 x.Execute("INSERT OR IGNORE INTO thread_agents(thread_id, agent_id) VALUES (@t,@a)", new { t = ThreadOf(e), a = e.Long("agentId") });
@@ -36,7 +40,9 @@ public sealed class ThreadProjection : IInlineProjection
                     new { ws = e.LongOrNull("workspaceId"), place = e.Str("place"), branch = e.Str("branch"), loc = e.Str("location"), host = e.Str("host"), sb = e.Bool("sandboxed") ? 1 : 0, t = ThreadOf(e), a = e.Long("agentId") });
                 break;
             case "WorkRefused":
-                // the agent's grant doesn't let this person give it work: a short reply in the thread instead of a turn
+            case "MentionUnreachable":
+                // the agent's grant doesn't let this person give it work, or the mention can't reach it (it isn't in the channel's project or the
+                // channel, or has no runner): a short reply in the thread instead of a turn
                 x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@a,@body,'notice',@at,@pos)",
                     new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), body = e.Str("reply"), at = e.OccurredAt, pos = e.Position });
                 break;
@@ -137,6 +143,24 @@ public sealed class ThreadProjection : IInlineProjection
             case "PermissionDenied":
                 Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "denied"; m["answer"] = null; });
                 break;
+        }
+        if (Activity(e) is { } active)
+            x.Execute("UPDATE threads SET last_at=MAX(COALESCE(last_at,0),@at), last_position=MAX(COALESCE(last_position,0),@pos) WHERE root_id=@active", new { at = e.OccurredAt, pos = e.Position, active });
+    }
+
+    /// <summary>The thread something new appeared in (a reply, an answer, a tool row, an ask, a notice, a card, an outcome), or null. The channel
+    /// list orders threads by it.</summary>
+    public static long? Activity(StoredEvent e)
+    {
+        switch (e.Type)
+        {
+            case "MessagePosted": return e.LongOrNull("threadId");
+            case "AgentReplied": return e.Long("segment") == 0 ? ThreadOf(e) : null;
+            case "TurnInterrupted": return e.LongOrNull("postId") is null ? null : ThreadOf(e);
+            case "WorkRefused": case "MentionUnreachable": case "ToolCallStarted": case "PermissionRequested": case "TurnFailed": case "ThreadResolved": case "ThreadReopened":
+            case "SandboxRequested": case "EgressRefused": case "BudgetReached": case "ThreadBudgetRaised":
+                return ThreadOf(e) is var t and > 0 ? t : null;
+            default: return null;
         }
     }
 

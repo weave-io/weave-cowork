@@ -47,5 +47,19 @@ export interface ThreadAgent {
 export type SandboxState = 'waiting' | 'starting' | 'resuming' | 'running' | 'suspending' | 'suspended' | 'failed' | 'deleted'
 /** One row of a sandbox's starting card, as the server wrote it. Text between backticks is code. */
 export interface SandboxStep { key: 'pool' | 'container' | 'workspace' | 'harness'; state: 'todo' | 'waiting' | 'running' | 'done' | 'failed'; text: string; secs?: number }
-export interface ThreadState { rootId: number; root: Post; replies: Post[]; agents: ThreadAgent[]; startedBy: number }
+export interface ThreadState {
+  rootId: number; root: Post; replies: Post[]; agents: ThreadAgent[]; startedBy: number
+  /** the thread as the channel list shows it (title, agents, status, last activity); null for a post nobody has replied to yet */
+  summary?: ThreadSummary | null
+  /** whether this person may rename it: they started it, wrote in it or own an agent in it, or they're an admin */
+  canRename?: boolean
+}
+/** A thread as the channel list and All threads show it. `unread` is this person's own (0 where the server can't know whose it is). */
+export interface ThreadSummary {
+  rootId: number; channelId: number; title: string; titleFrom: 'outcome' | 'renamed' | 'words'; startedBy: number
+  agents: { id: number; handle: string; displayName: string }[]
+  status: ThreadStatus | null; lastAt: number; createdAt: number; replies: number; resolvedAt: number | null; unread: number
+}
+/** A channel's threads in the list: the most recently active ones that belong there, and how many it has in all. */
+export interface ChannelThreads { channelId: number; total: number; threads: ThreadSummary[] }
 export interface FeedState { channelId: number | null; posts: Post[]; thread: ThreadState | null }

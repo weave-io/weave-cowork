@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search, Settings2, FolderPlus, Boxes, SlidersHorizontal } from 'lucide-vue-next'
+import { ChevronDown, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search, Settings2, FolderPlus, Boxes, SlidersHorizontal } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { searchShortcut } from '../search'
 import { navOpen } from '../layout'
@@ -14,8 +14,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import MemberAvatar from './MemberAvatar.vue'
 import StatusDot from './StatusDot.vue'
+import ChannelEntry from './threads/ChannelEntry.vue'
 
-defineProps<{ channelId: number | null; projectId?: number | null }>()
+defineProps<{ channelId: number | null; projectId?: number | null; threadId?: number | null }>()
 const emit = defineEmits<{ go: [id: number]; project: [id: number] }>()
 // channels outside any project; each project is a group of its own (text first, then voice)
 const text = computed(() => store.channels.filter(c => c.kind !== 'voice' && c.projectId == null))
@@ -24,7 +25,6 @@ const groups = computed(() => store.projects.map(p => ({
   project: p,
   channels: store.channels.filter(c => c.projectId === p.id).sort((a, b) => Number(a.kind === 'voice') - Number(b.kind === 'voice') || a.name.localeCompare(b.name)),
 })))
-const unreadIn = (id: number) => store.unread.channels[String(id)] ?? 0
 const route = useRoute(), router = useRouter()
 const searching = computed(() => route.path === '/search')
 function openSearch() { navOpen.value = false; if (!searching.value) router.push('/search') }
@@ -67,10 +67,11 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
           </span>
         </div>
         <template v-for="c in g.channels" :key="c.id">
-          <button type="button" class="chan" :class="{ active: c.id === channelId, unread: unreadIn(c.id) > 0 }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
-            <Volume2 v-if="c.kind === 'voice'" :size="14" class="shrink-0" aria-hidden="true" /><Lock v-else-if="c.isPrivate" :size="14" class="shrink-0" aria-label="Private" /><Hash v-else :size="14" class="shrink-0" aria-hidden="true" />
+          <ChannelEntry v-if="c.kind !== 'voice'" :channel="c" :active="c.id === channelId" :active-thread="c.id === channelId ? threadId ?? null : null" @go="emit('go', $event)" />
+          <button v-else type="button" class="chan" :class="{ active: c.id === channelId }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
+            <Volume2 :size="14" class="shrink-0" aria-hidden="true" />
             <span class="truncate">{{ c.name }}</span>
-            <span v-if="unreadIn(c.id) > 0" class="count" data-testid="unread-badge" :aria-label="`${unreadIn(c.id)} unread`">{{ unreadIn(c.id) > 99 ? '99+' : unreadIn(c.id) }}</span>
+            <Lock v-if="c.isPrivate" :size="12" class="ml-auto shrink-0 opacity-70" aria-label="Private" />
           </button>
           <ul v-if="c.kind === 'voice' && store.voicePresence[c.id]?.length" class="m-0 mb-1 list-none py-0 pr-2 pl-[30px]" :data-voice-members="c.name">
             <li v-for="id in store.voicePresence[c.id]" :key="id" class="flex items-center gap-2 py-[3px] text-[12.5px] text-muted" :data-voice-member="memberById(id)?.handle">
@@ -84,11 +85,7 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
         <span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Channels</span>
         <Button variant="toolbar-icon" size="toolbar" class="size-6" aria-label="Create channel" data-testid="create-channel" @click="openModal('create-channel')"><Plus :size="14" /></Button>
       </div>
-      <button v-for="c in text" :key="c.id" type="button" class="chan" :class="{ active: c.id === channelId, unread: unreadIn(c.id) > 0 }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
-        <Lock v-if="c.isPrivate" :size="14" class="shrink-0" aria-label="Private" /><Hash v-else :size="14" class="shrink-0" aria-hidden="true" />
-        <span class="truncate">{{ c.name }}</span>
-        <span v-if="unreadIn(c.id) > 0" class="count" data-testid="unread-badge" :aria-label="`${unreadIn(c.id)} unread`">{{ unreadIn(c.id) > 99 ? '99+' : unreadIn(c.id) }}</span>
-      </button>
+      <ChannelEntry v-for="c in text" :key="c.id" :channel="c" :active="c.id === channelId" :active-thread="c.id === channelId ? threadId ?? null : null" @go="emit('go', $event)" />
 
       <div v-if="voices.length" class="px-2.5 pt-4 pb-1"><span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Voice channels</span></div>
       <template v-for="c in voices" :key="c.id">

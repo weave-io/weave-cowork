@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { store, currentChannel, openChannel, openThread, openModal, closeModal, markRead } from '../store'
+import { store, currentChannel, openChannel, openThread, openModal, closeModal, markRead, markThreadRead } from '../store'
 import { post } from '../api'
 import Sidebar from '../components/Sidebar.vue'
 import PostItem from '../components/PostItem.vue'
@@ -9,7 +9,10 @@ import Composer from '../components/Composer.vue'
 import ThreadPanel from '../components/ThreadPanel.vue'
 import VoiceRoom from '../components/VoiceRoom.vue'
 import MemberList from '../components/MemberList.vue'
-import { Hash, Lock, Volume2, Menu, Users, Settings as SettingsIcon, MessageSquareText } from 'lucide-vue-next'
+import { Hash, Lock, Volume2, Menu, Users, Settings as SettingsIcon, MessageSquareText, MessagesSquare } from 'lucide-vue-next'
+import ThreadView from '../components/threads/ThreadView.vue'
+import ThreadsView from '../components/threads/ThreadsView.vue'
+import { parseChannelPath, threadsPath } from '../threads'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -35,10 +38,9 @@ import WhereAgentsRun from '../components/modals/WhereAgentsRun.vue'
 import ServerSettings from '../components/modals/ServerSettings.vue'
 
 const route = useRoute(), router = useRouter()
-const ids = computed(() => {
-  const m = /^\/c\/(\d+)(?:\/t\/(\d+))?/.exec(route.path)
-  return { channel: m ? Number(m[1]) : null, thread: m?.[2] ? Number(m[2]) : null }
-})
+// /c/:id the channel, /c/:id/t/:root a thread's quick look beside it, /c/:id/threads All threads, /c/:id/threads/:root a thread's full view
+const ids = computed(() => parseChannelPath(route.path))
+const view = computed(() => ids.value.view)
 const projectPage = computed(() => { const m = /^\/p\/(\d+)/.exec(route.path); return m ? Number(m[1]) : null })
 const scroller = ref<HTMLElement | null>(null)
 const searching = computed(() => route.path === '/search')
@@ -58,7 +60,7 @@ async function focusPost(postId: number, channel: number, thread: number | null)
   const mine = ++focusRun, until = Date.now() + 4000
   while (Date.now() < until && mine === focusRun) {
     const ready = store.feed.channelId === channel && !store.loadingFeed && (thread == null || store.feed.thread?.rootId === thread)
-    const el = ready ? document.querySelector<HTMLElement>(`${thread != null ? '[data-testid=thread-panel] ' : '[data-testid=feed] '}[data-post="${postId}"]`) : null
+    const el = ready ? document.querySelector<HTMLElement>(`${thread != null ? (view.value === 'full' ? '[data-testid=thread-view] ' : '[data-testid=thread-panel] ') : '[data-testid=feed] '}[data-post="${postId}"]`) : null
     if (el) {
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))     // after the panels' own scroll-to-bottom
       document.querySelectorAll('[data-focused]').forEach(x => { x.removeAttribute('data-focused'); x.classList.remove('post-flash') })
@@ -89,6 +91,9 @@ watch([ids, () => store.channels.length], async () => {
   await openThread(ids.value.thread).catch(() => router.replace(`/c/${want}`))
 }, { immediate: true })
 
+// a thread that is open (beside the channel or in full) is a thread that is read: when it opens, and as replies arrive
+watch(() => [searching.value ? null : store.feed.thread?.rootId ?? null, store.feed.thread?.replies.length ?? 0] as const, ([id]) => { if (id != null) markThreadRead(id) }, { immediate: true })
+
 // a channel that is open is a channel that is read: when it has unread messages (it was just opened, or something arrived), say so
 watch(() => [searching.value ? null : store.feed.channelId, store.unread.channels[String(store.feed.channelId)] ?? 0] as const, ([id, n]) => { if (id != null && n > 0) markRead(id) }, { immediate: true })
 
@@ -117,12 +122,12 @@ async function send(text: string) {
       <!-- desktop: the rail and the channel list sit on the window; the phone moves them behind the menu button -->
       <template v-if="!isPhone">
         <Rail />
-        <div class="flex w-[244px] min-w-0 shrink-0 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" :project-id="projectPage" @go="goChannel" @project="goProject" /></div>
+        <div class="flex w-[244px] min-w-0 shrink-0 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" :project-id="projectPage" :thread-id="view === 'full' || view === 'panel' ? ids.thread : null" @go="goChannel" @project="goProject" /></div>
       </template>
       <template v-else-if="navOpen">
         <div class="fixed inset-0 z-40 bg-black/60" @click="navOpen = false" />
         <div class="fixed inset-y-0 left-0 z-50 flex w-[min(340px,calc(100%-56px))] border-r border-border bg-main-bg" data-testid="phone-nav">
-          <Rail /><div class="flex min-w-0 flex-1 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" :project-id="projectPage" @go="goChannel" @project="goProject" /></div>
+          <Rail /><div class="flex min-w-0 flex-1 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" :project-id="projectPage" :thread-id="view === 'full' || view === 'panel' ? ids.thread : null" @go="goChannel" @project="goProject" /></div>
         </div>
       </template>
 
@@ -130,7 +135,9 @@ async function send(text: string) {
         <SearchView v-if="searching" />
         <ProjectSettings v-else-if="projectPage != null" :key="projectPage" :project-id="projectPage" class="min-h-0 min-w-0 flex-1" />
         <template v-else>
-        <main class="flex min-h-0 min-w-0 flex-1 flex-col" :class="isPhone && store.feed.thread && 'hidden'">
+        <ThreadsView v-if="view === 'threads' && currentChannel" :key="'threads' + currentChannel.id" :channel-id="currentChannel.id" />
+        <ThreadView v-else-if="view === 'full' && currentChannel" />
+        <main v-else class="flex min-h-0 min-w-0 flex-1 flex-col" :class="isPhone && view === 'panel' && store.feed.thread && 'hidden'">
           <template v-if="currentChannel">
             <header class="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3 sm:px-4">
               <Button v-if="isPhone" variant="toolbar-icon" size="toolbar-lg" aria-label="Open menu" data-testid="phone-menu" @click="navOpen = true"><Menu :size="18" /></Button>
@@ -140,6 +147,7 @@ async function send(text: string) {
               </h2>
               <span v-if="currentChannel.topic && !isPhone" class="truncate border-l border-border pl-2.5 text-[13px] text-muted" data-testid="channel-topic">{{ currentChannel.topic }}</span>
               <span class="ml-auto flex gap-1.5">
+                <Button v-if="currentChannel.kind !== 'voice'" variant="outline" size="sm" class="h-8 gap-1.5" data-testid="channel-threads" aria-label="Threads" title="All threads in this channel" @click="router.push(threadsPath(currentChannel.id))"><MessagesSquare :size="14" /><span class="max-sm:hidden">Threads</span></Button>
                 <Button v-if="currentChannel.canManage" variant="outline" size="sm" class="h-8 gap-1.5" data-testid="channel-settings" aria-label="Channel settings" @click="openModal('channel-settings', { id: currentChannel.id })"><SettingsIcon :size="14" /><span class="max-sm:hidden">Settings</span></Button>
                 <Button v-if="isPhone" variant="toolbar-icon" size="toolbar-lg" aria-label="Show members" data-testid="phone-members" @click="membersOpen = true"><Users :size="18" /></Button>
               </span>
@@ -154,8 +162,8 @@ async function send(text: string) {
           <EmptyState v-else :icon="Hash" title="Pick a channel" description="Or create one with +." class="flex-1" />
         </main>
 
-        <ThreadPanel v-if="store.feed.thread" class="border-l border-border" :class="isPhone ? 'w-full' : 'w-[400px] shrink-0'" @close="closeT" />
-        <MemberList v-if="!isPhone && (!store.feed.thread || isWide)" class="shrink-0 border-l border-border" :class="store.feed.thread ? 'w-[220px]' : 'w-[244px]'" />
+        <ThreadPanel v-if="view === 'panel' && store.feed.thread" class="border-l border-border" :class="isPhone ? 'w-full' : 'w-[400px] shrink-0'" @close="closeT" />
+        <MemberList v-if="!isPhone && (view !== 'panel' || !store.feed.thread || isWide)" class="shrink-0 border-l border-border" :class="view === 'panel' && store.feed.thread ? 'w-[220px]' : 'w-[244px]'" />
         </template>
       </div>
 

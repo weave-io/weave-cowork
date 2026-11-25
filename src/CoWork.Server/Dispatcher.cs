@@ -86,6 +86,23 @@ public sealed class Dispatcher
             : $"{agent.Handle} only takes work from members of {project}.";
     }
 
+    /// <summary>Why a mention can't reach an agent, and the short reply that says so: it isn't in the channel's project, or in the channel, or it has
+    /// no runner to work on yet.</summary>
+    private static (MemberRow Agent, string Reason, string Reply) Unreachable(IDecisionContext ctx, ChannelRow channel, MemberRow agent)
+    {
+        var inAudience = ctx.Scalar<int>("SELECT COUNT(*) FROM channel_audience WHERE channel_id=@ch AND member_id=@a", new { ch = channel.Id, a = agent.Id }) > 0;
+        if (!inAudience && channel.ProjectId is { } project
+            && ctx.Scalar<int>("SELECT COUNT(*) FROM project_agents WHERE project_id=@project AND agent_id=@a", new { project, a = agent.Id }) == 0)
+        {
+            var name = ctx.Scalar<string>("SELECT name FROM projects WHERE id=@project", new { project }) ?? "this project";
+            return (agent, "project", $"{agent.Handle} isn't in {name}. A lead can add it in the project's settings.");
+        }
+        if (!inAudience)
+            return (agent, "channel", $"{agent.Handle} isn't in #{channel.Name}. Whoever manages #{channel.Name} can add it in the channel's settings.");
+        var owner = ctx.Scalar<string>("SELECT display_name FROM members WHERE id=@o", new { o = agent.OwnerId }) ?? "Its owner";
+        return (agent, "runner", $"{agent.Handle} has no runner yet, so it can't take work. {owner} can connect one.");
+    }
+
     // ---- people → agents ---------------------------------------------------
 
     /// <summary>A person posts. One transaction records the post and, if agents should hear it, the thread, who joined and what was delivered to each.
@@ -111,12 +128,18 @@ public sealed class Dispatcher
                 // the agent's grant in the channel's project says who may give it work; a mention from anyone else gets a short reply instead
                 var refused = mentioned.Where(a => Refusal(ctx, channel, a, authorId) is not null).ToList();
                 mentioned = mentioned.Except(refused).ToList();
+                // an agent the mention can't reach (not in the channel's project or the channel, or with no runner) says so, instead of nothing
+                var reached = mentioned.Concat(refused).Select(a => a.Id).ToHashSet();
+                var unreachable = mentions.Length == 0 ? new List<(MemberRow Agent, string Reason, string Reply)>()
+                    : ctx.Query<MemberRow>(Q.MemberSelect + " WHERE m.kind='agent' AND m.removed=0")
+                        .Where(a => a.Id != author.Id && !reached.Contains(a.Id) && mentions.Contains(a.Handle.ToLowerInvariant()))
+                        .Select(a => Unreachable(ctx, channel, a)).ToList();
                 long root;
                 int causeIdx;
                 if (threadId is null)
                 {
                     evs.Add(new NewEvent($"channel-{channelId}", "MessagePosted", posted, authorId));
-                    if (mentioned.Count == 0 && refused.Count == 0) return evs;
+                    if (mentioned.Count == 0 && refused.Count == 0 && unreachable.Count == 0) return evs;
                     root = postId; causeIdx = 0;
                     evs.Add(new NewEvent($"thread-{root}", "ThreadStarted", new { rootId = root, channelId, startedBy = authorId, slug = Projects.Slug(body, root) }, null, authorId, CausedByIndex: 0));
                 }
@@ -131,6 +154,12 @@ public sealed class Dispatcher
                     causeIdx = evs.Count;
                     evs.Add(new NewEvent($"thread-{root}", "MessagePosted", posted, authorId));
                 }
+
+                foreach (var (a, reason, reply) in unreachable)
+                    evs.Add(new NewEvent($"thread-{root}", "MentionUnreachable", new
+                    {
+                        agentId = a.Id, ownerId = a.OwnerId, channelId, projectId = channel.ProjectId, postId = ctx.NextId("posts"), askedIn = postId, reason, reply,
+                    }, a.Id, authorId, CausedByIndex: causeIdx));
 
                 foreach (var a in refused)
                     evs.Add(new NewEvent($"thread-{root}", "WorkRefused", new

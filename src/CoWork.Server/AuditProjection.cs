@@ -235,6 +235,20 @@ public sealed class AuditProjection : IAsyncProjection
                 Add(x, e, "event", $"{who} asked {Agent(x, ag)} for work in {Channel(x, ch)}. It didn't take it: {why}.", ch, thread, ag, owner);
                 break;
             }
+            case "MentionUnreachable":
+            {
+                var ag = e.Long("agentId"); var ch = e.Long("channelId");
+                var owner = x.Scalar<long?>("SELECT owner_id FROM audit_names WHERE kind='agent' AND id=@a", new { a = ag });
+                var why = e.Str("reason") switch
+                {
+                    "project" => $"it isn't in {Project(x, e.LongOrNull("projectId"))}",
+                    "channel" => $"it isn't in {Channel(x, ch)}",
+                    _ => "it has no runner yet",
+                };
+                var who = e.OnBehalfOf is null ? "Someone" : Person(x, e.OnBehalfOf);
+                Add(x, e, "event", $"{who} mentioned {Agent(x, ag)} in {Channel(x, ch)}. It couldn't take it: {why}.", ch, thread, ag, owner);
+                break;
+            }
             case "ThreadWorkspaceReady":
             {
                 var ag = e.Long("agentId");

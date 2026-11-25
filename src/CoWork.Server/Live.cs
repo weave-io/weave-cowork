@@ -47,7 +47,8 @@ public static class Effects
                     break;
                 case "ThreadStarted": Thread(e.Long("rootId"), e.Position); break;
                 case "MessageDelivered": case "TurnStarted": case "TurnEnded": case "ThreadWorkspaceReady": Thread(t, e.Position); break;
-                case "WorkRefused": Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
+                case "ThreadRenamed": Thread(t, e.Position); break;
+                case "WorkRefused": case "MentionUnreachable": Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
                 case "ToolCallStarted": case "PermissionRequested":
                     Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
                 case "MessageDeleted":
@@ -117,7 +118,8 @@ public sealed class ThreadViews
     {
         var p = Q.Post(c, rootId);
         if (p is null) return null;
-        return new { rootId, channelId = p.ChannelId, post = Q.FullPostDto(c, rootId), agents = ThreadAgentStatus(rootId), at };
+        // `thread`: the thread as the channel list shows it (title, agents, status, last activity), so the list and the full view follow it live
+        return new { rootId, channelId = p.ChannelId, post = Q.FullPostDto(c, rootId), agents = ThreadAgentStatus(rootId), thread = ThreadList.Of(c, rootId), at };
     }
 
     public List<object> ThreadAgentStatus(long rootId)

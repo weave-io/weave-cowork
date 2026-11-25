@@ -32,6 +32,7 @@ export function applyEvent(s: FeedState, evt: string, p: any): void {
       if (s.thread && s.thread.rootId === p.rootId) {
         Object.assign(s.thread.root, p.post)
         s.thread.agents = p.agents as ThreadAgent[]
+        if (p.thread) s.thread.summary = { ...p.thread, unread: s.thread.summary?.unread ?? 0 }      // unread is each person's own: the broadcast can't say it
       }
       return
     }

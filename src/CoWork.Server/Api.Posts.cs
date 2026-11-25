@@ -43,7 +43,8 @@ public static partial class Api
             if (root is null || root.ThreadId is not null || !Access.CanSee(c, root.ChannelId, Me(ctx))) return Err(404, "No such thread.");
             var replies = c.Query<PostRow>(Q.PostSelect + " WHERE p.thread_id=@rootId ORDER BY p.id", new { rootId }).Select(p => Q.PostDto(p)).ToList();
             var startedBy = c.ExecuteScalar<long?>("SELECT started_by FROM threads WHERE root_id=@rootId", new { rootId }) ?? Me(ctx);
-            return Results.Ok(new { root = Q.FullPostDto(c, rootId), replies, agents = d.ThreadAgentStatus(rootId), startedBy });
+            return Results.Ok(new { root = Q.FullPostDto(c, rootId), replies, agents = d.ThreadAgentStatus(rootId), startedBy,
+                thread = ThreadList.Of(c, rootId), canRename = ThreadList.CanRename(c, rootId, Me(ctx)) });
         });
 
         // delete a message: the projections hide it, the events keep the fact. The author may, an admin may, an agent's owner may for its posts.

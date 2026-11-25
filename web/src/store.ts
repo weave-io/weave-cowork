@@ -2,7 +2,8 @@ import { reactive, computed } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { get, post, ApiError } from './api'
 import { applyEvent } from './reducer'
-import type { Channel, FeedState, Member, Post, Project, ThreadState } from './types'
+import type { Channel, ChannelThreads, FeedState, Member, Post, Project, ThreadState, ThreadSummary } from './types'
+import { loadFolded, patchSummary, toggleFolded } from './threads'
 
 export const store = reactive({
   phase: 'loading' as 'loading' | 'setup' | 'signin' | 'app',
@@ -24,7 +25,45 @@ export const store = reactive({
   unread: { channels: {} as Record<string, number>, mentions: 0 },
   /** counts up when the server says a projection moved, so an open screen asks again */
   viewsVersion: 0,
+  /** the channel list's threads, per channel: the most recently active ones that belong there and how many the channel has (brief 8) */
+  threadList: {} as Record<number, { total: number; threads: ThreadSummary[] }>,
+  /** counts up whenever any thread changes, so All threads asks again */
+  threadsVersion: 0,
+  /** channels whose threads are folded away in the list (remembered in this browser) */
+  folded: loadFolded() as number[],
 })
+
+export const foldThreads = (channelId: number) => { store.folded = toggleFolded(store.folded, channelId) }
+
+/** The channel list's threads. Asked for again (shortly, once for a burst) whenever a thread changes or a view moves (unread counts). */
+let threadListTimer: ReturnType<typeof setTimeout> | null = null
+export async function loadThreadList() {
+  try {
+    const list: ChannelThreads[] = await get('/thread-list')
+    store.threadList = Object.fromEntries(list.map(c => [c.channelId, { total: c.total, threads: c.threads }]))
+  } catch { /* signed out, or offline: the next change asks again */ }
+}
+function scheduleThreadList() {
+  store.threadsVersion++
+  if (threadListTimer) return
+  threadListTimer = setTimeout(() => { threadListTimer = null; loadThreadList() }, 150)
+}
+/** A thread's live update: the list shows its new title and status at once, and asks for the list again (order, what belongs in it). */
+function threadChanged(p: any) {
+  if (p?.thread) {
+    const c = store.threadList[p.thread.channelId]
+    if (c) patchSummary(c.threads, p.thread as ThreadSummary)
+  }
+  scheduleThreadList()
+}
+
+/** The person has read the thread they are looking at, up to its last reply (one event, and only if something is new). */
+let threadReadTimer: ReturnType<typeof setTimeout> | null = null
+export function markThreadRead(rootId: number | null) {
+  if (rootId == null || document.visibilityState === 'hidden') return
+  if (threadReadTimer) clearTimeout(threadReadTimer)
+  threadReadTimer = setTimeout(async () => { threadReadTimer = null; try { await post(`/threads/${rootId}/read`); await loadThreadList() } catch { /* try again on the next reply */ } }, 250)
+}
 
 export const memberById = (id: number) => store.members.find(m => m.id === id)
 export const me = computed(() => memberById(store.meId))
@@ -50,7 +89,7 @@ export async function init() {
   const st = await get('/setup/status')
   store.serverName = st.serverName ?? ''
   if (st.needsSetup) { store.phase = 'setup'; return }
-  try { store.position = (await loadBootstrap()).position ?? 0; store.phase = 'app'; startHub() }
+  try { store.position = (await loadBootstrap()).position ?? 0; store.phase = 'app'; startHub(); loadThreadList() }
   catch (e) { if (e instanceof ApiError && e.status === 401) store.phase = 'signin'; else throw e }
 }
 
@@ -71,6 +110,7 @@ export async function signedIn() {
   store.position = (await loadBootstrap()).position ?? 0
   store.phase = 'app'
   startHub()
+  loadThreadList()
 }
 
 /** voice.ts registers this so signing out leaves the room first */
@@ -83,7 +123,7 @@ export async function signOut() {
   await hub?.stop(); hub = null
   store.phase = 'signin'
   store.feed = { channelId: null, posts: [], thread: null }
-  store.members = []; store.channels = []; store.projects = []
+  store.members = []; store.channels = []; store.projects = []; store.threadList = {}
 }
 
 export async function openChannel(id: number | null) {
@@ -103,7 +143,7 @@ export async function openThread(rootId: number | null) {
   if (store.feed.thread?.rootId === rootId) return
   const t = await get(`/threads/${rootId}`)
   if (store.feed.thread?.rootId === rootId) return
-  store.feed.thread = { rootId, root: t.root, replies: t.replies, agents: t.agents, startedBy: t.startedBy } as ThreadState
+  store.feed.thread = { rootId, root: t.root, replies: t.replies, agents: t.agents, startedBy: t.startedBy, summary: t.thread ?? null, canRename: !!t.canRename } as ThreadState
 }
 
 async function reloadFeed() {
@@ -127,6 +167,7 @@ function applyLive(evt: string, p: any) {
   if (catchingUp) { held.push([evt, p]); return }
   if (typeof p?.at === 'number' && p.at > store.position) store.position = p.at
   applyEvent(store.feed, evt, p)
+  if (evt === 'thread-updated') threadChanged(p)
 }
 
 /** After a reconnect: ask for everything after the last position seen, and apply it as if it had arrived live. */
@@ -137,6 +178,7 @@ export async function catchUp() {
     const r = await hub.invoke('CatchUp', store.position)
     if (r.truncated) { await reloadFeed(); store.position = r.head; return }     // too far behind (or the server was reset): show it afresh
     for (const m of r.messages) applyEvent(store.feed, m.name, m.payload)
+    if (r.messages.some((m: any) => m.name === 'thread-updated')) scheduleThreadList()
     if (r.head > store.position) store.position = r.head
   } finally {
     catchingUp = false
@@ -154,12 +196,13 @@ function startHub() {
   hub.on('voice-presence', (p: { channelId: number; memberIds: number[] }) => { store.voicePresence = { ...store.voicePresence, [p.channelId]: p.memberIds } })
   hub.on('views-changed', () => {
     store.viewsVersion++
+    scheduleThreadList()             // unread replies in threads moved
     if (unreadTimer) return
     unreadTimer = setTimeout(() => { unreadTimer = null; loadUnread() }, 120)
   })
   hub.on('bootstrap-changed', () => {
     if (pending) return
-    pending = setTimeout(async () => { pending = null; try { await loadBootstrap() } catch { /* signed out */ } }, 120)
+    pending = setTimeout(async () => { pending = null; try { await loadBootstrap(); scheduleThreadList() } catch { /* signed out */ } }, 120)
   })
   hub.onreconnected(() => {
     store.live = true
@@ -167,6 +210,7 @@ function startHub() {
     catchUp().catch(() => reloadFeed().catch(() => {}))
     loadBootstrap().catch(() => {})
     loadUnread()
+    loadThreadList()
     for (const f of onReconnect) f()
   })
   hub.onreconnecting(() => { store.live = false })

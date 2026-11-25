@@ -205,6 +205,7 @@ public static partial class Api
 
         MapChannels(authed);
         MapPosts(authed);
+        MapThreads(authed);
         MapPeople(authed);
         MapAgents(api, authed);
         MapPools(api, authed);
