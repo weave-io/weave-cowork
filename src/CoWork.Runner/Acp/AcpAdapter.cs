@@ -252,7 +252,7 @@ public sealed class AcpAdapter : IAsyncDisposable
                 if (Norm((string?)u["status"]) is not ("completed" or "failed") && (string?)u["toolCallId"] is { } uid && Describe(u, workspace) is { } refined)
                     yield return new StreamEvent(thread, StreamKinds.ToolUpdate, null, uid, refined, null, null);
                 if (Norm((string?)u["status"]) is "completed" or "failed" && (string?)u["toolCallId"] is { } id)
-                    yield return Ended(thread, u, id, (string?)u["title"], recordOutput);
+                    yield return Ended(thread, u, id, (string?)u["title"] ?? Called(u), recordOutput);
                 break;
         }
     }
@@ -290,6 +290,25 @@ public sealed class AcpAdapter : IAsyncDisposable
         return null;
     }
 
+    /// <summary>
+    /// The MCP calls a finished OpenCode code tool made, as OpenCode itself records them: <c>rawOutput.metadata.toolCalls</c>, each with
+    /// <c>tool</c> ("cowork.cowork_read_channel") and <c>input</c>. Unlike the code the model wrote, this doesn't vary with how the model wrote it
+    /// (a 25 Nov 2026 run wrote <c>tools["cowork"].cowork_read_channel(…)</c>). "cowork_read_channel #checkout-app"; null when there are none.
+    /// </summary>
+    public static string? Called(JsonNode u)
+    {
+        if (u["rawOutput"]?["metadata"]?["toolCalls"] is not JsonArray { Count: > 0 } calls) return null;
+        var names = calls.Select(c =>
+        {
+            var tool = (string?)c?["tool"]; if (string.IsNullOrEmpty(tool)) return null;
+            var name = tool.Contains('.') ? tool[(tool.LastIndexOf('.') + 1)..] : tool;
+            var arg = (c!["input"] as JsonObject)?.Select(kv => kv.Value is JsonValue v && v.TryGetValue<string>(out var sv) ? sv : null).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+            if (arg is not null) { arg = arg.Split('\n')[0]; if (arg.Length > 60) arg = arg[..60] + "…"; }
+            return arg is null ? name : $"{name} {arg}";
+        }).Where(n => n is not null).ToList();
+        return names.Count == 0 ? null : string.Join(", ", names);
+    }
+
     /// <summary>What a tool touched: the title, plus the first path, pattern or command from rawInput (or locations) when there is one.
     /// A shell tool's location is only its working folder, so for "execute" the command alone counts. When the title is just the
     /// kind ("read"), the row already shows the kind, so the detail stands alone ("src/Api.cs"). Paths under the workspace are relative.</summary>
@@ -307,7 +326,8 @@ public sealed class AcpAdapter : IAsyncDisposable
                 var tail = code[(c.Index + c.Length)..(next < 0 ? code.Length : next)];
                 var args = ArgText.Matches(tail).Select(a => a.Groups[1].Success ? a.Groups[1].Value : a.Groups[2].Value).Where(a => a.Length > 0).Take(1)
                     .Select(a => a.Length > 60 ? a[..60] + "…" : a).ToList();
-                var text = args.Count == 0 ? c.Groups[1].Value : $"{c.Groups[1].Value} {args[0]}";
+                var tool = c.Groups[1].Success ? c.Groups[1].Value : c.Groups[2].Value;
+                var text = args.Count == 0 ? tool : $"{tool} {args[0]}";
                 return text.Length > 120 ? text[..120] + "…" : text;
             }));
         string? detail = null;
@@ -324,7 +344,7 @@ public sealed class AcpAdapter : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(title) || string.Equals(title, kind, StringComparison.OrdinalIgnoreCase)) return detail;
         return title.Contains(detail) ? title : $"{title} {detail}";
     }
-    private static readonly System.Text.RegularExpressions.Regex McpCall = new(@"tools\.[\w-]+\.([\w-]+)\s*\(", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex McpCall = new(@"tools(?:\.[\w-]+|\[\s*[""'][\w-]+[""']\s*\])\s*(?:\.([\w-]+)|\[\s*[""']([\w-]+)[""']\s*\])\s*\(", System.Text.RegularExpressions.RegexOptions.Compiled);
     private static readonly System.Text.RegularExpressions.Regex ArgText = new("'([^']*)'|\"([^\"]*)\"", System.Text.RegularExpressions.RegexOptions.Compiled);
     private static string Trim(string? s) => s is null ? "none" : s.Length > 300 ? s[..300] + "…" : s;
     private static string? Norm(string? s) => s switch { "in_progress" or "pending" => "running", null => null, _ => s };

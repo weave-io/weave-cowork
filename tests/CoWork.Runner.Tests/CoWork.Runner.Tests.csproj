@@ -11,6 +11,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <ProjectReference Include="..\..\src\CoWork.Runner\CoWork.Runner.csproj" />
     <Content Include="fake_acp_agent.py" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="oc2-mcp-tool-calls.jsonl" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
 </Project>

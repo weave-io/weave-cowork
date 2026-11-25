@@ -227,4 +227,46 @@ public class ConfigTests
         Assert.Equal("cowork_search refund rounding, cowork_resolve_thread done",
             AcpAdapter.Describe(Update("await tools.cowork.cowork_search({ query: \"refund rounding\" }); await tools.cowork.cowork_resolve_thread({ summary: 'done' })")));
     }
+
+    /// <summary>Replays OpenCode 2.4.1's tool updates through the adapter and keeps each row's title as the server does: a later non-empty
+    /// title (a toolUpdate, then the toolEnd) replaces the one before.</summary>
+    static Dictionary<string, (string Title, string? Status)> Rows(IEnumerable<string> lines)
+    {
+        var rows = new Dictionary<string, (string Title, string? Status)>();
+        foreach (var line in lines)
+        {
+            var u = System.Text.Json.Nodes.JsonNode.Parse(line)!;
+            foreach (var e in AcpAdapter.Map(42, u, "/work/repo"))
+                rows[e.ToolId!] = e.Kind switch
+                {
+                    StreamKinds.ToolStart => (e.Title!, e.Status),
+                    _ => (string.IsNullOrEmpty(e.Title) ? rows[e.ToolId!].Title : e.Title!, e.Kind == StreamKinds.ToolEnd ? e.Status : rows[e.ToolId!].Status),
+                };
+        }
+        return rows;
+    }
+
+    [Fact]
+    public void Mcp_calls_are_named_from_the_real_update_sequence_whatever_shape_the_models_code_takes()
+    {
+        // recorded from a sandbox on 25 Nov 2026: a bare "execute", three in_progress updates with the model's code (here
+        // tools["cowork"].cowork_read_channel(…), which the first parser didn't match), and the completed update with OpenCode's own record
+        var lines = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "oc2-mcp-tool-calls.jsonl"));
+        var rows = Rows(lines).Values.ToList();
+        Assert.Equal(new[] { ("cowork_read_channel #checkout-app", "completed"), ("cowork_resolve_thread Finance partial refunds requirement", "completed") }, rows.Select(r => (r.Title, r.Status)));
+        // while it runs, the bracket form is named too
+        var running = AcpAdapter.Map(42, System.Text.Json.Nodes.JsonNode.Parse(lines[1])!, "/work/repo").Single();
+        Assert.Equal((StreamKinds.ToolUpdate, "cowork_read_channel #checkout-app"), (running.Kind, running.Title));
+        // code the parser can't read at all (the model destructured): the row says execute while it runs, and is named when it finishes
+        var odd = lines.Select(l =>
+        {
+            var n = System.Text.Json.Nodes.JsonNode.Parse(l)!;
+            if (n["rawInput"]?["code"] is System.Text.Json.Nodes.JsonValue c)
+                n["rawInput"]!["code"] = c.GetValue<string>().Replace("tools[\"cowork\"].", "(({ cowork }) => cowork)(tools).");
+            return n.ToJsonString();
+        }).ToList();
+        Assert.NotEqual(lines, odd);
+        Assert.Equal("execute", AcpAdapter.Map(42, System.Text.Json.Nodes.JsonNode.Parse(odd[1])!, "/work/repo").Single().Title);
+        Assert.Equal(new[] { "cowork_read_channel #checkout-app", "cowork_resolve_thread Finance partial refunds requirement" }, Rows(odd).Values.Select(r => r.Title));
+    }
 }

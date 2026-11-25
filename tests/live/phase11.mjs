@@ -145,6 +145,8 @@ try {
   const rosa = await threadOf('tell me in one sentence what finance wants')
   await until('the thread to be resolved', () => events('ThreadResolved', rosa) >= 1, LONG)
   await until("Rosa's turn to end", () => events('TurnEnded', rosa) >= 1, LONG)
+  // DUMP_LOGS=<file>: keep the sandbox runner's log of this turn (the container goes when it's idle)
+  if (process.env.DUMP_LOGS) try { writeFileSync(process.env.DUMP_LOGS, podman('logs', `cowork-${poolKey}-sb-${sql(`select id from sandboxes where thread_id=${rosa}`)[0][0]}`)) } catch (e) { console.log('dump:', e.message) }
   const calls = toolCalls(rosa)
   expect(calls.some(c => c[0] === 'cowork_read_channel' && c[1] === 0) && calls.some(c => c[0] === 'cowork_resolve_thread' && c[1] === 0), 'researcher called cowork_read_channel and cowork_resolve_thread (CoworkToolCalled): ' + calls.map(c => c[0]).join(', '))
   expect(/refund/i.test(answer(rosa)), 'it answered from the channel: "' + answer(rosa).slice(0, 120) + '"')
