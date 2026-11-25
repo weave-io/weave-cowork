@@ -235,7 +235,8 @@ try {
 } finally {
   await stopGroup(runner); await stopGroup(pool); await stopGroup(server)
   await browser.close()
-  try { cleanupPodman() } catch (e) { console.log('cleanup:', e.message) }
+  // twice: a container start already on its way when the pool stopped can land after the first sweep
+  for (const pass of [1, 2]) { try { cleanupPodman() } catch (e) { console.log('cleanup:', e.message) } if (pass === 1) await new Promise(r => setTimeout(r, 5000)) }
   SCRATCH.cleanup()
   if (poolKey) console.log(`removed every container and volume labelled cowork.pool=${poolKey}`)
 }

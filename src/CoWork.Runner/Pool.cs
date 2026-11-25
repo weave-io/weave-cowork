@@ -373,10 +373,20 @@ public sealed class PoolLink : IAsyncDisposable
         await CloseWay(s.SandboxId);
         var server = new Uri(_pool.Server);
         var p = new EgressProxy(Path.Combine(_root, "sockets", s.SandboxId), server.Host, server.Port, Hosts(s),
-            (host, port) => _hub.InvokeAsync("EgressRefused", new EgressRefusal(s.SandboxId, host, port))) { Log = m => Log($"[{_pool.Name}] {s.SandboxId}: {m}") };
+            (host, port) => Reported(new EgressRefusal(s.SandboxId, host, port))) { Log = m => Log($"[{_pool.Name}] {s.SandboxId}: {m}") };
         p.Start();
         _proxies[s.SandboxId] = p;
         return p;
+    }
+
+    /// <summary>Tells the server about a refusal; tries again a few times if the connection is busy reconnecting.</summary>
+    private async Task Reported(EgressRefusal r)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try { await _hub.InvokeAsync("EgressRefused", r); Log($"[{_pool.Name}] {r.SandboxId}: told the server it was refused {r.Host}"); return; }
+            catch (Exception e) when (attempt < 4) { Log($"[{_pool.Name}] {r.SandboxId}: couldn't tell the server about {r.Host} ({e.Message}); trying again"); await Task.Delay(TimeSpan.FromSeconds(attempt)); }
+        }
     }
 
     private async Task CloseWay(string sandboxId)

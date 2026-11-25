@@ -60,19 +60,26 @@ async function removeAgent(a: Settings['agents'][number]) {
 }
 // round 2: the sandboxes' network list and setup command, the budget, pausing
 const newHost = ref(''), setup = ref(''), caps = ref({ monthTokens: '', monthUsd: '', threadTokens: '', threadUsd: '' }), savedWhat = ref('')
+// the page reloads whenever the server changes; a field someone is typing in keeps what they typed until they save it
+const setupEdited = ref(false), capsEdited = ref(false)
+let applying = false
+watch(setup, () => { if (!applying) setupEdited.value = true }, { flush: 'sync' })
+watch(caps, () => { if (!applying) capsEdited.value = true }, { deep: true, flush: 'sync' })
 watch(s, v => {
   if (!v) return
-  setup.value = v.locked.setupCommand ?? ''
+  applying = true
+  if (!setupEdited.value) setup.value = v.locked.setupCommand ?? ''
   const b = v.locked.budget, str = (n: number | null) => n == null ? '' : String(n)
-  caps.value = { monthTokens: str(b.monthTokens), monthUsd: str(b.monthUsd), threadTokens: str(b.threadTokens), threadUsd: str(b.threadUsd) }
+  if (!capsEdited.value) caps.value = { monthTokens: str(b.monthTokens), monthUsd: str(b.monthUsd), threadTokens: str(b.threadTokens), threadUsd: str(b.threadUsd) }
+  applying = false
 })
 const num = (x: string) => x.trim() === '' ? null : Number(x.replace(/[,$\s]/g, ''))
 const setHosts = (hosts: string[]) => guard(() => put(`/projects/${props.projectId}/network`, { hosts }))
 const addHost = () => guard(async () => { if (newHost.value.trim()) await put(`/projects/${props.projectId}/network`, { hosts: [...s.value!.locked.network, newHost.value.trim()] }); newHost.value = '' })
-const saveSetup = () => guard(async () => { await put(`/projects/${props.projectId}/setup`, { command: setup.value }); savedWhat.value = 'setup' })
+const saveSetup = () => guard(async () => { await put(`/projects/${props.projectId}/setup`, { command: setup.value }); setupEdited.value = false; savedWhat.value = 'setup' })
 const saveBudget = () => guard(async () => {
   await put(`/projects/${props.projectId}/budget`, { monthTokens: num(caps.value.monthTokens), monthUsd: num(caps.value.monthUsd), threadTokens: num(caps.value.threadTokens), threadUsd: num(caps.value.threadUsd) })
-  savedWhat.value = 'budget'
+  capsEdited.value = false; savedWhat.value = 'budget'
 })
 async function togglePause() {
   if (!s.value) return

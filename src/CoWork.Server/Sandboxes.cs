@@ -582,12 +582,13 @@ public sealed class Sandboxes
     {
         if (Parse(r.SandboxId) is not { } id) return;
         var host = r.Host.Trim().TrimEnd('.').ToLowerInvariant();
+        var outcome = "asked";
         _store.Append(ctx =>
         {
             var s = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE id=@id", new { id }).FirstOrDefault();
-            if (s is null || s.PoolId != poolId || host.Length == 0) return Array.Empty<NewEvent>();
+            if (s is null || s.PoolId != poolId || host.Length == 0) { outcome = $"ignored: sandbox {id} isn't on pool {poolId}"; return Array.Empty<NewEvent>(); }
             if (ctx.Scalar<int>(@"SELECT COUNT(*) FROM posts WHERE thread_id=@t AND kind='ask' AND json_extract(meta,'$.egress')=1 AND json_extract(meta,'$.host')=@host
-                AND json_extract(meta,'$.status')='pending'", new { t = s.ThreadId, host }) > 0) return Array.Empty<NewEvent>();
+                AND json_extract(meta,'$.status')='pending'", new { t = s.ThreadId, host }) > 0) { outcome = "already asked"; return Array.Empty<NewEvent>(); }
             var owner = ctx.Scalar<long>("SELECT owner_id FROM agents WHERE member_id=@a", new { a = s.AgentId });
             var (answerer, leads) = Dispatcher.Answerers(ctx, s.AgentId, s.ThreadId, owner);
             var project = s.ProjectId is { } pid ? ctx.Scalar<string>("SELECT name FROM projects WHERE id=@pid", new { pid }) : null;
@@ -601,6 +602,7 @@ public sealed class Sandboxes
                 why = $"It isn't on {project ?? "the project"}'s network list. Asked by {handle}, for {who}'s thread.",
             }, s.AgentId, turn.Behalf ?? s.RequestedBy, turn.Turn) };
         });
+        _log.LogInformation("pool {Pool}: sandbox {Id} was refused {Host}:{Port}; {Outcome}", poolId, id, host, r.Port, outcome);
         await Task.CompletedTask;
     }
 

@@ -568,3 +568,94 @@ OpenRouter never used)
   thread token isn't a signed token the proxy could check itself (the proxy needs neither today: each sandbox has its own socket).
 - The mockup's "web search" on the network list is a service, not a host; there is no web search in the sandbox yet.
 - Round 3: CoWork's MCP tools in `session/new`, thread status and outcomes; deleting a done thread's volume.
+
+## Brief 7, round 3: threads as work
+
+**Demo:** `tests/live/phase11.mjs` (19 checks; Alex, Rosa and Sam in browsers; a real pool with real containers and real OpenCode 2.4.1 for the
+researcher template, and a real runner on `build-01` with real OpenCode 2.4.1 for Alex's pinned reviewer). Sam writes in #checkout-app what
+finance wants; #leads is private to Alex. Rosa asks researcher to read the channel and resolve the thread: it calls `cowork_read_channel`
+(the row says `cowork_read_channel #checkout-app`) and `cowork_resolve_thread`; the post's pill went starting → working → done live and shows
+the outcome's title beside it; the thread shows the outcome card ("done", title, summary, its branch "in its sandbox's volume on pool-01",
+8 s, 16,158 tokens, 2 tool calls, 0 asks, Reopen). Sam asks it to search for "Q4 refund budget" and read #leads: the read is refused ("outside
+its boundary"), the search's results come only from #checkout-app, and nothing from #leads reaches the answer. Rosa's search for "refunds"
+shows **Outcomes** first, marked done; opening it opens the thread. Alex asks the pinned reviewer to do the same: it uses the same tools with
+its runner's token, and its outcome says "on Alex's own access", its branch in a worktree on build-01. With 20 s idle and 20 s retention,
+Rosa's done thread loses its volume ("no changes, deleted with its volume") and a thread where researcher edited README.md keeps it
+("cowork/append-the-line-reviewed-by-25 has 1 changed file not committed, so its volume is kept").
+
+**What changed**
+- **CoWork's tools over MCP** (`Mcp.cs`): `/mcp` is an MCP server (Streamable HTTP, JSON answers; `initialize`, `tools/list`, `tools/call`,
+  `ping`) with `cowork_read_channel` (a channel the agent takes part in, by default its thread's, or one thread), `cowork_search` (the
+  search query with the agent's boundary in place of a person's: the channels in its audience; outcomes first) and `cowork_resolve_thread`
+  (title and summary). A sandbox authenticates with its thread token; a pinned runner with its own token and `X-Cowork-Thread`, a thread
+  its agent is in. Each call is for that one thread and is recorded as `CoworkToolCalled` (tool, refused or not, what it touched), on
+  behalf of whoever asked.
+- **The runner passes it in `session/new` and `session/load`** to every harness: over HTTP with the token and thread as headers when the
+  harness says `mcpCapabilities.http` (OpenCode 2.4.1 does), else as a stdio server, the runner itself (`cowork-runner mcp <url>`) bridging
+  each line to the endpoint. In a sandbox the URL is the server socket's loopback port, so it needs nothing from the proxy.
+- **Outcomes** (`ThreadResolved`, migration `013`): a post of kind `outcome` with the title, summary, time since the thread began, tokens and
+  cost (and the project's per-thread cap), calls, tool calls, asks, the branch and where it is, and the sandbox. `threads.resolved_*` remembers
+  it. A person's new message (`MessageDelivered` not from the system) or **Reopen** (`ThreadReopened`) opens the thread again; the outcome
+  stays, marked reopened.
+- **Thread status** (`ThreadStatus.cs`): `waiting` (a pending ask: for whom), `working` (a turn open), `starting` (a message waiting for its
+  agent, or a sandbox on its way), `done` (resolved), from the tables at read time. It rides on the root post (`threadStatus`), so the feed,
+  the thread and live `thread-updated` carry it; permission answers and egress answers now update the thread too.
+- **Search**: `ThreadResolved` is a document of kind `outcome` (title weighted 4x); `/api/search` returns `outcomes` first, with who asked
+  and whether it's still the thread's outcome; threads and messages leave outcomes out. The web shows them as their own group, keyboard
+  order included.
+- **Retention** (`SandboxRetentionSet`, `SandboxDeleteRequested`, `SandboxKept`): the reaper asks the pool to delete a done thread's stopped
+  sandbox once the retention time has passed since it was resolved (7 days unless set; Server settings). `DeleteSandbox` carries
+  `KeepIfChanged`, the image and the base branch; the pool looks at the branch in the volume with a short-lived container (no network):
+  changes to tracked files or commits not on the base keep it (`kept`, with the reason), else the volume goes with its branch. The outcome
+  card says which. A thread whose volume was deleted starts afresh (`CreateSandbox`, not resume) if someone writes again.
+- **Web**: `ThreadStatusPill` on the thread card and in the thread's header ("waiting for you" to whoever answers), the outcome's title on
+  the post, `OutcomeCard`, Outcomes in search, the retention field in Server settings, a card footer for a deleted volume.
+- **Design**: `docs/architecture/provisioning.html` says what was built where the flow changed (a copy in the volume, `--network none` with
+  `server.sock` and `proxy.sock`, the setup step, `CreateSandbox`/`ResumeSandbox`/`SuspendSandbox`, budgets in tokens and dollars, CoWork's
+  tools, retention) and marks what is still to build; same look.
+
+**Decisions**
+- **HTTP MCP, from the server.** OpenCode 2.4.1 advertises `mcpCapabilities: { http: true }` (checked with `initialize`), so the tools are an
+  endpoint on the server rather than a process per session; the stdio bridge keeps any other ACP harness working.
+- **OpenCode 2.4.1 calls MCP tools through a code tool.** Its ACP updates say `execute` with no detail; the call is in `rawInput.code`
+  (`await tools.cowork.cowork_read_channel({ channel: '#checkout-app' })`; the finished update has `rawOutput.metadata.toolCalls`). The
+  adapter names the row from the code (`cowork_read_channel #checkout-app`: the tool and its first quoted argument) and logs any tool call it
+  can only name by its bare title. Checked with a probe against real OpenCode (built-in Copilot provider and an OpenAI-compatible one).
+- **A refused tool call is an MCP error** (`isError`), as the protocol means it. OpenCode's code tool then throws, so a block that makes two
+  calls stops at the refused one; the agent sees the refusal either way.
+- **The boundary is the agent's channel audience** (added to the channel, or in its project), the same rule routing uses. Nothing in round 3
+  writes outside the thread: resolving writes only its own outcome; a library is later.
+- **Done is "resolved, and nothing since".** Status is computed, not stored, so it can't drift; `starting` covers a queued message for any
+  agent in the thread and a sandbox on its way.
+- **"Changes" means commits not on the base branch or changed tracked files.** Untracked files (what a setup command installed, build output)
+  don't keep a volume. If the pool can't look, the volume is kept and the outcome says why.
+- **`build.sh` publishes from a clean Release build:** one phase11 run used an image whose runner was an earlier build (its tool rows said
+  `execute` though the source named them); a clean publish every time costs about 20 s.
+
+**Checked** (ports 5883–5888, everything in podman labelled and removed by label; the `cowork` project, its volume and `~/.weave`
+untouched; OpenRouter never used)
+- `dotnet test`: 86 server (4 new in `WorkTests`: the MCP handshake and the three tools for a sandbox, #leads refused and not found,
+  resolving shows on the post, in search for Rosa and not for Jo outside the project, and an agent's search finds it first, a new message
+  reopens; a pinned agent with its runner's token for a thread it's in and refused otherwise, and a pool's token, a person's cookie, no
+  thread all refused, Reopen; starting → working → waiting for Rosa → working → done; retention deleting one volume and keeping one with a
+  commit, a deleted one starting afresh), and the importer's answer comparison ignores `threadStatus`. 36 runner (4 new: the HTTP MCP
+  server for a harness that takes it, the stdio bridge otherwise, the bridge itself, MCP calls named from OpenCode's code tool, parsed from
+  the line it really sends). `bun run test` 33.
+- Live: **`phase11` 19 checks** (screenshots `docs/screens/brief7/18-*` to `22-*`, dark and light, looked at; fixed from them: the branch name
+  breaking across lines in the outcome card, "3 replies" wrapping on the thread card, a kept or deleted volume showing "starting…" in the
+  thread's header, one MCP call left as `execute` when its arguments held brackets). Every earlier check on this build, each on a fresh
+  scratch server: `phase1` 24, `phase2` 30 (its pinned sessions now get CoWork's tools too), `phase4` 19 (LiveKit as `cwb7-lk`, removed),
+  `phase5` 22, `phase6` 27, `phase7` 31, `phase8` 31, `phase9` 37, `phase10` 27.
+- **Found by the regression:** phase10 failed once because adding a host made the project settings page reload, which overwrote the setup
+  command Alex was typing, so an empty one was saved. The page now keeps a field someone is editing until they save it. phase10's budget step
+  was model-dependent (a turn can finish in two model calls, under a 10,000-token cap checked before each call); it now uses 5,000 tokens,
+  which any turn with a tool passes on its second call.
+- **Not explained:** in one phase10 run the pool refused example.com and said so, but no ask was recorded and neither side logged an
+  error; the next runs recorded it. The server now logs every refusal and what it did with it, and the pool retries a report that fails, so
+  a repeat will show where it went. One run (the one I disturbed by rebuilding the web app under it) left a container whose start was
+  already on its way when the pool stopped; it carried the pool's label and was removed by it, and the live checks now sweep twice.
+
+**Not done / next**
+- A project library (`cowork_save_doc`) and more tools (`cowork_start_thread`); web search in sandboxes; credentials by placeholder in the
+  proxy; a signed thread token; an Anthropic-compatible gateway endpoint; notifications (80% of a budget, an ask passing to a lead, no pool
+  online); a board of threads by status (the mockup's). A `deleting` sandbox whose pool restarts mid-delete stays `deleting`.

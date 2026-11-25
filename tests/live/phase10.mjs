@@ -164,24 +164,24 @@ try {
 
   // --- 3. a thread at its cap stops cleanly and says why; Alex raises it ---
   await a.goto(`${BASE}/p/${projectId}`); await a.waitForSelector('[data-testid=project-budget]')
-  await a.fill('[name=threadTokens]', '10000'); await a.click('[data-testid=save-budget]'); await a.waitForSelector('[data-testid=budget-saved]')
+  await a.fill('[name=threadTokens]', '5000'); await a.click('[data-testid=save-budget]'); await a.waitForSelector('[data-testid=budget-saved]')      // a turn with a tool makes two model calls at least: the second is past it
   await s.fill('[data-testid=composer]', '@researcher Read README.md, then src/tax.ts, then scripts/agent-setup.sh, one at a time, and summarise all three.')
   await s.keyboard.press('Enter')
   const sam = await threadOf('Read README.md, then src/tax.ts')
   await s.waitForSelector('[data-testid=thread-panel] [data-testid=notice][data-budget=thread]', { timeout: LONG })
   const stop = clean(await s.textContent('[data-testid=thread-panel] [data-testid=notice][data-budget=thread]'))
-  expect(stop === "researcher: Reached this thread's cap of 10,000 tokens. A lead can raise it.", 'the thread says why it stopped: ' + stop)
+  expect(stop === "researcher: Reached this thread's cap of 5,000 tokens. A lead can raise it.", 'the thread says why it stopped: ' + stop)
   await until("Sam's turn to end", () => sql(`select count(*) from open_turns where thread_id=${sam}`)[0][0] === 0 && events('TurnEnded', sam) + events('TurnFailed', sam) >= 1, LONG)
   const used = sql(`select sum(prompt_tokens+completion_tokens) from model_usage where thread_id=${sam}`)[0][0]
-  expect(used >= 10000 && events('BudgetReached', sam) === 1 && sql(`select count(*) from posts where thread_id=${sam} and kind='notice'`)[0][0] === 1, `the turn ended there: no turn left open, ${used.toLocaleString()} tokens used, one notice (the harness's own error about it isn't repeated)`)
+  expect(used >= 5000 && events('BudgetReached', sam) === 1 && sql(`select count(*) from posts where thread_id=${sam} and kind='notice'`)[0][0] === 1, `the turn ended there: no turn left open, ${used.toLocaleString()} tokens used, one notice (the harness's own error about it isn't repeated)`)
   expect(await s.locator('[data-testid=thread-panel] [data-testid=raise-cap]').count() === 0, 'Sam (a member) has no Raise button')
   await idleIn(s); await toBottom(s); await shots(s, '13-budget-stop')
   await a.goto(`${BASE}/c/${sql("select id from channels where name='checkout-app'")[0][0]}/t/${sam}`)
   await a.waitForSelector('[data-testid=thread-panel] [data-testid=raise-cap]')
   await toBottom(a); await shot(a, '13-raise-cap-dark')
   await a.click('[data-testid=thread-panel] [data-testid=raise-cap]')
-  await a.waitForSelector('[data-testid=thread-panel] [data-testid=notice]:has-text("raised this thread\'s cap to 20,000 tokens.")')
-  ok('Alex, a lead, raised it: "Alex: raised this thread\'s cap to 20,000 tokens."')
+  await a.waitForSelector('[data-testid=thread-panel] [data-testid=notice]:has-text("raised this thread\'s cap to 10,000 tokens.")')
+  ok('Alex, a lead, raised it: "Alex: raised this thread\'s cap to 10,000 tokens."')
   await a.goto(`${BASE}/p/${projectId}`); await a.waitForSelector('[data-testid=project-budget]')
   await a.fill('[name=threadTokens]', '200000'); await a.click('[data-testid=save-budget]'); await a.waitForSelector('[data-testid=budget-saved]')
   const monthUsed = clean(await a.textContent('[data-testid=budget-used]'))
@@ -245,6 +245,7 @@ try {
 } finally {
   await stopGroup(pool); await stopGroup(server)
   await browser.close()
-  try { cleanupPodman() } catch (e) { console.log('cleanup:', e.message) }
+  // twice: a container start already on its way when the pool stopped can land after the first sweep
+  for (const pass of [1, 2]) { try { cleanupPodman() } catch (e) { console.log('cleanup:', e.message) } if (pass === 1) await new Promise(r => setTimeout(r, 5000)) }
   if (poolKey) console.log(`removed every container and volume labelled cowork.pool=${poolKey}`)
 }

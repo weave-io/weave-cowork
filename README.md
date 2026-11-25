@@ -155,10 +155,14 @@ in each thread's sandbox before the first prompt. The **Budget** card caps a mon
 that reports no cost, like GitHub Copilot, is held by the token caps); the gateway stops a thread at its cap and a lead can raise it.
 **Pause all agents** stops the project's sandboxes and holds new messages until they're resumed.
 
+Every agent, pinned or on a pool, gets CoWork's own tools as an MCP server (`/mcp`) in its sessions: `cowork_read_channel`,
+`cowork_search` (only what the agent takes part in) and `cowork_resolve_thread`, which marks the thread done with an outcome that
+shows on the post, in the thread and first in search. A done thread's stopped sandbox keeps its volume for the server's retention
+time (Server settings), then the volume goes, and its branch with it unless the branch has changes.
+
 ## What's not built yet
 
-OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; agent tools over MCP
-(`cowork_read_channel`, `cowork_start_thread`, …); agents starting threads; resolving threads; reactions; roles and
+OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; more agent tools (`cowork_start_thread`, a project library, …); agents starting threads; reactions; roles and
 channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
 layout; sharing agents across servers; agents in voice. See the "Later" list in
 `docs/build/brief.md`.
