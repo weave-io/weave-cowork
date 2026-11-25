@@ -113,6 +113,10 @@ public class RoundTwoTests
         (await alex.Http.PutAsJsonAsync($"/api/channels/{leads}/project", new { projectId = (long?)null })).EnsureSuccessStatusCode();
         var projCh = app.Sql().ExecuteScalar<long>("SELECT id FROM channels WHERE name='checkout-proj'");
         await rosa.Post(projCh, "@reviewer can you look at the cart?");          // owner only: a short reply, no turn
+        // brief 8: a thread renamed by someone who wrote in it, a mention that can't reach its agent (a short reply in a new thread), a thread read
+        (await rosa.Http.PutAsJsonAsync($"/api/threads/{root}/title", new { title = "What the repository does" })).EnsureSuccessStatusCode();
+        await rosa.Post(leads, "@reviewer are you in here?");
+        (await rosa.Http.PostAsync($"/api/threads/{root}/read", null)).EnsureSuccessStatusCode();
 
         // brief 7: a pool with one slot, a template in the project, a sandbox that answers through the gateway and is suspended, a second
         // thread that waited for the slot and failed to start
@@ -159,6 +163,7 @@ public class RoundTwoTests
         var tablesBefore = Dump(app.DbPath); var answersBefore = await Answers(app, alex, rosa);
         Assert.Contains("channels: ", tablesBefore); Assert.Contains("posts: ", tablesBefore); Assert.Contains("[redacted]", tablesBefore);
         Assert.Contains("projects: ", tablesBefore); Assert.Contains("project_agents: ", tablesBefore); Assert.Contains("workspaces: ", tablesBefore); Assert.Contains("only takes work from Alex", tablesBefore);
+        Assert.Contains("What the repository does", tablesBefore); Assert.Contains("reviewer isn't in #leads.", tablesBefore);
         Assert.Contains("pools: ", tablesBefore); Assert.Contains("sandboxes: ", tablesBefore); Assert.Contains("model_usage: ", tablesBefore); Assert.Contains("| sandbox |", tablesBefore);
 
         // 1. in place: empty every projection table, replay

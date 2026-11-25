@@ -28,7 +28,7 @@ const footer = computed(() => {
 </script>
 <template>
   <div class="my-1.5 ml-[44px] max-w-[560px]" data-testid="sandbox-card" :data-state="meta.state" :data-resume="meta.resume ? 'true' : 'false'">
-    <div class="grid gap-[7px] rounded-card border border-border bg-card-bg px-3 py-2.5 text-[13px]" :aria-label="meta.resume ? 'Resuming the sandbox' : 'Starting the sandbox'">
+    <div class="grid grid-cols-[minmax(0,1fr)] gap-[7px] rounded-card border border-border bg-card-bg px-3 py-2.5 text-[13px]" :aria-label="meta.resume ? 'Resuming the sandbox' : 'Starting the sandbox'">
       <div v-for="s in steps" :key="s.key" class="flex items-center gap-[9px]" :data-step="s.key" :data-step-state="s.state">
         <Check v-if="s.state === 'done'" :size="14" class="shrink-0 text-running-text" aria-label="Done" />
         <Spinner v-else-if="s.state === 'running'" size="xs" class="shrink-0" />

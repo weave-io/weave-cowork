@@ -26,7 +26,7 @@ const hover = (t: ThreadSummary) => `${t.title} · ${threadState(t.status, store
 </script>
 <template>
   <div class="relative">
-    <button type="button" class="chan" :class="{ active: active && activeThread == null, unread: unread > 0, 'pr-8': entry?.total }" :data-channel="channel.name" :data-kind="channel.kind"
+    <button type="button" class="chan" :class="{ active: active && activeThread == null, unread: unread > 0, 'has-fold': entry?.total }" :data-channel="channel.name" :data-kind="channel.kind"
       :aria-current="active ? 'true' : undefined" @click="emit('go', channel.id)">
       <Lock v-if="channel.isPrivate" :size="14" class="shrink-0" aria-label="Private" /><Hash v-else :size="14" class="shrink-0" aria-hidden="true" />
       <span class="truncate">{{ channel.name }}</span>
@@ -61,6 +61,7 @@ const hover = (t: ThreadSummary) => `${t.title} · ${threadState(t.status, store
 .chan svg { color: var(--muted); }
 .chan.unread { color: var(--text); font-weight: 600; }
 .chan.active svg { color: var(--accent-text); }
+.chan.has-fold { padding-right: 32px; }
 .count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--accent-foreground, #fff); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .fold { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
 .fold:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
