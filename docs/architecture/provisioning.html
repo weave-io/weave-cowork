@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave CoWork: how a provisioned agent works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --main-bg: #F3F2EF; --panel-bg: #FFFFFF; --card-bg: #FAF9F7; --border: rgba(26,25,24,.09); --text: #1A1918; --muted: #67645F;
+  --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12);
+  --ok: #15803d; --ok-bg: rgba(22,163,74,.1); --warn: #a85a05; --warn-bg: rgba(217,119,6,.1); --bad: #B92323; --bad-bg: rgba(220,38,38,.08);
+  --hover: rgba(26,25,24,.05); --r-btn: 8px; --r-card: 10px; --t: 150ms ease-out;
+  --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  --c-person: #D95A3A; --c-agent: #5B6EC7; --c-runner: #0f9b8e; --c-server: #8b5cf6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --main-bg: #0d0d10; --panel-bg: #141418; --card-bg: #1b1b20; --border: rgba(255,255,255,.075); --text: #e8e8ec; --muted: #8e8e9a;
+    --accent: #6365f1; --accent-text: #8284F4; --accent-dim: rgba(99,102,241,.15);
+    --ok: #22c55e; --ok-bg: rgba(34,197,94,.12); --warn: #f59e0b; --warn-bg: rgba(245,158,11,.12); --bad: #EF5E5F; --bad-bg: rgba(239,68,68,.12); --hover: rgba(255,255,255,.045);
+    --c-person: #DE6E52; --c-agent: #8284F4; --c-runner: #2dd4bf; --c-server: #a78bfa; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--main-bg); color: var(--text); font: 14px/1.6 var(--sans); }
+code { font-family: var(--mono); font-size: 12.5px; background: var(--accent-dim); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page { max-width: 1100px; margin: 0 auto; padding: 28px 24px 80px; }
+.eyebrow { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; }
+h1 { font-size: 27px; font-weight: 600; margin: 4px 0 6px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0; max-width: 820px; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 22px 0 24px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--main-bg); z-index: 2; }
+nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 12px; color: var(--muted); cursor: pointer; font: inherit; font-weight: 500; transition: color var(--t); }
+nav.tabs button:hover { color: var(--text); }
+nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+section[hidden] { display: none; }
+h2 { font-size: 19px; font-weight: 600; margin: 28px 0 10px; }
+section > h2:first-child { margin-top: 0; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.lead { font-size: 15.5px; max-width: 860px; }
+.muted { color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.card { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 15px 17px; }
+.card p { margin: 6px 0; } .card ul { margin: 6px 0 0; padding-left: 18px; } .card li { margin: 3px 0; }
+.card.hl { border-color: var(--accent); }
+.pill { display: inline-block; white-space: nowrap; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); } .pill.bad { background: var(--bad-bg); color: var(--bad); } .pill.info { background: var(--accent-dim); color: var(--accent-text); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel-bg); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--hover); }
+tr:last-child td { border-bottom: 0; }
+td.mono, .mono { font-family: var(--mono); font-size: 12px; }
+td.n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.who { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.who i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.p i { background: var(--c-person); } .a i { background: var(--c-agent); } .r i { background: var(--c-runner); } .s i { background: var(--c-server); }
+.split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.store { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 13px 15px; }
+.store b { display: block; }
+.store .where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 2px 0 8px; overflow-wrap: anywhere; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 10px 0; }
+.flow .s { flex: 1 1 160px; background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 10px 12px; font-size: 13px; }
+.flow .s.hl { border-color: var(--accent); }
+.flow .s b { display: block; font-size: 12px; color: var(--accent-text); }
+.flow .x { align-self: center; color: var(--muted); }
+pre { background: #0b0b0e; color: #d6d6de; border-radius: var(--r-btn); padding: 12px 14px; font: 12px/1.55 var(--mono); overflow-x: auto; margin: 8px 0; }
+.row { display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid var(--border); }
+.row:first-of-type { border-top: 0; }
+.row b { font-weight: 600; }
+.q { background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--r-card); padding: 13px 16px; margin: 10px 0; }
+.opt { display: flex; gap: 8px; margin: 3px 0; } .opt b { min-width: 20px; }
+.rec { color: var(--ok); font-weight: 600; font-size: 12px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: 6px 0 10px; }
+@media (max-width: 860px) {
+  .grid2, .grid3, .split { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; gap: 4px; }
+  .page { padding: 18px 16px 60px; }
+}
+</style>
+<style>
+.seqwrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel-bg); }
+svg.seq { display: block; min-width: 860px; width: 100%; height: auto; font-family: var(--sans); }
+svg.seq .lane-h { fill: var(--text); font-size: 12.5px; font-weight: 600; text-anchor: middle; }
+svg.seq .lane-s { fill: var(--muted); font-size: 10.5px; text-anchor: middle; }
+svg.seq .life { stroke: var(--border); stroke-width: 2; }
+svg.seq .phase-r { fill: var(--hover); }
+svg.seq .phase-t { fill: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; }
+svg.seq g.st { cursor: pointer; }
+svg.seq g.st .ln { stroke: var(--muted); stroke-width: 1.4; fill: none; opacity: .55; }
+svg.seq g.st .lb { fill: var(--muted); font-size: 11.5px; text-anchor: middle; }
+svg.seq g.st .num { fill: var(--card-bg); stroke: var(--muted); stroke-width: 1.2; }
+svg.seq g.st .numt { fill: var(--muted); font-size: 9.5px; font-weight: 700; text-anchor: middle; }
+svg.seq g.st .hit { fill: transparent; }
+svg.seq g.st:hover .lb { fill: var(--text); }
+svg.seq g.st.on .ln { stroke: var(--accent); stroke-width: 2.2; opacity: 1; }
+svg.seq g.st.on .lb { fill: var(--text); font-weight: 600; }
+svg.seq g.st.on .num { fill: var(--accent); stroke: var(--accent); }
+svg.seq g.st.on .numt { fill: #fff; }
+svg.seq g.st.new .lb { font-style: normal; }
+svg.seq g.st.bad .ln { stroke: var(--bad); }
+svg.seq .arrowhead { fill: var(--muted); }
+.stepper { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: start; background: var(--panel-bg); border: 1px solid var(--accent); border-radius: var(--r-card); padding: 13px 16px; margin: 12px 0; position: sticky; top: 46px; z-index: 1; }
+.stepper h3 { margin: 0 0 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stepper p { margin: 4px 0; max-width: 820px; }
+.stepper .ctl { display: flex; gap: 6px; }
+.stepper button { border: 1px solid var(--border); background: var(--card-bg); color: var(--text); border-radius: var(--r-btn); padding: 5px 12px; cursor: pointer; font: inherit; font-weight: 500; }
+.stepper button:hover { background: var(--hover); }
+.phasechip { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.newtag { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); }
+.oldtag { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); }
+.setup { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+.setup .card b.n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-dim); color: var(--accent-text); font-size: 11px; margin-right: 6px; }
+.setup pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 1000px) { .setup { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .setup { grid-template-columns: 1fr; } .stepper { grid-template-columns: 1fr; position: static; } }
+.callout { background: var(--accent-dim); border-radius: var(--r-card); padding: 12px 16px; max-width: 900px; } .callout p { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">WEAVE COWORK · ARCHITECTURE · 25 NOVEMBER 2026 · PROPOSAL</div>
+  <h1>How a provisioned agent works</h1>
+  <p class="sub">What happens between Rosa typing "@researcher …" and an answer, when no runner is serving researcher and nothing is running yet. One request, step by step, across every part involved. Then what has to be set up once, how it differs from today's pinned agents, and what happens when things go wrong.</p>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="flow">One request, step by step</button>
+    <button role="tab" aria-selected="false" data-tab="setup">Set up once</button>
+    <button role="tab" aria-selected="false" data-tab="compare">Pinned and pool</button>
+    <button role="tab" aria-selected="false" data-tab="wrong">When things go wrong</button>
+    <button role="tab" aria-selected="false" data-tab="build">What we'd build</button>
+  </nav>
+
+  <section id="flow">
+    <div class="callout"><p><b>The idea in one sentence.</b> The server never starts anything itself: a <b>pool</b>, a runner on a Linux box that has already connected out to the server, starts a container for the thread, and the ordinary runner inside that container connects back in with a token good for that one thread. From then on it's the same as today's agents.</p></div>
+
+    <div class="stepper" aria-live="polite">
+      <div>
+        <div class="phasechip" id="s-phase"></div>
+        <h3><span id="s-title"></span><span id="s-tag"></span></h3>
+        <p id="s-body"></p>
+      </div>
+      <div class="ctl"><button id="prev" aria-label="Previous step">← Back</button><button id="next" aria-label="Next step">Next →</button></div>
+    </div>
+    <p class="muted" style="margin:0 0 8px;font-size:12.5px">Click any arrow, or use ← and → on the keyboard. <span class="oldtag">exists</span> works like this today; <span class="newtag">new</span> is to build.</p>
+    <div class="seqwrap"><svg class="seq" id="seq" role="img" aria-label="Sequence of one request to a provisioned agent"></svg></div>
+  </section>
+
+  <section id="setup" hidden>
+    <p class="lead">Four things exist before Rosa can ask. Steps 1 to 3 are done once per server by an admin; step 4 once per project by its lead.</p>
+    <div class="setup">
+      <div class="card"><h3><b class="n">1</b>Connect a pool</h3><p>On any Linux box with podman, the admin runs the runner in pool mode with a one-time code from <b>Where agents run → Add a pool</b>:</p><pre>cowork-runner pool connect https://cowork.lumen.example \
+  --code K7QF-2M9X --slots 4 --memory 2500M</pre><p>It enrols like a runner today, but its token may only start and stop sandboxes. It serves no agent itself and holds no agent's identity. It shows as <b>pool-01 · 4 slots · online</b>.</p></div>
+      <div class="card"><h3><b class="n">2</b>Add model access</h3><p><b>Server settings → Models</b>: a provider and its API key (Anthropic, OpenAI, OpenRouter, a local model). The key stays in the server. Sandboxes reach models only through the gateway with their thread token.</p><p class="muted">Subscriptions (a Claude or ChatGPT plan) can't be shared this way: they stay with pinned agents on their owner's machine.</p></div>
+      <div class="card"><h3><b class="n">3</b>Make a template</h3><p><b>Agents → New team template</b>: researcher. Instructions, the harness (<code>opencode acp</code> 2.4.1), its model through the gateway, and an image. CoWork ships one image per harness, with the runner and the harness in it (<code>cowork-sandbox-opencode:2.4.1</code>). A template can name its own image later, for extra tools.</p></div>
+      <div class="card"><h3><b class="n">4</b>Enable it in a project</h3><p>In <b>New project</b> or the project's settings, Alex switches researcher on for Checkout app, with a budget. Checkout app's workspaces, sources, rules and network list then apply to every researcher thread there.</p><p class="muted">That's all. Nobody connects anything per thread.</p></div>
+    </div>
+  </section>
+
+  <section id="compare" hidden>
+    <p class="lead">Both are agents with a handle, instructions and an owner. They differ only in where the harness runs and who pays.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th></th><th>Pinned (today)</th><th>Pool (new)</th></tr></thead>
+      <tbody>
+        <tr><td><b>Who connects it</b></td><td>Its owner runs <code>cowork-runner connect</code> once</td><td>Nobody per agent: the admin connected a pool once</td></tr>
+        <tr><td><b>Running when nobody asks?</b></td><td>The runner is; the harness starts per thread</td><td>Nothing runs. A container starts when a thread needs one</td></tr>
+        <tr><td><b>Where the harness runs</b></td><td>The owner's machine, as the owner's user</td><td>A container per thread on a pool</td></tr>
+        <tr><td><b>Workspace</b></td><td>A clone on that machine, a worktree per thread</td><td>The pool's mirror, a worktree per thread in the thread's volume</td></tr>
+        <tr><td><b>Model access</b></td><td>The owner's own sign-in or key</td><td>The server's key, through the gateway</td></tr>
+        <tr><td><b>Cost</b></td><td>The owner's; not in the project's budget</td><td>The project's, counted per thread</td></tr>
+        <tr><td><b>Sandbox</b></td><td>Optional; labelled "unsandboxed" when off</td><td>Always: container, mounts, egress proxy</td></tr>
+        <tr><td><b>Who approves</b></td><td>Its owner</td><td>Whoever started the thread; a lead as fallback</td></tr>
+        <tr><td><b>Parallel threads</b></td><td>As many as the machine copes with</td><td>As many as the pools have slots; the rest wait in order</td></tr>
+        <tr><td><b>Offline</b></td><td>When the owner's machine sleeps; requests wait</td><td>Only when no pool is online</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="wrong" hidden>
+    <div class="tablewrap"><table>
+      <thead><tr><th>What happens</th><th>What the thread says</th><th>What CoWork does</th></tr></thead>
+      <tbody>
+        <tr><td>Every slot is busy</td><td>"Waiting for room on pool-01 (4 of 4 busy), 2nd in line"</td><td>Queues the start; the first slot that frees goes to the oldest request</td></tr>
+        <tr><td>No pool is online</td><td>"No pool is online. Alex has been told."</td><td>Keeps the message; starts the sandbox when a pool connects</td></tr>
+        <tr><td>First use of an image</td><td>"Getting the sandbox image (310 MB)…"</td><td>Pulls once per pool; later starts take seconds</td></tr>
+        <tr><td>The container dies mid-turn</td><td>"researcher's sandbox stopped unexpectedly. Trying again."</td><td><code>TurnInterrupted</code>; starts it again once on the same volume with <code>session/load</code>; fails the turn the second time</td></tr>
+        <tr><td>The pool's machine goes away</td><td>"pool-01 went offline during this turn."</td><td>The volume is on pool-01, so the thread waits for it, or a lead starts it fresh elsewhere (the branch is pushed, the harness's memory is lost)</td></tr>
+        <tr><td>The thread reaches its cap</td><td>"Reached $5 for this thread. A lead can raise it."</td><td>The gateway refuses further model calls; the turn ends cleanly</td></tr>
+        <tr><td>A host not on the list</td><td>An ask card to whoever started the thread</td><td>The proxy refuses and reports it; an allow opens it once or for the thread</td></tr>
+        <tr><td>Someone presses Pause</td><td>"Paused by Alex"</td><td>Stops every sandbox in the project; volumes kept; messages wait</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="build" hidden>
+    <p class="lead">The runner already runs whatever the server sends it (<code>DeliverMessage</code> carries the instructions, harness command and workspace), so the runner inside a sandbox is today's runner. What's new is around it.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Part</th><th>What</th></tr></thead>
+      <tbody>
+        <tr><td><b>Templates</b></td><td>An agent with placement "pool" instead of a pinned runner, enabled per project</td></tr>
+        <tr><td><b>Pool mode</b></td><td><code>cowork-runner pool</code>: enrols as a pool, receives <code>StartSandbox</code> / <code>StopSandbox</code> / <code>DeleteSandbox</code>, keeps repository mirrors, makes volumes and worktrees, runs podman with limits, reports slots</td></tr>
+        <tr><td><b>Sandbox tokens</b></td><td>Minted per thread, hashed, bound to agent, project and thread; used for the runner's connection, CoWork's tools and the gateway</td></tr>
+        <tr><td><b>Routing</b></td><td>A message for a template with no live sandbox asks a pool to start one, and waits; idle sandboxes stop after 15 minutes</td></tr>
+        <tr><td><b>Gateway</b></td><td>An OpenAI- and Anthropic-compatible endpoint in the server that swaps the token for the real key and counts cost per thread</td></tr>
+        <tr><td><b>Egress proxy</b></td><td>A small proxy per pool; each sandbox's network only reaches it; it applies the project's list and reports refusals</td></tr>
+        <tr><td><b>CoWork tools</b></td><td>The <code>cowork</code> MCP server passed in <code>session/new</code> (today the list is empty): read a channel, search, save to the library, resolve the thread</td></tr>
+        <tr><td><b>The image</b></td><td><code>cowork-sandbox-opencode</code>: the runner and OpenCode at a pinned version, git, a non-root user</td></tr>
+      </tbody>
+    </table></div>
+    <h2>Questions for you</h2>
+    <div class="q"><h3>1 · The first harness in sandboxes</h3>
+      <div class="opt"><b>A</b><span>OpenCode only, with the gateway as its provider. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>OpenCode and Claude Code (with an API key through the gateway) from the start.</span></div></div>
+    <div class="q"><h3>2 · The network in the first version</h3>
+      <div class="opt"><b>A</b><span>The egress proxy with the project's list and asks, from day one. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Open network first; the proxy in a later slice.</span></div></div>
+    <div class="q"><h3>3 · Images</h3>
+      <div class="opt"><b>A</b><span>One stock image per harness, built by CoWork. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Templates bring their own Dockerfile from the start.</span></div></div>
+  </section>
+</div>
+
+<script>
+const LANES = [
+  ['Rosa', 'browser'], ['CoWork server', 'routes, records, approves'], ['pool-01', 'pool runner on a Linux box'],
+  ['Sandbox', 'runner + OpenCode, one thread'], ['Model gateway', 'in the server'], ['Outside', 'model provider, web'],
+];
+// [from, to, label, phase, isNew, title, body]
+const S = [
+  [0,1,'"@researcher compare three tax APIs…"','Rosa asks',0,'Rosa posts in #checkout-app','The same as mentioning any agent today. The post is stored, everyone in the channel sees it, and a thread opens on it.'],
+  [1,1,'route: a template, no sandbox yet','Rosa asks',1,'The server decides who answers','researcher is a team template enabled in Checkout app, and no runner serves it. The server checks Rosa may give it work (she\'s a member), that the project has budget left, and that the thread has no sandbox yet. It records ThreadStarted, AgentJoinedThread and the delivery as queued. Rosa sees "starting".'],
+  [1,1,'mint a token for thread 42','Rosa asks',1,'A token for this one thread','It\'s good for researcher, in Checkout app, in thread 42, and nothing else. The server keeps only its hash. The sandbox will use it to connect, to call CoWork\'s tools and to reach the model gateway. It dies when the sandbox is deleted.'],
+  [1,2,'StartSandbox(thread 42, researcher, app@main, 2 GB, network list, token)','A sandbox starts',1,'The server asks a pool','Over pool-01\'s existing connection: the pool connected out when the admin enrolled it, like any runner. The server never reaches into a machine and holds no cloud keys. With several pools it picks the least busy one that matches the template.'],
+  [2,2,'fetch mirror, worktree in volume thread-42','A sandbox starts',1,'The pool prepares the files','pool-01 keeps one mirror of lumen/checkout-app and fetches it. It makes a volume for thread 42 with a worktree on cowork/compare-tax-apis, and a home folder for the harness. The volume outlives the container, so the thread can be picked up later.'],
+  [2,3,'podman run cowork-sandbox-opencode, limits, env','A sandbox starts',1,'The pool starts the container','Rootless podman, 2 GB of memory, its own network that only reaches pool-01\'s egress proxy. It mounts the thread\'s volume and gets three settings: the server\'s address, the thread token, and the gateway as its model provider. No API keys go in.'],
+  [3,1,'connect with the thread token','A sandbox starts',1,'The runner inside connects out','The same cowork-runner as on a laptop, started with a thread token instead of an enrolment. The server binds the connection to researcher in thread 42 and tells Rosa "ready". About 6 seconds with the image already on the pool.'],
+  [1,3,'deliver Rosa\'s message (queued until now)','It works',0,'The waiting message goes out','The delivery that was queued in step 2 is sent, exactly as today: wrapped as <cowork-message from="@rosa" …>, with researcher\'s instructions in front because it\'s the session\'s first prompt.'],
+  [3,3,'opencode acp: session/new in /work/app','It works',1,'The harness starts a session','The runner starts OpenCode and opens a session in the worktree. New: it passes MCP servers in session/new (today the list is empty): CoWork\'s own tools, which call back to the server with the thread token, and the project\'s sources.'],
+  [3,4,'model call, thread token as the key','It works',1,'The agent thinks','OpenCode talks to "its provider", which is the gateway. The gateway checks the token, sees thread 42 in Checkout app, and checks the thread is under its $5 cap.'],
+  [4,5,'forward with the server\'s real key','It works',1,'The gateway forwards and counts','It swaps in the provider key from Server settings, forwards the call, and counts tokens and dollars against thread 42 and Checkout app. The key never enters the sandbox.'],
+  [3,5,'web search, fetch (through the egress proxy)','It works',1,'The agent reaches out','Its traffic goes through pool-01\'s proxy, which lets through the hosts on Checkout app\'s list: github.com, the package registry, web search and the gateway.'],
+  [3,1,'text and tool rows as they happen','It works',0,'The answer streams back','The same StreamEvents as today: text, tool starts and ends. The server records them as events.'],
+  [1,0,'live to everyone in the channel','It works',0,'Everyone watches it work','Rosa, Alex and Sam see the text and the tool rows arrive, as today.'],
+  [2,1,'refused: api.levy.example','It asks',1,'A host not on the list','The agent tries Levy.io\'s API reference. The proxy refuses the connection and tells the server through pool-01. The agent sees a refused connection, as it would on any locked-down network.'],
+  [1,0,'ask card to Rosa, who started the thread','It asks',1,'The person who asked decides','Rosa gets Allow once, Allow for this thread, Deny. Alex sees "waiting for Rosa" and gets the card himself after 30 minutes, because he leads the project.'],
+  [0,1,'Allow once','It asks',0,'Rosa allows it','Recorded as PermissionGranted, caused by the request, with Rosa as the actor: the audit can tell the story later.'],
+  [1,2,'open api.levy.example once for thread 42','It asks',1,'The proxy is told','pool-01\'s proxy lets one connection through for this sandbox.'],
+  [1,3,'"api.levy.example is allowed once; try again"','It asks',1,'The agent is told','A short system message in the session, so the agent knows to retry instead of giving up.'],
+  [3,1,'cowork_save_doc, cowork_resolve_thread','It finishes',1,'It saves its work and finishes','Through CoWork\'s tools it saves "Tax APIs compared" to Checkout app\'s library and resolves the thread with a summary: the outcome people see and search. The turn ends with its cost, $1.40, from the gateway.'],
+  [1,2,'15 idle minutes: StopSandbox','It finishes',1,'The sandbox stops','The container is removed and the slot freed. The volume stays: the worktree and OpenCode\'s own record of the session.'],
+  [0,1,'Sam replies in the thread','Later',0,'Sam asks a follow-up','"Can you add a fourth provider?" A reply in a thread with researcher in it is a message for researcher, as today.'],
+  [1,2,'StartSandbox(thread 42, same volume)','Later',1,'The same thread starts again','Steps 4 to 7 again, but the volume already exists, so there\'s nothing to clone.'],
+  [3,3,'session/load: it remembers','Later',0,'It picks up where it left off','The runner reloads the saved session by id, as it does after a restart today, so researcher remembers the first answer and Rosa\'s allow.'],
+  [1,2,'7 days after done: DeleteSandbox','Later',1,'Clean-up','The volume is deleted, and the branch with it if it has no changes. Pushed branches and library documents stay.'],
+];
+const W = 1000, X0 = 85, DX = (W - 2 * X0) / (LANES.length - 1), TOP = 62, ROW = 34, PH = 22;
+const svg = document.getElementById('seq');
+const ns = 'http://www.w3.org/2000/svg';
+const el = (t, a, p = svg) => { const e = document.createElementNS(ns, t); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e; };
+const x = i => X0 + i * DX;
+let y = TOP, rows = [], lastPhase = null;
+S.forEach((s, i) => { if (s[3] !== lastPhase) { rows.push({ phase: s[3], y }); y += PH; lastPhase = s[3]; } rows.push({ step: i, y: y + ROW / 2 }); y += ROW; });
+const H = y + 14;
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+const defs = el('defs', {});
+for (const [id, cls] of [['ah', 'arrowhead'], ['ahOn', '']]) {
+  const m = el('marker', { id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+  const p = el('path', { d: 'M0,0 L10,5 L0,10 z' }, m); if (cls) p.setAttribute('class', cls); else p.setAttribute('style', 'fill: var(--accent)');
+}
+rows.filter(r => r.phase).forEach(r => { el('rect', { class: 'phase-r', x: 0, y: r.y, width: W, height: PH - 4 }); el('text', { class: 'phase-t', x: 10, y: r.y + 13 }).textContent = r.phase.toUpperCase(); });
+LANES.forEach(([n, sub], i) => {
+  el('text', { class: 'lane-h', x: x(i), y: 22 }).textContent = n;
+  el('text', { class: 'lane-s', x: x(i), y: 38 }).textContent = sub;
+  el('line', { class: 'life', x1: x(i), y1: 48, x2: x(i), y2: H - 6 });
+});
+const groups = [];
+rows.filter(r => r.step !== undefined).forEach(r => {
+  const [f, t, label, , isNew] = S[r.step];
+  const g = el('g', { class: 'st' + (f === 2 && t === 1 && r.step === 14 ? ' bad' : ''), tabindex: 0, role: 'button', 'aria-label': `Step ${r.step + 1}: ${label}` });
+  const yy = r.y + 6;
+  el('rect', { class: 'hit', x: 0, y: r.y - ROW / 2, width: W, height: ROW }, g);
+  if (f === t) {
+    const xs = x(f);
+    el('path', { class: 'ln', d: `M${xs},${yy - 8} h34 v14 h-30`, 'marker-end': 'url(#ah)' }, g);
+    const tx = el('text', { class: 'lb', x: xs + 42, y: yy + 2 }, g); tx.textContent = label; tx.style.textAnchor = 'start';
+  } else {
+    const a = x(f), b = x(t), dir = b > a ? 1 : -1;
+    el('line', { class: 'ln', x1: a + dir * 9, y1: yy, x2: b - dir * 3, y2: yy, 'marker-end': 'url(#ah)' }, g);
+    const tx = el('text', { class: 'lb', x: a + dir * 14, y: yy - 6 }, g); tx.textContent = label;
+    tx.style.textAnchor = dir > 0 ? 'start' : 'end';
+  }
+  el('circle', { class: 'num', cx: x(f), cy: yy, r: 8 }, g);
+  el('text', { class: 'numt', x: x(f), y: yy + 3.3 }, g).textContent = r.step + 1;
+  g.addEventListener('click', () => go(r.step));
+  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(r.step); } });
+  groups[r.step] = g;
+});
+let cur = 0;
+function go(i) {
+  cur = Math.max(0, Math.min(S.length - 1, i));
+  groups.forEach((g, j) => { g.classList.toggle('on', j === cur); g.querySelector('.ln').setAttribute('marker-end', j === cur ? 'url(#ahOn)' : 'url(#ah)'); });
+  const s = S[cur];
+  document.getElementById('s-phase').textContent = `Step ${cur + 1} of ${S.length} · ${s[3]}`;
+  document.getElementById('s-title').textContent = s[5];
+  document.getElementById('s-tag').innerHTML = s[4] ? '<span class="newtag">new</span>' : '<span class="oldtag">exists</span>';
+  document.getElementById('s-body').textContent = s[6];
+  document.getElementById('prev').disabled = cur === 0; document.getElementById('next').disabled = cur === S.length - 1;
+}
+document.getElementById('prev').onclick = () => go(cur - 1);
+document.getElementById('next').onclick = () => go(cur + 1);
+document.addEventListener('keydown', e => { if (document.getElementById('flow').hidden) return; if (e.key === 'ArrowRight') go(cur + 1); if (e.key === 'ArrowLeft') go(cur - 1); });
+go(0);
+
+const tabs = document.querySelectorAll('nav.tabs button');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.setAttribute('aria-selected', String(x === t)));
+  document.querySelectorAll('section').forEach(s => s.hidden = s.id !== t.dataset.tab);
+  window.scrollTo({ top: 0 });
+}));
+const tab = new URLSearchParams(location.search).get('tab');
+if (tab) document.querySelector(`[data-tab="${tab}"]`)?.click();
+</script>
+</body>
+</html>
