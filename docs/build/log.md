@@ -890,3 +890,19 @@ trial on 5889, its data, pool, image and containers, the `cowork` compose projec
 - A PDF in the canvas wasn't live-checked (headless Chromium has no PDF viewer).
 - Thumbnails are the page itself in a small frame, so a thread with many cards runs each page's scripts.
 - An upload whose runner disconnects mid-way leaves the agent waiting the full 2 minutes before it hears so.
+
+**Follow-up: the live checks' own sandbox image.** The user's trial pool runs sandboxes from `cowork-sandbox-opencode:2.4.1`, so the checks
+no longer build or use that tag. `tests/live/lib.mjs` has `SANDBOX_IMAGE` (`COWORK_SANDBOX_IMAGE`, default `cowork-sandbox-opencode:2.4.1-b9`);
+phases 9 to 13 fill it into the template's image field (phase9 still checks that the form offers `…:2.4.1` by default, then fills its own),
+and say `TAG=… deploy/sandbox/build.sh` when it's missing. Built with `TAG=cowork-sandbox-opencode:2.4.1-b9 deploy/sandbox/build.sh`. Earlier
+in this brief, before this rule, `deploy/sandbox/build.sh` was run once with its default tag, so `…:2.4.1` was rebuilt from this branch's
+runner (it only adds `CollectArtifact`; phases 9 to 12 passed on it); the trial's image is to be rebuilt from main after the merge.
+
+**Follow-up, found by running on that image: the egress refusal brief 7 couldn't explain.** phase10's first run on `…:2.4.1-b9` stopped at
+step 5: the pool logged "refused example.com:443" and the server never heard, so Rosa got no ask (brief 7's "Not explained"). The proxy
+wrote its 403 before reporting the refusal; when the client had already hung up (OpenCode's webfetch gave up: "transport error"), the write
+threw, and the connection's handler swallowed the exception, so the report never ran and nothing was logged. The report now goes first, and a
+403 that can't be delivered is logged. A runner test (ten clients that send CONNECT and hang up at once) reported none of the ten on the old
+code and all ten with the fix. On the next phase10 run the pool logged exactly that case ("the client hung up before the refusal reached it")
+and still told the server; Rosa got the ask. Checked: 42 runner tests; on `…:2.4.1-b9` `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 35,
+`phase13` 32 (phases 1 to 8 use no pool and passed on this server and web build).
