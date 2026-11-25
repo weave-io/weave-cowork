@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import StatusDot from './StatusDot.vue'
 import PostItem from './PostItem.vue'
 import Composer from './Composer.vue'
+import type { ThreadAgent } from '../types'
 
 const emit = defineEmits<{ close: [] }>()
 const t = computed(() => store.feed.thread)
@@ -26,9 +27,15 @@ function shortCommand(cmd: string[]) {
   const [exe = '', ...rest] = cmd
   return [exe.split(/[\\/]/).pop(), ...rest].join(' ')
 }
-const dot = (a: { id: number; online: boolean; busy: boolean; queued: number }) => !isOnline(a) ? (a.queued > 0 ? 'waiting' : 'offline') : a.busy ? 'working' : 'online'
-const isOnline = (a: { id: number; online: boolean }) => memberById(a.id)?.online ?? a.online
-function status(a: { id: number; online: boolean; busy: boolean; queued: number }) {
+// a team template is online in a thread while its sandbox's runner is connected; a pinned agent while its runner is
+const isOnline = (a: ThreadAgent) => a.placement === 'pool' ? a.online : memberById(a.id)?.online ?? a.online
+function dot(a: ThreadAgent) {
+  if (a.placement === 'pool' && !a.online) return ['waiting', 'starting', 'resuming'].includes(a.sandbox?.state ?? '') ? 'waiting' : 'offline'
+  return !isOnline(a) ? (a.queued > 0 ? 'waiting' : 'offline') : a.busy ? 'working' : 'online'
+}
+function status(a: ThreadAgent) {
+  if (a.placement === 'pool' && !a.online)
+    return ({ waiting: 'waiting for room', starting: 'starting…', resuming: 'resuming…', suspending: 'stopping…', suspended: 'stopped, volume kept', failed: "couldn't start", deleted: 'deleted' } as Record<string, string>)[a.sandbox?.state ?? ''] ?? 'starting…'
   if (!isOnline(a)) return a.queued > 0 ? 'waiting for the runner' : 'offline'
   if (a.busy) return 'working…'
   return a.queued > 0 ? 'queued' : 'idle'
@@ -49,9 +56,11 @@ async function send(text: string) {
       <div v-for="a in t.agents" :key="a.id" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted" data-testid="session-line">
         <span class="rounded-[5px] border border-border px-1.5 font-mono text-[11.5px]">session</span>
         <b class="text-text">@{{ a.handle }}</b>
-        <span class="font-mono text-[11.5px]" :title="a.harnessCommand.join(' ')" data-testid="session-command">{{ shortCommand(a.harnessCommand) }}</span>
+        <span v-if="a.placement === 'pool'" data-testid="session-template">team template</span>
+        <span v-else class="font-mono text-[11.5px]" :title="a.harnessCommand.join(' ')" data-testid="session-command">{{ shortCommand(a.harnessCommand) }}</span>
+        <span v-if="a.placement === 'pool' && a.sandbox?.pool" data-testid="session-where">· sandbox on {{ a.sandbox.pool }}</span>
         <span v-if="a.workspace?.branch" class="flex items-center gap-1" data-testid="session-branch">· <GitBranch :size="12" aria-hidden="true" /><code class="font-mono text-[11.5px]">{{ a.workspace.branch }}</code></span>
-        <span v-if="a.workspace?.host ?? a.runnerHost" :class="!(a.workspace?.sandboxed) && 'text-idle-text'" data-testid="session-where">· {{ a.workspace?.sandboxed ? 'sandboxed' : 'unsandboxed' }} on {{ a.workspace?.host ?? a.runnerHost }}</span>
+        <span v-if="a.placement !== 'pool' && (a.workspace?.host ?? a.runnerHost)" :class="!(a.workspace?.sandboxed) && 'text-idle-text'" data-testid="session-where">· {{ a.workspace?.sandboxed ? 'sandboxed' : 'unsandboxed' }} on {{ a.workspace?.host ?? a.runnerHost }}</span>
         <span v-if="startedBy">· started by {{ startedBy.displayName }}</span>
         <span class="ml-auto flex items-center gap-1.5" data-testid="agent-status">
           <StatusDot :state="dot(a)" />
@@ -64,7 +73,7 @@ async function send(text: string) {
       <div class="mx-2.5 my-2 flex items-center gap-2.5 text-xs text-muted"><span class="h-px flex-1 bg-border" />{{ t.replies.filter(r => r.kind === 'text').length }} {{ t.replies.filter(r => r.kind === 'text').length === 1 ? 'reply' : 'replies' }}<span class="h-px flex-1 bg-border" /></div>
       <PostItem v-for="r in t.replies" :key="r.id" :post="r" in-thread />
       <template v-for="a in t.agents" :key="'w' + a.id">
-        <div v-if="!isOnline(a) && a.queued > 0" class="mx-2.5 my-1.5 rounded-card border border-dashed border-border px-2.5 py-1.5 text-[12.5px] text-muted" data-testid="waiting-runner">
+        <div v-if="a.placement !== 'pool' && !isOnline(a) && a.queued > 0" class="mx-2.5 my-1.5 rounded-card border border-dashed border-border px-2.5 py-1.5 text-[12.5px] text-muted" data-testid="waiting-runner">
           Waiting for {{ a.displayName }}’s runner. It'll answer when the runner is back.
         </div>
       </template>

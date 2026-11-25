@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search, Settings2, FolderPlus } from 'lucide-vue-next'
+import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search, Settings2, FolderPlus, Boxes, SlidersHorizontal } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { searchShortcut } from '../search'
 import { navOpen } from '../layout'
@@ -43,6 +43,8 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
         <DropdownMenuItem data-testid="menu-invite-agent" @select="openModal('invite-agent')"><Bot />Invite an agent</DropdownMenuItem>
         <DropdownMenuItem data-testid="menu-people" @select="openModal('people')"><Users />{{ store.isAdmin ? 'People & agents' : 'People' }}</DropdownMenuItem>
         <DropdownMenuItem v-if="store.isAdmin" data-testid="menu-audit" @select="openModal('audit')"><ScrollText />Audit</DropdownMenuItem>
+        <DropdownMenuItem v-if="store.isAdmin" data-testid="menu-where" @select="openModal('where-agents-run')"><Boxes />Where agents run</DropdownMenuItem>
+        <DropdownMenuItem v-if="store.isAdmin" data-testid="menu-server-settings" @select="openModal('server-settings')"><SlidersHorizontal />Server settings</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
 

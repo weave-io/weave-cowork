@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -113,6 +114,37 @@ public class RoundTwoTests
         var projCh = app.Sql().ExecuteScalar<long>("SELECT id FROM channels WHERE name='checkout-proj'");
         await rosa.Post(projCh, "@reviewer can you look at the cart?");          // owner only: a short reply, no turn
 
+        // brief 7: a pool with one slot, a template in the project, a sandbox that answers through the gateway and is suspended, a second
+        // thread that waited for the slot and failed to start
+        await using (var up = await FakeUpstream.Start())
+        await using (var pool = await FakePool.Enrol(app, alex, slots: 1))
+        {
+            (await alex.Http.PutAsJsonAsync("/api/settings/models", new { kind = "openai-compatible", baseUrl = up.BaseUrl, apiKey = "sk-busy-secret-77" })).EnsureSuccessStatusCode();
+            (await alex.Http.PutAsJsonAsync("/api/settings/sandboxes", new { idleSeconds = 3600 })).EnsureSuccessStatusCode();
+            var researcher = (await (await alex.Http.PostAsJsonAsync("/api/agents", new { handle = "researcher", harnessCommand = "opencode acp", placement = "pool", model = "claude-haiku-4.5" }))
+                .EnsureSuccessStatusCode().Content.ReadFromJsonAsync<JsonElement>()).GetProperty("agentId").GetInt64();
+            (await alex.Http.PutAsJsonAsync($"/api/projects/{proj}/agents/{researcher}", new { takesWorkFrom = "members" })).EnsureSuccessStatusCode();
+            await rosa.Post(projCh, "@researcher compare three tax APIs");
+            await alex.Post(projCh, "@researcher and how they refund");              // one slot: this one waits
+            var create = await pool.Next<CreateSandbox>();
+            await pool.Report(create.Spec.SandboxId, SandboxStates.Running);
+            await using (var box = await FakeSandbox.Connect(app, create.Spec))
+            {
+                await box.NextDelivery();
+                var gw = app.CreateClient(); gw.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", create.Spec.ThreadToken);
+                (await gw.PostAsJsonAsync("/gateway/v1/chat/completions", new { model = "claude-haiku-4.5", stream = true, messages = new[] { new { role = "user", content = "hi" } } })).EnsureSuccessStatusCode();
+                for (var i = 0; i < 300 && app.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='ModelUsageRecorded'") == 0; i++) await Task.Delay(25);
+                await box.Say("Tallyrate fits best."); await box.End();
+                for (var i = 0; i < 300 && app.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='TurnEnded' AND actor_id=@researcher", new { researcher }) == 0; i++) await Task.Delay(25);
+            }
+            await app.Services.GetRequiredService<Sandboxes>().Suspend(Sandboxes.Parse(create.Spec.SandboxId)!.Value, "idle", 3600);
+            await pool.Report((await pool.Next<SuspendSandbox>()).SandboxId, SandboxStates.Suspended);
+            var waited = await pool.Next<CreateSandbox>();                           // the one that waited gets the slot
+            await pool.Report(waited.Spec.SandboxId, SandboxStates.Failed, "no such image");
+            for (var i = 0; i < 300 && app.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='SandboxFailed'") == 0; i++) await Task.Delay(25);
+        }
+        for (var i = 0; i < 300 && app.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='PoolDisconnected'") == 0; i++) await Task.Delay(25);
+
         await reviewer.Conn!.StopAsync();
         for (var i = 0; i < 300 && app.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='RunnerDisconnected'") == 0; i++) await Task.Delay(50);       // the server noticed: its event is the signal
         return (app, alex, rosa, reviewer, sleeper);
@@ -127,6 +159,7 @@ public class RoundTwoTests
         var tablesBefore = Dump(app.DbPath); var answersBefore = await Answers(app, alex, rosa);
         Assert.Contains("channels: ", tablesBefore); Assert.Contains("posts: ", tablesBefore); Assert.Contains("[redacted]", tablesBefore);
         Assert.Contains("projects: ", tablesBefore); Assert.Contains("project_agents: ", tablesBefore); Assert.Contains("workspaces: ", tablesBefore); Assert.Contains("only takes work from Alex", tablesBefore);
+        Assert.Contains("pools: ", tablesBefore); Assert.Contains("sandboxes: ", tablesBefore); Assert.Contains("model_usage: ", tablesBefore); Assert.Contains("| sandbox |", tablesBefore);
 
         // 1. in place: empty every projection table, replay
         Store(app).RebuildProjections();
@@ -145,7 +178,7 @@ public class RoundTwoTests
                 c.Execute("INSERT INTO events SELECT * FROM old.events");
                 c.Execute("DETACH DATABASE old");
             }
-            new SqliteEventStore(fresh, new IInlineProjection[] { new DirectoryProjection(), new ProjectProjection(), new ThreadProjection() }).RebuildProjections();
+            new SqliteEventStore(fresh, new IInlineProjection[] { new DirectoryProjection(), new ProjectProjection(), new ThreadProjection(), new SandboxProjection() }).RebuildProjections();
             Assert.Equal(tablesBefore, Dump(path));
         }
         finally { foreach (var f in new[] { path, path + "-wal", path + "-shm" }) try { File.Delete(f); } catch { } }
@@ -158,7 +191,10 @@ public class RoundTwoTests
         using var _a = app; await using var _b = reviewer; await using var _c = sleeper;
         using var c = app.Sql();
         string[] Types(string like) => c.Query<string>("SELECT DISTINCT type FROM events WHERE stream_id LIKE @like ORDER BY type", new { like }).ToArray();
-        Assert.Equal(new[] { "InviteCreated", "InviteRevoked", "InviteUsed", "PersonJoined", "PersonRemoved", "RoleChanged", "ServerSetUp" }, Types("server"));
+        Assert.Equal(new[] { "InviteCreated", "InviteRevoked", "InviteUsed", "ModelProviderSet", "PersonJoined", "PersonRemoved", "RoleChanged", "SandboxIdleSet", "ServerIdAssigned", "ServerSetUp" }, Types("server"));
+        Assert.Equal(new[] { "PoolConnected", "PoolCreated", "PoolDisconnected", "PoolEnrolled" }, Types("pool-%"));
+        foreach (var t in new[] { "SandboxRequested", "SandboxPlaced", "SandboxStarted", "SandboxConnected", "SandboxSuspending", "SandboxSuspended", "SandboxFailed", "ModelUsageRecorded" })
+            Assert.Contains(t, Types("thread-%"));
         Assert.Contains("ChannelRenamed", Types("channel-%")); Assert.Contains("TopicChanged", Types("channel-%")); Assert.Contains("ChannelMadePublic", Types("channel-%"));
         Assert.Contains("MemberAdded", Types("channel-%")); Assert.Contains("MemberRemoved", Types("channel-%")); Assert.Contains("ChannelDeleted", Types("channel-%"));
         Assert.Contains("MessageRedacted", Types("channel-%")); Assert.Contains("MessageDeleted", Types("channel-%"));
@@ -166,8 +202,10 @@ public class RoundTwoTests
         Assert.Equal(new[] { "AgentAddedToProject", "AgentGrantsChanged", "ProjectCreated", "ProjectMemberAdded", "ProjectUpdated", "WorkspaceAdded" }, Types("project-%"));
         Assert.Contains("ChannelMovedToProject", Types("channel-%")); Assert.Contains("WorkRefused", Types("thread-%"));
         // the log is safe to export: no password hash, token, enrolment code or invite code is in it
-        var secrets = c.Query<string>("SELECT password_hash FROM credentials UNION ALL SELECT token_hash FROM runner_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT code_hash FROM runner_secrets WHERE code_hash IS NOT NULL UNION ALL SELECT code FROM invite_codes").ToList();
-        Assert.True(secrets.Count >= 5);
+        var secrets = c.Query<string>(@"SELECT password_hash FROM credentials UNION ALL SELECT token_hash FROM runner_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT code_hash FROM runner_secrets WHERE code_hash IS NOT NULL
+            UNION ALL SELECT code FROM invite_codes UNION ALL SELECT token_hash FROM thread_tokens UNION ALL SELECT token_hash FROM pool_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT value FROM server_secrets").ToList();
+        Assert.True(secrets.Count >= 9);
+        Assert.Contains("sk-busy-secret-77", secrets);
         var log = string.Concat(c.Query<string>("SELECT data FROM events"));
         foreach (var s in secrets) Assert.DoesNotContain(s, log);
         Assert.DoesNotContain(reviewer.Token, log);

@@ -31,6 +31,8 @@ import { searchFocus } from '../search'
 import NewProject from '../components/modals/NewProject.vue'
 import AddAgentToProject from '../components/modals/AddAgentToProject.vue'
 import ProjectSettings from './ProjectSettings.vue'
+import WhereAgentsRun from '../components/modals/WhereAgentsRun.vue'
+import ServerSettings from '../components/modals/ServerSettings.vue'
 
 const route = useRoute(), router = useRouter()
 const ids = computed(() => {
@@ -174,6 +176,8 @@ async function send(text: string) {
       <SettingsDialog v-if="store.modal?.name === 'settings'" />
       <AppDialog v-if="store.modal?.name === 'new-project'" title="New project" wide @close="closeModal"><NewProject /></AppDialog>
       <AddAgentToProject v-if="store.modal?.name === 'add-agent-to-project'" :project-id="store.modal.props.projectId" />
+      <WhereAgentsRun v-if="store.modal?.name === 'where-agents-run'" />
+      <ServerSettings v-if="store.modal?.name === 'server-settings'" />
     </div>
   </TooltipProvider>
 </template>

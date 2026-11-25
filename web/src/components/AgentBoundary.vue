@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Eye, Users, GitBranch, Globe, Hand, Coins, Brain, CirclePause, ShieldAlert } from 'lucide-vue-next'
+import { Eye, Users, GitBranch, Globe, Hand, Coins, Brain, CirclePause, ShieldAlert, ShieldCheck } from 'lucide-vue-next'
 import type { Boundary } from '../types'
 
 // An agent's boundary in a project, in sentences the server computed from what it enforces. Used where an agent is added to a project,
@@ -17,6 +17,9 @@ const parts = (t: string) => t.split('`').map((text, i) => ({ text, code: i % 2 
           <slot :name="l.key" /></dd>
       </template>
     </dl>
+    <p v-if="boundary.sandboxed && boundary.note" class="mt-3 mb-0 flex items-start gap-2 rounded-card border border-running/40 bg-running/10 px-3 py-2 text-[13px]" data-testid="boundary-note">
+      <ShieldCheck :size="15" class="mt-0.5 shrink-0 text-running-text" aria-hidden="true" /><span>{{ boundary.note }}</span>
+    </p>
     <p v-if="!boundary.sandboxed" class="mt-3 mb-0 flex items-start gap-2 rounded-card border border-idle/40 bg-idle/10 px-3 py-2 text-[13px]" data-testid="boundary-warning">
       <ShieldAlert :size="15" class="mt-0.5 shrink-0 text-idle-text" aria-hidden="true" /><span>{{ boundary.warning }}</span>
     </p>

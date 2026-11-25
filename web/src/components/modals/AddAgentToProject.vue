@@ -22,6 +22,7 @@ const boundary = ref<Boundary | null>(null)
 const error = ref(''), busy = ref(false), loading = ref(true)
 const picked = computed(() => memberById(pickedId.value ?? 0))
 const ownerName = (id: number | null) => id === store.meId ? `${memberById(id)?.displayName}'s own` : `${memberById(id ?? 0)?.displayName ?? 'someone'}'s`
+const kindOf = (m: { placement?: string | null; ownerId: number | null }) => m.placement === 'pool' ? 'team template' : ownerName(m.ownerId)
 const shortCommand = (cmd: string[] | null) => { const [exe = '', ...rest] = cmd ?? []; return [exe.split(/[\\/]/).pop(), ...rest].join(' ') }
 
 onMounted(async () => {
@@ -48,15 +49,16 @@ async function add() {
     <template v-else>
       <div v-if="candidates.length > 1" class="mb-3 inline-flex flex-wrap gap-0.5 rounded-btn border border-border p-0.5" role="tablist" aria-label="Which agent">
         <button v-for="m in candidates" :key="m.id" type="button" role="tab" :aria-selected="m.id === pickedId" class="rounded-[6px] px-2.5 py-1 text-[12.5px]" :class="m.id === pickedId ? 'bg-panel-bg font-medium shadow-sm' : 'text-muted hover:text-text'" :data-pick-agent="m.handle" @click="pickedId = m.id">
-          {{ m.handle }} · {{ ownerName(m.ownerId) }}
+          {{ m.handle }} · {{ kindOf(m) }}
         </button>
       </div>
       <div v-if="picked" class="mb-4 flex items-start gap-3" data-testid="boundary-agent">
         <MemberAvatar :member="picked" status />
         <div class="min-w-0">
-          <div class="flex items-center gap-2"><b class="text-[15px]">{{ picked.displayName }}</b><span class="rounded-[5px] bg-accent-dim px-1.5 text-[11px] font-medium text-accent-text">{{ ownerName(picked.ownerId) }}</span></div>
+          <div class="flex items-center gap-2"><b class="text-[15px]">{{ picked.displayName }}</b><span class="rounded-[5px] bg-accent-dim px-1.5 text-[11px] font-medium text-accent-text">{{ kindOf(picked) }}</span></div>
           <p v-if="picked.about" class="m-0 text-[13px] text-muted">{{ picked.about }}</p>
-          <p class="m-0 text-[12.5px] text-muted"><code class="font-mono text-[12px]">{{ shortCommand(picked.harnessCommand) }}</code> · {{ picked.runnerHost ? `runs on ${picked.runnerHost}` : 'its runner hasn\'t connected yet' }} · {{ memberById(picked.ownerId ?? 0)?.displayName }}'s subscription</p>
+          <p v-if="picked.placement === 'pool'" class="m-0 text-[12.5px] text-muted"><code class="font-mono text-[12px]">{{ shortCommand(picked.harnessCommand) }}</code> · <code class="font-mono text-[12px]">{{ picked.image }}</code> · {{ picked.model }} through CoWork's gateway</p>
+          <p v-else class="m-0 text-[12.5px] text-muted"><code class="font-mono text-[12px]">{{ shortCommand(picked.harnessCommand) }}</code> · {{ picked.runnerHost ? `runs on ${picked.runnerHost}` : 'its runner hasn\'t connected yet' }} · {{ memberById(picked.ownerId ?? 0)?.displayName }}'s subscription</p>
         </div>
       </div>
       <AgentBoundary v-if="boundary && boundary.agent.id === pickedId" :boundary="boundary">

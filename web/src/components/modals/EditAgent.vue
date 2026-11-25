@@ -11,6 +11,7 @@ import { ErrorNote } from '@/components/ui/error-note'
 const props = defineProps<{ agentId: number }>()
 const handle = ref(''), displayName = ref(''), about = ref(''), instructions = ref(''), harness = ref(''), workspace = ref('')
 const recordOutput = ref(false)
+const template = ref(false), image = ref(''), model = ref('')
 const error = ref(''), busy = ref(false), loaded = ref(false), saved = ref(false)
 
 onMounted(async () => {
@@ -18,13 +19,14 @@ onMounted(async () => {
     const a = await get(`/agents/${props.agentId}`)
     handle.value = a.handle; displayName.value = a.displayName; about.value = a.about
     instructions.value = a.instructions; harness.value = a.harnessCommand; workspace.value = a.workspace ?? ''; recordOutput.value = !!a.recordToolOutput
+    template.value = a.placement === 'pool'; image.value = a.image ?? ''; model.value = a.model ?? ''
     loaded.value = true
   } catch (e) { error.value = e instanceof ApiError ? e.message : 'Try again.' }
 })
 async function save() {
   error.value = ''; busy.value = true
   try {
-    await put(`/agents/${props.agentId}`, { displayName: displayName.value, about: about.value, instructions: instructions.value, harnessCommand: harness.value, workspace: workspace.value, recordToolOutput: recordOutput.value })
+    await put(`/agents/${props.agentId}`, { displayName: displayName.value, about: about.value, instructions: instructions.value, harnessCommand: harness.value, workspace: workspace.value, recordToolOutput: recordOutput.value, image: image.value, model: model.value })
     await loadBootstrap(); saved.value = true
   } catch (e) { error.value = e instanceof ApiError ? e.message : 'Try again.' } finally { busy.value = false }
 }
@@ -37,7 +39,11 @@ async function save() {
       <Field name="about" label="About" v-model="about" />
       <Field name="instructions" label="Instructions" v-model="instructions" textarea />
       <Field name="harness" label="Harness command" v-model="harness" mono hint="Any ACP agent: opencode acp, copilot --acp, …" />
-      <Field name="workspace" label="Workspace folder" v-model="workspace" mono hint="A folder on the runner's machine." />
+      <template v-if="template">
+        <Field name="image" label="Sandbox image" v-model="image" mono hint="What each thread's sandbox starts from." />
+        <Field name="model" label="Model" v-model="model" mono hint="What it asks CoWork's gateway for." />
+      </template>
+      <Field v-else name="workspace" label="Workspace folder" v-model="workspace" mono hint="A folder on the runner's machine." />
       <div class="mb-4 flex items-start gap-3">
         <Switch :model-value="recordOutput" data-testid="record-tool-output" aria-label="Record full tool output" @update:model-value="recordOutput = $event" />
         <div class="text-[13px]">
@@ -47,7 +53,7 @@ async function save() {
       </div>
       <ErrorNote v-if="error" :message="error" class="mb-3" />
       <p v-if="saved" class="mt-0 text-[13px] text-running-text" data-testid="agent-saved">Saved. New threads will use these settings.</p>
-      <div class="flex justify-end gap-2"><Button variant="outline" @click="closeModal">{{ saved ? 'Close' : 'Cancel' }}</Button><Button type="submit" data-testid="save-agent" :disabled="busy || !harness.trim() || !workspace.trim()">Save</Button></div>
+      <div class="flex justify-end gap-2"><Button variant="outline" @click="closeModal">{{ saved ? 'Close' : 'Cancel' }}</Button><Button type="submit" data-testid="save-agent" :disabled="busy || !harness.trim() || (template ? !model.trim() : !workspace.trim())">Save</Button></div>
     </form>
     <ErrorNote v-else-if="error" :message="error" />
   </AppDialog>

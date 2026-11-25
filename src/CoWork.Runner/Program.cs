@@ -57,7 +57,7 @@ static class Cli
             if (server is null || code is null) { Console.Error.WriteLine("Usage: cowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M"); return 2; }
             server = server.TrimEnd('/');
             var slots = int.TryParse(Opt(args, "--slots"), out var sl) && sl > 0 ? sl : 2;
-            var memory = MemoryMb(Opt(args, "--memory") ?? "1500M");
+            var memory = PoolConfig.MemoryMb(Opt(args, "--memory") ?? "1500M");
             if (memory is null) { Console.Error.WriteLine("--memory is a size like 1500M or 2G."); return 2; }
             using var http = new HttpClient();
             HttpResponseMessage res;
@@ -77,14 +77,6 @@ static class Cli
         if (sub == "run") return await ServePools(pools);
         Console.Error.WriteLine("cowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M\ncowork-runner pool run");
         return 2;
-    }
-
-    public static long? MemoryMb(string s)
-    {
-        s = s.Trim().ToUpperInvariant();
-        var mult = s.EndsWith('G') ? 1024 : 1;
-        var num = s.TrimEnd('M', 'G', 'B');
-        return long.TryParse(num, out var n) && n > 0 ? n * mult : null;
     }
 
     static async Task<int> ServePools(PoolConfig config)

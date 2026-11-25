@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import MemberAvatar from './MemberAvatar.vue'
 import AgentBadge from './AgentBadge.vue'
+import SandboxCard from './SandboxCard.vue'
 
 const props = defineProps<{ post: Post; inThread?: boolean }>()
 const emit = defineEmits<{ 'open-thread': [id: number] }>()
@@ -19,7 +20,8 @@ const time = computed(() => formatTime(props.post.createdAt))
 const html = computed(() => renderBody(props.post.body, handles.value))
 const meta = computed(() => props.post.meta ?? {})
 const owner = computed(() => memberById(meta.value.ownerId))
-const isOwner = computed(() => meta.value.ownerId === store.meId)
+// who answers: an agent's owner, or for a team template whoever started the thread; the project's leads too, once that person has had their time
+const isOwner = computed(() => meta.value.ownerId === store.meId || ((meta.value.leadIds ?? []).includes(store.meId) && Date.now() >= (meta.value.leadAfter ?? Infinity)))
 const allow = computed(() => (meta.value.options ?? []).filter((o: any) => o.kind?.startsWith('allow')))
 const reject = computed(() => (meta.value.options ?? []).find((o: any) => o.kind?.startsWith('reject')))
 const answer = (optionId: string | null) => postApi(`/posts/${props.post.id}/answer`, { optionId }).catch(() => {})
@@ -55,6 +57,8 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
     </div>
     <div v-else class="mt-1 text-[12.5px] text-muted">{{ meta.status === 'answered' ? `${owner?.displayName} chose “${answered ?? 'allow'}”` : `${owner?.displayName} denied this` }}</div>
   </div>
+
+  <SandboxCard v-else-if="post.kind === 'sandbox'" :post="post" />
 
   <div v-else-if="post.kind === 'notice'" class="my-1 ml-[44px] text-[12.5px] text-muted italic" data-testid="notice">{{ author?.displayName }}: {{ post.body }}</div>
 

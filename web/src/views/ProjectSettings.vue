@@ -19,7 +19,8 @@ interface Settings {
   id: number; name: string; about: string; role: 'lead' | 'member' | null; canEdit: boolean
   workspaces: { id: number; name: string; kind: string; url: string | null; branch: string | null; path: string | null; host: string | null; addedBy: string; places: { host: string | null; location: string | null; agent: string }[]; cantReach: string[] }[]
   people: { id: number; role: 'lead' | 'member' }[]
-  agents: { id: number; handle: string; displayName: string; ownerId: number; ownerName: string; runnerHost: string | null; online: boolean; takesWorkFrom: 'owner' | 'members'; sandboxed: boolean; canChange: boolean }[]
+  agents: { id: number; handle: string; displayName: string; ownerId: number; ownerName: string; runnerHost: string | null; online: boolean; takesWorkFrom: 'owner' | 'members'; sandboxed: boolean; canChange: boolean
+    placement?: 'runner' | 'pool'; pools?: string[] | null }[]
   channels: { id: number; name: string; kind: string; isPrivate: boolean }[]
   rules: string[]
 }
@@ -33,6 +34,7 @@ onMounted(load)
 // someone changed the server (a person, an agent, a channel or this project): read it again
 watch(() => [store.projects, store.channels, store.members], load)
 
+const leadNames = computed(() => (s.value?.people ?? []).filter(p => p.role === 'lead').map(p => memberById(p.id)?.displayName).filter(Boolean).join(' and '))
 const roleLine = computed(() => s.value?.role === 'lead' ? 'you lead it' : s.value?.role === 'member' ? "you're a member" : store.isAdmin ? "you're an admin" : '')
 const parts = (t: string) => t.split('`').map((text, i) => ({ text, code: i % 2 === 1 }))
 const hosts = (w: Settings['workspaces'][number]) => [...new Set(w.places.map(p => p.host).filter(Boolean))] as string[]
@@ -143,8 +145,8 @@ async function removeWorkspace(w: Settings['workspaces'][number]) {
               <thead><tr class="text-left text-xs text-muted"><th>Agent</th><th>Runs</th><th>Takes work from</th><th>Asks</th><th>Sandbox</th><th /></tr></thead>
               <tbody>
                 <tr v-for="a in s.agents" :key="a.id" :data-agent-row="a.handle">
-                  <td><span class="flex items-center gap-2"><MemberAvatar :member="memberById(a.id)" size="xs" status /><b class="font-medium">{{ a.handle }}</b><span class="text-xs text-muted">{{ a.ownerName }}'s own</span></span></td>
-                  <td><span class="flex items-center gap-1.5"><StatusDot :state="a.online ? 'online' : 'offline'" />{{ a.runnerHost ? `${a.runnerHost}, pinned` : 'not connected yet' }}</span></td>
+                  <td><span class="flex items-center gap-2"><MemberAvatar :member="memberById(a.id)" size="xs" status /><b class="font-medium">{{ a.handle }}</b><span class="text-xs text-muted">{{ a.placement === 'pool' ? 'team template' : `${a.ownerName}'s own` }}</span></span></td>
+                  <td><span class="flex items-center gap-1.5" data-testid="agent-runs"><StatusDot :state="a.online ? 'online' : 'offline'" />{{ a.placement === 'pool' ? `${a.pools?.length ? a.pools.join(', ') : 'a pool'}, a sandbox per thread` : a.runnerHost ? `${a.runnerHost}, pinned` : 'not connected yet' }}</span></td>
                   <td>
                     <Select v-if="a.canChange" :model-value="a.takesWorkFrom" @update:model-value="setGrant(a.id, $event)">
                       <SelectTrigger class="h-7 w-auto gap-1 text-[13px]" :aria-label="`${a.handle} takes work from`" :data-testid="`grant-${a.handle}`"><SelectValue /></SelectTrigger>
@@ -152,7 +154,7 @@ async function removeWorkspace(w: Settings['workspaces'][number]) {
                     </Select>
                     <span v-else>{{ a.takesWorkFrom === 'owner' ? `Only ${a.ownerName}` : 'Members' }}</span>
                   </td>
-                  <td>{{ a.ownerName }}</td>
+                  <td>{{ a.placement === 'pool' ? `Whoever started the thread, then ${leadNames || 'a lead'}` : a.ownerName }}</td>
                   <td><span class="pill" :class="!a.sandboxed && 'warn'" data-testid="sandbox-pill"><ShieldAlert v-if="!a.sandboxed" :size="11" />{{ a.sandboxed ? 'sandboxed' : 'unsandboxed' }}</span></td>
                   <td class="text-right"><Button v-if="a.canChange" variant="toolbar-icon-danger" size="toolbar" :aria-label="`Take ${a.handle} out`" @click="removeAgent(a)"><X :size="14" /></Button></td>
                 </tr>

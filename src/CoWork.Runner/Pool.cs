@@ -27,6 +27,15 @@ public sealed class PoolConfig
     }
     public void Add(SavedPool p) { var all = Load().Where(x => !(x.Server == p.Server && x.PoolId == p.PoolId)).ToList(); all.Add(p); Save(all); }
     public void Remove(SavedPool p) => Save(Load().Where(x => !(x.Server == p.Server && x.PoolId == p.PoolId)).ToList());
+
+    /// <summary>"1500M" → 1500, "2G" → 2048 (megabytes); null if it isn't a size.</summary>
+    public static long? MemoryMb(string s)
+    {
+        s = s.Trim().ToUpperInvariant();
+        var mult = s.EndsWith('G') || s.EndsWith("GB") ? 1024 : 1;
+        var num = s.TrimEnd('B').TrimEnd('M', 'G');
+        return long.TryParse(num, out var n) && n > 0 ? n * mult : null;
+    }
 }
 
 /// <summary>
