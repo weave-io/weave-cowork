@@ -23,6 +23,7 @@ builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
 builder.Services.AddSingleton<IAsyncProjection, AuditProjection>();          // async projections: after the commit, from a checkpoint, rebuildable from zero
 builder.Services.AddSingleton<IAsyncProjection, UnreadProjection>();
 builder.Services.AddSingleton<IAsyncProjection, ActivityProjection>();
+builder.Services.AddSingleton<IAsyncProjection, SearchProjection>();
 builder.Services.AddSingleton<ProjectionRunner>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectionRunner>());
 builder.Services.AddSingleton<LiveQueue>();

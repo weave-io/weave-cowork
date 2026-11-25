@@ -88,6 +88,16 @@ public static partial class Api
             return Results.Ok(new { position = latest });
         });
 
+        // ---- search: what the caller may see, filters typed into the box (docs/build/brief-6.md) ----
+        authed.MapGet("/search", async (HttpContext ctx, Db db, ProjectionRunner runner, string? q, int? limit, int? offset) =>
+        {
+            var me = Me(ctx);
+            await runner.CatchUpAsync();          // read your own writes: what you just wrote is found
+            using var c = db.Open();
+            if (!Access.IsActivePerson(c, me)) return Err(403, "Only people can search.");
+            return Results.Ok(Search.Run(c, me, SearchQuery.Parse(q), Math.Clamp(limit ?? 20, 1, 50), Math.Max(0, offset ?? 0)));
+        });
+
         // ---- an agent's activity (on its profile) ----
         authed.MapGet("/agents/{id:long}/activity", (long id, HttpContext ctx, Db db, RunnerRegistry runners) =>
         {

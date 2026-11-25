@@ -225,7 +225,7 @@ public class RoundThreeTests
         await alex.Post(ch, "@rosa one more"); await Settle(app);
 
         var status = await alex.Http.GetFromJsonAsync<JsonElement>("/api/admin/projections");
-        Assert.Equal(new[] { "audit", "unread", "agent-activity" }.OrderBy(x => x), status.EnumerateArray().Select(s => s.GetProperty("name").GetString()!).OrderBy(x => x));
+        Assert.Equal(new[] { "audit", "unread", "agent-activity", "search" }.OrderBy(x => x), status.EnumerateArray().Select(s => s.GetProperty("name").GetString()!).OrderBy(x => x));
         var head = Store(app).Head();
         Assert.All(status.EnumerateArray(), s => Assert.Equal(head, s.GetProperty("position").GetInt64()));          // each is at the head of the log
 
