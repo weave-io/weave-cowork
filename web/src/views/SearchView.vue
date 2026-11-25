@@ -173,7 +173,7 @@ const isAgent = (id: number) => memberById(id)?.kind === 'agent'
 .chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .chip.on { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); background: var(--accent-dim); }
 .group-h { margin: 0 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
-.hit { display: grid; gap: 5px; width: 100%; min-width: 0; overflow: hidden; text-align: left; color: var(--text); border: 1px solid var(--border); background: var(--card-bg); border-radius: var(--radius-card); padding: 10px 12px; cursor: pointer; font-size: 13.5px; transition: border-color var(--transition); }
+.hit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; width: 100%; min-width: 0; text-align: left; color: var(--text); border: 1px solid var(--border); background: var(--card-bg); border-radius: var(--radius-card); padding: 10px 12px; cursor: pointer; font-size: 13.5px; transition: border-color var(--transition); }
 .hit + .hit { margin-top: 8px; }
 .hit[data-active=true] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }

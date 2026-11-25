@@ -216,7 +216,7 @@ try {
   const P = await person(browser, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, storageState: await R.ctx.storageState() })
   await P.page.goto(`${BASE}/search?q=${encodeURIComponent('refund rounding')}`)
   await P.page.waitForSelector('[data-testid=search-hit]')
-  expect(await P.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'on a phone the results fit the width')
+  expect(await P.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && ![...document.querySelectorAll('[data-testid=search-hit] *')].some(e => e.getBoundingClientRect().right > innerWidth + 0.5)), 'on a phone the results, and everything in them, fit the width')
   await shot(P.page, '8-phone-light')
   console.log('PHASE 8 LIVE CHECK PASSED')
 } catch (e) {
