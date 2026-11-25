@@ -27,6 +27,7 @@ public sealed class DirectoryProjection : IInlineProjection
             case "PersonRemoved":
                 x.Execute("UPDATE members SET removed=1 WHERE id=@id", new { id = e.Long("memberId") });
                 x.Execute("DELETE FROM channel_members WHERE member_id=@id", new { id = e.Long("memberId") });
+                x.Execute("DELETE FROM project_members WHERE member_id=@id", new { id = e.Long("memberId") });
                 break;
             case "InviteCreated":
                 x.Execute("INSERT INTO invites(id, created_by, created_at, expires_at, max_uses) VALUES (@id,@by,@at,@exp,@max)",
@@ -41,8 +42,11 @@ public sealed class DirectoryProjection : IInlineProjection
 
             // ---- channels ----
             case "ChannelCreated":
-                x.Execute("INSERT INTO channels(id, name, topic, is_private, kind, creator_id, created_at) VALUES (@id,@name,@topic,@p,@kind,@by,@at)",
-                    new { id = e.Long("channelId"), name = e.Str("name"), topic = e.Str("topic") ?? "", p = e.Bool("isPrivate"), kind = e.Str("kind") ?? "text", by = e.Long("creatorId"), at = e.OccurredAt });
+                x.Execute("INSERT INTO channels(id, name, topic, is_private, kind, creator_id, created_at, project_id) VALUES (@id,@name,@topic,@p,@kind,@by,@at,@project)",
+                    new { id = e.Long("channelId"), name = e.Str("name"), topic = e.Str("topic") ?? "", p = e.Bool("isPrivate"), kind = e.Str("kind") ?? "text", by = e.Long("creatorId"), at = e.OccurredAt, project = e.LongOrNull("projectId") });
+                break;
+            case "ChannelMovedToProject":
+                x.Execute("UPDATE channels SET project_id=@project WHERE id=@id", new { project = e.LongOrNull("projectId"), id = e.Long("channelId") });
                 break;
             case "ChannelRenamed":
                 x.Execute("UPDATE channels SET name=@name WHERE id=@id", new { name = e.Str("name"), id = e.Long("channelId") });
@@ -108,6 +112,7 @@ public sealed class DirectoryProjection : IInlineProjection
                 x.Execute("UPDATE members SET removed=1 WHERE id=@id", new { id });
                 x.Execute("UPDATE agents SET runner_host=NULL, code_expires=NULL WHERE member_id=@id", new { id });
                 x.Execute("DELETE FROM channel_members WHERE member_id=@id", new { id });
+                x.Execute("DELETE FROM project_agents WHERE agent_id=@id", new { id });
                 x.Execute("DELETE FROM runner_positions WHERE agent_id=@id", new { id });
                 break;
             }

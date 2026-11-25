@@ -13,7 +13,7 @@ public record SetupBody(string ServerName, string Username, string DisplayName, 
 public record LoginBody(string Username, string Password);
 public record SignupBody(string Username, string DisplayName, string Password);
 public record InviteBody(int? MaxUses, int? ExpiresInDays);
-public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? Kind = null);
+public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? Kind = null, long? ProjectId = null);
 public record PostBody(string Body, long? ThreadId);
 public record AnswerBody(string? OptionId);
 public record RoleBody(string Role);
@@ -154,11 +154,15 @@ public static partial class Api
             var channels = c.Query<ChannelRow>("SELECT * FROM channels ORDER BY name").Where(ch => visible.Contains(ch.Id)).Select(ch => new
             {
                 id = ch.Id, name = ch.Name, kind = ch.Kind, topic = ch.Topic, isPrivate = ch.IsPrivate, creatorId = ch.CreatorId,
-                memberIds = c.Query<long>("SELECT member_id FROM channel_members WHERE channel_id=@id", new { id = ch.Id }).ToList(),
+                memberIds = c.Query<long>("SELECT member_id FROM channel_audience WHERE channel_id=@id ORDER BY member_id", new { id = ch.Id }).ToList(),
+                projectId = ch.ProjectId,
                 canManage = Access.CanManage(c, ch, me),
             }).ToList();
+            var isAdmin = Access.IsAdmin(c, me);
+            var projects = c.Query<ProjectRow>("SELECT * FROM projects ORDER BY name").Where(p => Access.CanSeeProject(c, p.Id, me))
+                .Select(p => new { id = p.Id, name = p.Name, about = p.About, role = Access.ProjectRole(c, p.Id, me), canEdit = Access.CanEditProject(c, p.Id, me) }).ToList();
             var presence = voice.Snapshot().Where(kv => visible.Contains(kv.Key)).ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
-            return Results.Ok(new { position, server = new { name = server }, meId = me, isAdmin = Access.IsAdmin(c, me), members, channels,
+            return Results.Ok(new { position, server = new { name = server }, meId = me, isAdmin, members, channels, projects,
                 voice = new { enabled = vo.Enabled, url = vo.Url }, voicePresence = presence });
         });
 
@@ -202,6 +206,7 @@ public static partial class Api
         MapPeople(authed);
         MapAgents(api, authed);
         MapViews(authed);
+        MapProjects(authed);
     }
 
     const string InviteSql = "SELECT i.id, ic.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.revoked FROM invite_codes ic JOIN invites i ON i.id=ic.invite_id WHERE ic.code=@code";

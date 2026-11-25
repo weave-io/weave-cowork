@@ -15,6 +15,9 @@ public static partial class Api
             if (!ChannelRx.IsMatch(name)) return Err(400, "Channel names are lowercase letters, numbers, - and _.");
             var kind = b.Kind ?? "text";
             if (kind is not ("text" or "voice")) return Err(400, "A channel is text or voice.");
+            if (b.ProjectId is { } pid)
+                using (var c = db.Open())
+                    if (!Access.CanSeeProject(c, pid, me) || Access.ProjectRole(c, pid, me) is null && !Access.IsAdmin(c, me)) return Err(404, "No such project.");
             long id = 0; var taken = false;
             store.Append(d =>
             {
@@ -23,7 +26,7 @@ public static partial class Api
                 id = d.NextId("channels");
                 return new[]
                 {
-                    new NewEvent($"channel-{id}", "ChannelCreated", new { channelId = id, name, topic = (b.Topic ?? "").Trim(), isPrivate = b.IsPrivate == true, kind, creatorId = me }, me),
+                    new NewEvent($"channel-{id}", "ChannelCreated", new { channelId = id, name, topic = (b.Topic ?? "").Trim(), isPrivate = b.IsPrivate == true, kind, creatorId = me, projectId = b.ProjectId }, me),
                     new NewEvent($"channel-{id}", "MemberAdded", new { channelId = id, memberId = me }, me, CausedByIndex: 0),
                 };
             });

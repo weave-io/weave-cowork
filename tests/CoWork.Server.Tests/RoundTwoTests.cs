@@ -99,6 +99,20 @@ public class RoundTwoTests
         (await alex.Http.DeleteAsync($"/api/people/{bob.Id}")).EnsureSuccessStatusCode();
         var gone = await FakeRunner.Enrol(app, alex, "gone");
         (await alex.Http.DeleteAsync($"/api/agents/{gone.AgentId}")).EnsureSuccessStatusCode();
+        // brief 5: a project with people, a workspace, a channel of its own, an agent with its grant, and a channel moved in and out
+        var proj = (await (await alex.Http.PostAsJsonAsync("/api/projects", new { name = "Checkout app", about = "Cart and payment", memberIds = new[] { rosa.Id },
+            workspace = new { kind = "repository", url = "/srv/git/checkout-app.git", branch = "main" }, channels = new[] { new { name = "checkout-proj", kind = "text" }, new { name = "checkout-standup", kind = "voice" } } }))
+            .EnsureSuccessStatusCode().Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+        (await alex.Http.PostAsJsonAsync($"/api/projects/{proj}/workspaces", new { name = "specs", kind = "folder", path = "/srv/specs", host = "build-02" })).EnsureSuccessStatusCode();
+        (await alex.Http.PatchAsJsonAsync($"/api/projects/{proj}", new { about = "Cart, payment and order confirmation" })).EnsureSuccessStatusCode();
+        (await alex.Http.PutAsJsonAsync($"/api/projects/{proj}/agents/{reviewer.AgentId}", new { takesWorkFrom = "members" })).EnsureSuccessStatusCode();
+        (await alex.Http.PutAsJsonAsync($"/api/projects/{proj}/agents/{reviewer.AgentId}", new { takesWorkFrom = "owner" })).EnsureSuccessStatusCode();
+        (await alex.Http.PutAsJsonAsync($"/api/projects/{proj}/members/{rosa.Id}", new { role = "lead" })).EnsureSuccessStatusCode();
+        (await alex.Http.PutAsJsonAsync($"/api/channels/{leads}/project", new { projectId = proj })).EnsureSuccessStatusCode();
+        (await alex.Http.PutAsJsonAsync($"/api/channels/{leads}/project", new { projectId = (long?)null })).EnsureSuccessStatusCode();
+        var projCh = app.Sql().ExecuteScalar<long>("SELECT id FROM channels WHERE name='checkout-proj'");
+        await rosa.Post(projCh, "@reviewer can you look at the cart?");          // owner only: a short reply, no turn
+
         await reviewer.Conn!.StopAsync();
         for (var i = 0; i < 300 && app.Sql().ExecuteScalar<int>("SELECT COUNT(*) FROM events WHERE type='RunnerDisconnected'") == 0; i++) await Task.Delay(50);       // the server noticed: its event is the signal
         return (app, alex, rosa, reviewer, sleeper);
@@ -112,6 +126,7 @@ public class RoundTwoTests
         var head = Store(app).Head();
         var tablesBefore = Dump(app.DbPath); var answersBefore = await Answers(app, alex, rosa);
         Assert.Contains("channels: ", tablesBefore); Assert.Contains("posts: ", tablesBefore); Assert.Contains("[redacted]", tablesBefore);
+        Assert.Contains("projects: ", tablesBefore); Assert.Contains("project_agents: ", tablesBefore); Assert.Contains("workspaces: ", tablesBefore); Assert.Contains("only takes work from Alex", tablesBefore);
 
         // 1. in place: empty every projection table, replay
         Store(app).RebuildProjections();
@@ -130,7 +145,7 @@ public class RoundTwoTests
                 c.Execute("INSERT INTO events SELECT * FROM old.events");
                 c.Execute("DETACH DATABASE old");
             }
-            new SqliteEventStore(fresh, new IInlineProjection[] { new DirectoryProjection(), new ThreadProjection() }).RebuildProjections();
+            new SqliteEventStore(fresh, new IInlineProjection[] { new DirectoryProjection(), new ProjectProjection(), new ThreadProjection() }).RebuildProjections();
             Assert.Equal(tablesBefore, Dump(path));
         }
         finally { foreach (var f in new[] { path, path + "-wal", path + "-shm" }) try { File.Delete(f); } catch { } }
@@ -148,6 +163,8 @@ public class RoundTwoTests
         Assert.Contains("MemberAdded", Types("channel-%")); Assert.Contains("MemberRemoved", Types("channel-%")); Assert.Contains("ChannelDeleted", Types("channel-%"));
         Assert.Contains("MessageRedacted", Types("channel-%")); Assert.Contains("MessageDeleted", Types("channel-%"));
         Assert.Equal(new[] { "AgentCreated", "AgentEdited", "AgentRemoved", "EnrolmentCodeIssued", "RunnerConnected", "RunnerDisconnected", "RunnerEnrolled" }, Types("agent-%"));
+        Assert.Equal(new[] { "AgentAddedToProject", "AgentGrantsChanged", "ProjectCreated", "ProjectMemberAdded", "ProjectUpdated", "WorkspaceAdded" }, Types("project-%"));
+        Assert.Contains("ChannelMovedToProject", Types("channel-%")); Assert.Contains("WorkRefused", Types("thread-%"));
         // the log is safe to export: no password hash, token, enrolment code or invite code is in it
         var secrets = c.Query<string>("SELECT password_hash FROM credentials UNION ALL SELECT token_hash FROM runner_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT code_hash FROM runner_secrets WHERE code_hash IS NOT NULL UNION ALL SELECT code FROM invite_codes").ToList();
         Assert.True(secrets.Count >= 5);

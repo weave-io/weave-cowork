@@ -18,6 +18,7 @@ builder.Services.AddSingleton<Realtime>();
 builder.Services.AddSingleton<VoicePresence>();
 builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
 builder.Services.AddSingleton<IInlineProjection, DirectoryProjection>();        // projections run in this order, inside the transaction that appended the event
+builder.Services.AddSingleton<IInlineProjection, ProjectProjection>();
 builder.Services.AddSingleton<IInlineProjection, ThreadProjection>();
 builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
 builder.Services.AddSingleton<IAsyncProjection, AuditProjection>();          // async projections: after the commit, from a checkpoint, rebuildable from zero

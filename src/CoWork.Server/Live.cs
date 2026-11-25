@@ -46,7 +46,8 @@ public static class Effects
                     if (e.LongOrNull("threadId") is { } root) Thread(root, e.Position);
                     break;
                 case "ThreadStarted": Thread(e.Long("rootId"), e.Position); break;
-                case "MessageDelivered": case "TurnStarted": case "TurnEnded": Thread(t, e.Position); break;
+                case "MessageDelivered": case "TurnStarted": case "TurnEnded": case "ThreadWorkspaceReady": Thread(t, e.Position); break;
+                case "WorkRefused": Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
                 case "ToolCallStarted": case "PermissionRequested":
                     Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
                 case "MessageDeleted":
@@ -105,9 +106,13 @@ public sealed class ThreadViews
                 busy = c.ExecuteScalar<int>("SELECT COUNT(*) FROM open_turns WHERE thread_id=@rootId AND agent_id=@id", new { rootId, id = a.Id }) > 0,
                 queued = c.ExecuteScalar<int>(Deliveries.QueuedIn, new { agentId = a.Id, stream = $"thread-{rootId}" }),
                 harnessCommand = JsonSerializer.Deserialize<string[]>(a.HarnessCommand!), runnerHost = a.RunnerHost, ownerId = a.OwnerId,
+                // where this thread's work happens, as the runner reported it (null until its first turn there)
+                workspace = c.QueryFirstOrDefault<ThreadPlace>("SELECT place, branch, host, sandboxed FROM thread_agents WHERE thread_id=@rootId AND agent_id=@id AND place IS NOT NULL", new { rootId, id = a.Id }),
             }).ToList();
     }
 }
+
+public sealed class ThreadPlace { public string? Place { get; set; } public string? Branch { get; set; } public string? Host { get; set; } public bool Sandboxed { get; set; } }
 
 /// <summary>Turns committed events into the SignalR messages the app listens for, each carrying its position.</summary>
 public sealed class LivePublisher : BackgroundService

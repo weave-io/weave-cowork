@@ -32,6 +32,7 @@ public sealed class AuditProjection : IAsyncProjection
         id is null ? null : x.Scalar<string>("SELECT name FROM audit_names WHERE kind=@kind AND id=@id", new { kind, id });
     private static string Person(ProjectionContext x, long? id) => NameOf(x, "person", id) ?? NameOf(x, "agent", id) ?? "Someone";
     private static string Channel(ProjectionContext x, long? id) => NameOf(x, "channel", id) is { } n ? "#" + n : "a channel";
+    private static string Project(ProjectionContext x, long? id) => NameOf(x, "project", id) ?? "a project";
     private static string AgentName(ProjectionContext x, long? id) => id is null ? "an agent" : NameOf(x, "agent", id) ?? "an agent";
     /// <summary>"reviewer (Alex's agent)": who it answers to, said where an agent does something for someone.</summary>
     private static string Agent(ProjectionContext x, long? id)
@@ -147,7 +148,8 @@ public sealed class AuditProjection : IAsyncProjection
                 var id = e.Long("channelId");
                 x.Execute("INSERT OR REPLACE INTO audit_names(kind, id, name) VALUES ('channel',@id,@name)", new { id, name = e.Str("name") });
                 var what = e.Str("kind") == "voice" ? "voice channel" : "channel";
-                Add(x, e, "event", $"{Actor(x, e)} created the {(e.Bool("isPrivate") ? "private " : "")}{what} {Channel(x, id)}.", id);
+                var inProject = e.LongOrNull("projectId") is { } pid ? $" in {Project(x, pid)}" : "";
+                Add(x, e, "event", $"{Actor(x, e)} created the {(e.Bool("isPrivate") ? "private " : "")}{what} {Channel(x, id)}{inProject}.", id);
                 break;
             }
             case "ChannelRenamed":
@@ -169,6 +171,82 @@ public sealed class AuditProjection : IAsyncProjection
                 var id = e.Long("channelId");
                 if (e.Str("name") is { } n) x.Execute("INSERT OR REPLACE INTO audit_names(kind, id, name) VALUES ('channel',@id,@name)", new { id, name = n });
                 Add(x, e, "event", $"{Actor(x, e)} deleted {Channel(x, id)}.", id);
+                break;
+            }
+
+            case "ChannelMovedToProject":
+            {
+                var id = e.Long("channelId");
+                var s2 = e.LongOrNull("projectId") is { } to ? $"{Actor(x, e)} moved {Channel(x, id)} into {Project(x, to)}." : $"{Actor(x, e)} moved {Channel(x, id)} out of {Project(x, e.LongOrNull("from"))}.";
+                Add(x, e, "event", s2, id);
+                break;
+            }
+
+            // ---- projects ----
+            case "ProjectCreated":
+            {
+                var id = e.Long("projectId");
+                x.Execute("INSERT OR REPLACE INTO audit_names(kind, id, name) VALUES ('project',@id,@name)", new { id, name = e.Str("name") });
+                Add(x, e, "event", $"{Actor(x, e)} created the project {Project(x, id)}.");
+                break;
+            }
+            case "ProjectUpdated":
+            {
+                var id = e.Long("projectId"); var was = Project(x, id);
+                if (e.Str("name") is { } n) { x.Execute("UPDATE audit_names SET name=@n WHERE kind='project' AND id=@id", new { id, n }); Add(x, e, "event", $"{Actor(x, e)} renamed the project {was} to {Project(x, id)}."); }
+                else Add(x, e, "event", $"{Actor(x, e)} changed what {was} is about.");
+                break;
+            }
+            case "ProjectMemberAdded":
+            {
+                var m = e.Long("memberId"); var role = e.Str("role") == "lead" ? "a lead" : "a member";
+                Add(x, e, "event", m == e.ActorId ? $"{Person(x, m)} is {role} of {Project(x, e.Long("projectId"))}." : $"{Actor(x, e)} added {Person(x, m)} to {Project(x, e.Long("projectId"))} as {role}.", null, null, m);
+                break;
+            }
+            case "ProjectMemberRemoved":
+            {
+                var m = e.Long("memberId");
+                Add(x, e, "event", m == e.ActorId ? $"{Person(x, m)} left {Project(x, e.Long("projectId"))}." : $"{Actor(x, e)} removed {Person(x, m)} from {Project(x, e.Long("projectId"))}.", null, null, m);
+                break;
+            }
+            case "WorkspaceAdded":
+            {
+                var what = e.Str("kind") == "folder" ? $"the folder `{Code(e.Str("path"))}` on {e.Str("host")}" : $"the repository `{Code(e.Str("url"))}` (branch {e.Str("branch")})";
+                Add(x, e, "event", $"{Actor(x, e)} added {what} to {Project(x, e.Long("projectId"))} as {e.Str("name")}.");
+                break;
+            }
+            case "WorkspaceRemoved": Add(x, e, "event", $"{Actor(x, e)} removed the workspace {e.Str("name") ?? "it had"} from {Project(x, e.Long("projectId"))}."); break;
+            case "AgentAddedToProject": case "AgentGrantsChanged":
+            {
+                var ag = e.Long("agentId"); var p = Project(x, e.Long("projectId"));
+                var owner = x.Scalar<long?>("SELECT owner_id FROM audit_names WHERE kind='agent' AND id=@a", new { a = ag });
+                var from = e.Str("takesWorkFrom") == "owner" ? $"{Person(x, owner)} only" : $"the members of {p}";
+                Add(x, e, "event", e.Type == "AgentAddedToProject" ? $"{Actor(x, e)} added {Agent(x, ag)} to {p}. It takes work from {from}." : $"{Actor(x, e)} set {Agent(x, ag)} to take work from {from} in {p}.",
+                    null, null, ag, owner);
+                break;
+            }
+            case "AgentRemovedFromProject": Add(x, e, "event", $"{Actor(x, e)} took {Agent(x, e.Long("agentId"))} out of {Project(x, e.Long("projectId"))}.", null, null, e.Long("agentId")); break;
+            case "WorkRefused":
+            {
+                var ag = e.Long("agentId"); var ch = e.Long("channelId");
+                var owner = x.Scalar<long?>("SELECT owner_id FROM audit_names WHERE kind='agent' AND id=@a", new { a = ag });
+                var why = e.Str("grant") == "owner" ? $"it takes work from {Person(x, owner)} only" : $"it takes work from the members of {Project(x, e.LongOrNull("projectId"))} only";
+                var who = e.OnBehalfOf is null ? "Someone" : Person(x, e.OnBehalfOf);
+                Add(x, e, "event", $"{who} asked {Agent(x, ag)} for work in {Channel(x, ch)}. It didn't take it: {why}.", ch, thread, ag, owner);
+                break;
+            }
+            case "ThreadWorkspaceReady":
+            {
+                var ag = e.Long("agentId");
+                var channel = x.Scalar<long?>("SELECT channel_id FROM audit_threads WHERE thread_id=@thread", new { thread });
+                var where = e.Str("place") switch
+                {
+                    "worktree" => $"in its own worktree on `{Code(e.Str("branch"))}`",
+                    "folder" => $"in the folder `{Code(e.Str("location"))}`",
+                    "scratch" => "in an empty folder of its own",
+                    _ => "in its own workspace folder",
+                };
+                Add(x, e, "event", $"{Agent(x, ag)} works on a thread in {Channel(x, channel)} {where}{On(e.Str("host"))}, {(e.Bool("sandboxed") ? "sandboxed" : "unsandboxed")}.", channel, thread, ag);
                 break;
             }
 

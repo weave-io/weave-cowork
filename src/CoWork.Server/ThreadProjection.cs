@@ -24,11 +24,21 @@ public sealed class ThreadProjection : IInlineProjection
                 break;
             }
             case "ThreadStarted":
-                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by, agent_chain) VALUES (@r,@ch,@by,@chain)",
-                    new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy"), chain = e.LongOrNull("agentChain") ?? 0 });      // agentChain: only an imported thread starts with a count
+                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by, agent_chain, slug) VALUES (@r,@ch,@by,@chain,@slug)",
+                    new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy"), chain = e.LongOrNull("agentChain") ?? 0, slug = e.Str("slug") });      // agentChain: only an imported thread starts with a count
                 break;
             case "AgentJoinedThread":
-                x.Execute("INSERT OR IGNORE INTO thread_agents VALUES (@t,@a)", new { t = ThreadOf(e), a = e.Long("agentId") });
+                x.Execute("INSERT OR IGNORE INTO thread_agents(thread_id, agent_id) VALUES (@t,@a)", new { t = ThreadOf(e), a = e.Long("agentId") });
+                break;
+            case "ThreadWorkspaceReady":
+                // what the agent's runner made for this thread: a worktree on its own branch, a folder, a scratch folder or the agent's own folder
+                x.Execute(@"UPDATE thread_agents SET workspace_id=@ws, place=@place, branch=@branch, location=@loc, host=@host, sandboxed=@sb WHERE thread_id=@t AND agent_id=@a",
+                    new { ws = e.LongOrNull("workspaceId"), place = e.Str("place"), branch = e.Str("branch"), loc = e.Str("location"), host = e.Str("host"), sb = e.Bool("sandboxed") ? 1 : 0, t = ThreadOf(e), a = e.Long("agentId") });
+                break;
+            case "WorkRefused":
+                // the agent's grant doesn't let this person give it work: a short reply in the thread instead of a turn
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@a,@body,'notice',@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), body = e.Str("reply"), at = e.OccurredAt, pos = e.Position });
                 break;
             case "MessageDelivered":
                 // queued work is this event itself: it stays queued until a turn starts for it (see Deliveries)

@@ -32,6 +32,7 @@ public class ChannelRow
     public string Kind { get; set; } = "text";
     public long CreatorId { get; set; }
     public long CreatedAt { get; set; }
+    public long? ProjectId { get; set; }
 }
 
 public class PostRow

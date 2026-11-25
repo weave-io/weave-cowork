@@ -56,6 +56,26 @@ public sealed class Dispatcher
         $"<cowork-message from=\"@{Esc(handle)}\" name=\"{Esc(name)}\" owner=\"{(owner ? "true" : "false")}\" channel=\"#{Esc(channel)}\" thread=\"{threadId}\">{text.Replace("</cowork-message", "&lt;/cowork-message")}</cowork-message>";
     private static string Esc(string s) => s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 
+    /// <summary>Why an agent won't take work from this person in this channel, or null if it will. Only a channel in a project has a grant:
+    /// "owner" (its owner only) or "members" (the project's members, and its owner). Returns the grant that refused.</summary>
+    private static string? Refusal(IDecisionContext ctx, ChannelRow channel, MemberRow agent, long? personId)
+    {
+        if (channel.ProjectId is not { } project) return null;
+        var grant = ctx.Scalar<string>("SELECT takes_work_from FROM project_agents WHERE project_id=@project AND agent_id=@a", new { project, a = agent.Id });
+        if (grant is null || personId == agent.OwnerId) return null;          // not in the project (added to the channel by hand): as before
+        if (grant == "owner") return "owner";
+        return ctx.Scalar<int>("SELECT COUNT(*) FROM project_members WHERE project_id=@project AND member_id=@personId", new { project, personId }) > 0 ? null : "members";
+    }
+
+    private static string RefusalReply(IDecisionContext ctx, ChannelRow channel, MemberRow agent, long? personId)
+    {
+        var owner = ctx.Scalar<string>("SELECT display_name FROM members WHERE id=@o", new { o = agent.OwnerId }) ?? "its owner";
+        var project = ctx.Scalar<string>("SELECT name FROM projects WHERE id=@p", new { p = channel.ProjectId }) ?? "this project";
+        return Refusal(ctx, channel, agent, personId) == "owner"
+            ? $"{agent.Handle} only takes work from {owner}."
+            : $"{agent.Handle} only takes work from members of {project}.";
+    }
+
     // ---- people → agents ---------------------------------------------------
 
     /// <summary>A person posts. One transaction records the post and, if agents should hear it, the thread, who joined and what was delivered to each.
@@ -75,32 +95,45 @@ public sealed class Dispatcher
                 postId = ctx.NextId("posts");
                 var mentions = Mentions(body).ToArray();
                 var mentioned = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND rs.token_hash IS NOT NULL
-                    AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { channelId })
+                    AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != author.Id && mentions.Contains(a.Handle.ToLowerInvariant())).ToList();
                 var posted = new { postId, channelId, threadId, body = body, mentions };
+                // the agent's grant in the channel's project says who may give it work; a mention from anyone else gets a short reply instead
+                var refused = mentioned.Where(a => Refusal(ctx, channel, a, authorId) is not null).ToList();
+                mentioned = mentioned.Except(refused).ToList();
                 long root;
                 int causeIdx;
                 if (threadId is null)
                 {
                     evs.Add(new NewEvent($"channel-{channelId}", "MessagePosted", posted, authorId));
-                    if (mentioned.Count == 0) return evs;
+                    if (mentioned.Count == 0 && refused.Count == 0) return evs;
                     root = postId; causeIdx = 0;
-                    evs.Add(new NewEvent($"thread-{root}", "ThreadStarted", new { rootId = root, channelId, startedBy = authorId }, null, authorId, CausedByIndex: 0));
+                    evs.Add(new NewEvent($"thread-{root}", "ThreadStarted", new { rootId = root, channelId, startedBy = authorId, slug = Projects.Slug(body, root) }, null, authorId, CausedByIndex: 0));
                 }
                 else
                 {
                     root = threadId.Value;
                     if (ctx.Scalar<int>("SELECT COUNT(*) FROM threads WHERE root_id=@root", new { root }) == 0)
-                        evs.Add(new NewEvent($"thread-{root}", "ThreadStarted", new { rootId = root, channelId, startedBy = authorId }, null, authorId));
+                    {
+                        var rootBody = ctx.Scalar<string>("SELECT body FROM posts WHERE id=@root", new { root }) ?? "";
+                        evs.Add(new NewEvent($"thread-{root}", "ThreadStarted", new { rootId = root, channelId, startedBy = authorId, slug = Projects.Slug(rootBody, root) }, null, authorId));
+                    }
                     causeIdx = evs.Count;
                     evs.Add(new NewEvent($"thread-{root}", "MessagePosted", posted, authorId));
                 }
 
+                foreach (var a in refused)
+                    evs.Add(new NewEvent($"thread-{root}", "WorkRefused", new
+                    {
+                        agentId = a.Id, ownerId = a.OwnerId, channelId, projectId = channel.ProjectId, postId = ctx.NextId("posts"), askedIn = postId,
+                        grant = Refusal(ctx, channel, a, authorId), reply = RefusalReply(ctx, channel, a, authorId),
+                    }, a.Id, authorId, CausedByIndex: causeIdx));
+
                 var targets = new Dictionary<long, MemberRow>();
                 if (threadId is not null)
                     foreach (var a in ctx.Query<MemberRow>(Q.MemberSelect + @" JOIN thread_agents ta ON ta.agent_id = m.id AND ta.thread_id=@root
-                        WHERE m.removed=0 AND rs.token_hash IS NOT NULL AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { root, channelId }))
-                        targets[a.Id] = a;
+                        WHERE m.removed=0 AND rs.token_hash IS NOT NULL AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { root, channelId }))
+                        if (Refusal(ctx, channel, a, authorId) is null) targets[a.Id] = a;      // a reply from someone the grant doesn't allow isn't passed on (only a mention gets the short reply)
                 foreach (var a in mentioned) targets[a.Id] = a;
                 targets.Remove(author.Id);
 
@@ -148,8 +181,9 @@ public sealed class Dispatcher
                     if (!seen.Add(r.ThreadId) || busy.Contains(r.ThreadId)) continue;
                     var turn = r.Turn ?? NewTurn();
                     evs.Add(new NewEvent($"thread-{r.ThreadId}", "TurnStarted", new { agentId, deliveryId = r.Position, host = agent.RunnerHost }, agentId, r.Behalf, turn, r.Position));
+                    var (project, where) = WorkspaceOf(ctx, r.ThreadId, agent);
                     sends.Add((r, turn, new DeliverMessage(r.Position, r.ThreadId, agentId, agent.Handle, agent.Instructions ?? "",
-                        JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace!, r.Text, record)));
+                        JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace!, r.Text, record, project, where)));
                 }
                 return evs;
             });
@@ -168,6 +202,21 @@ public sealed class Dispatcher
             }
         }
         finally { _lock.Release(); }
+    }
+
+    /// <summary>Where a thread works: outside a project, the agent's own folder (null, null); inside one, the project's first workspace this agent
+    /// can reach (a repository anywhere, a folder only on its own machine), or none, with the thread's own branch.</summary>
+    private static (long? Project, ThreadWorkspace? Where) WorkspaceOf(IDecisionContext ctx, long threadId, MemberRow agent)
+    {
+        var t = ctx.Query<(long ChannelId, string? Slug)>("SELECT channel_id, slug FROM threads WHERE root_id=@threadId", new { threadId }).FirstOrDefault();
+        var project = ctx.Scalar<long?>("SELECT project_id FROM channels WHERE id=@ch", new { ch = t.ChannelId });
+        if (project is null) return (null, null);
+        var slug = t.Slug ?? Projects.Slug(ctx.Scalar<string>("SELECT body FROM posts WHERE id=@threadId", new { threadId }) ?? "", threadId);
+        var ws = Projects.WorkspaceFor(ctx.Query<WorkspaceRow>("SELECT * FROM workspaces WHERE project_id=@project ORDER BY id", new { project }), agent.RunnerHost);
+        var branch = Projects.Branch(slug);
+        return (project, ws is null
+            ? new ThreadWorkspace(null, "none", "none", null, null, null, branch)
+            : new ThreadWorkspace(ws.Id, ws.Name, ws.Kind, ws.Url, ws.Branch, ws.Path, branch));
     }
 
     public async Task RunnerConnected(long agentId, string conn, string? host)
@@ -376,6 +425,15 @@ public sealed class Dispatcher
                     }
                 }
                 break;
+            case StreamKinds.Workspace:
+                // the runner says where it prepared the thread's work: a worktree on its own branch, a folder, a scratch folder or the agent's own folder
+                lock (st.Gate)
+                {
+                    string? host;
+                    using (var c = _db.Open()) host = c.ExecuteScalar<string?>("SELECT runner_host FROM agents WHERE member_id=@agentId", new { agentId });
+                    _store.Append(new[] { Ev(st, "ThreadWorkspaceReady", new { agentId, workspaceId = e.WorkspaceId, place = e.Status, branch = e.Title, location = e.Text, host, sandboxed = false }) });
+                }
+                break;
             case StreamKinds.Error:
                 lock (st.Gate)
                 {
@@ -444,12 +502,18 @@ public sealed class Dispatcher
                 var lastPost = ctx.Scalar<long?>("SELECT MAX(id) FROM posts WHERE thread_id=@threadId AND author_id=@agentId AND kind='text' AND deleted=0", new { threadId, agentId }) ?? 0;
                 var wanted = Mentions(said).ToHashSet();
                 var targets = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND rs.token_hash IS NOT NULL
-                    AND m.id IN (SELECT member_id FROM channel_members WHERE channel_id=@channelId)", new { channelId })
+                    AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != agentId && wanted.Contains(a.Handle.ToLowerInvariant()));
                 var chain = ctx.Scalar<int>("SELECT agent_chain FROM threads WHERE root_id=@threadId", new { threadId });
                 foreach (var a in targets)
                 {
                     if (chain >= 3) break;      // AGENTS.md rule 6: limit loops
+                    if (Refusal(ctx, channel, a, behalf) is { } grant)      // an agent asking for someone: the grant is checked against that person
+                    {
+                        evs.Add(new NewEvent($"thread-{threadId}", "WorkRefused", new { agentId = a.Id, ownerId = a.OwnerId, channelId, projectId = channel.ProjectId, postId = ctx.NextId("posts"), askedIn = lastPost,
+                            grant, reply = RefusalReply(ctx, channel, a, behalf), askedBy = agentId }, a.Id, behalf, Causation: cause));
+                        continue;
+                    }
                     chain++;
                     var turn = NewTurn();
                     if (ctx.Scalar<int>("SELECT COUNT(*) FROM thread_agents WHERE thread_id=@threadId AND agent_id=@a", new { threadId, a = a.Id }) == 0)
@@ -494,8 +558,7 @@ public sealed class Dispatcher
             var meta = System.Text.Json.Nodes.JsonNode.Parse(p.Meta)!.AsObject();
             if ((long)meta["ownerId"]! != callerId) { error = "forbidden"; return Array.Empty<NewEvent>(); }
             if ((string?)meta["status"] != "pending") { error = "already answered"; return Array.Empty<NewEvent>(); }
-            var canSee = ctx.Scalar<int>(@"SELECT COUNT(*) FROM channels ch WHERE ch.id=@ch AND (ch.is_private=0 OR ch.id IN (SELECT channel_id FROM channel_members WHERE member_id=@callerId))
-                AND EXISTS (SELECT 1 FROM people pe JOIN members m ON m.id=pe.member_id WHERE pe.member_id=@callerId AND m.removed=0)", new { ch = p.ChannelId, callerId });
+            var canSee = ctx.Scalar<int>("SELECT COUNT(*) FROM channels ch WHERE ch.id=@ch AND " + Access.SeesChannel, new { ch = p.ChannelId, m = callerId });
             if (canSee == 0) { error = "forbidden"; return Array.Empty<NewEvent>(); }
             agentId = (long)meta["agentId"]!; requestId = (string)meta["requestId"]!;
             var req = ctx.Query<(long Position, string? Correlation, long? Behalf)>(
