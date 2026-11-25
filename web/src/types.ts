@@ -23,7 +23,7 @@ export interface Boundary {
 }
 export interface Post {
   id: number; channelId: number; threadId: number | null; authorId: number; body: string
-  kind: 'text' | 'tool' | 'ask' | 'notice' | 'sandbox' | 'outcome'; meta: any; streaming: boolean; createdAt: number
+  kind: 'text' | 'tool' | 'ask' | 'notice' | 'sandbox' | 'outcome' | 'artifact'; meta: any; streaming: boolean; createdAt: number
   replyCount: number; hasThread: boolean; threadAgents?: string[] | null
   /** a thread's root: where its work stands */
   threadStatus?: ThreadStatus | null

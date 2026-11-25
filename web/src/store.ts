@@ -4,6 +4,7 @@ import { get, post, ApiError } from './api'
 import { applyEvent } from './reducer'
 import type { Channel, ChannelThreads, FeedState, Member, Post, Project, ThreadState, ThreadSummary } from './types'
 import { loadFolded, patchSummary, toggleFolded } from './threads'
+import { artifactPostArrived } from './artifacts'
 
 export const store = reactive({
   phase: 'loading' as 'loading' | 'setup' | 'signin' | 'app',
@@ -168,6 +169,10 @@ function applyLive(evt: string, p: any) {
   if (typeof p?.at === 'number' && p.at > store.position) store.position = p.at
   applyEvent(store.feed, evt, p)
   if (evt === 'thread-updated') threadChanged(p)
+  // an artifact's card: a new version reaches whoever shows it, and the canvas opens by itself for whoever started the thread
+  const open = store.feed.thread
+  if ((evt === 'post-created' || evt === 'post-updated') && p?.kind === 'artifact')
+    artifactPostArrived(p as Post, evt === 'post-created', store.meId, open && open.rootId === p.threadId ? open.startedBy : null)
 }
 
 /** After a reconnect: ask for everything after the last position seen, and apply it as if it had arrived live. */

@@ -13,6 +13,8 @@ import MemberAvatar from './MemberAvatar.vue'
 import AgentBadge from './AgentBadge.vue'
 import SandboxCard from './SandboxCard.vue'
 import OutcomeCard from './OutcomeCard.vue'
+import ArtifactCard from './artifacts/ArtifactCard.vue'
+import QuoteLine from './artifacts/QuoteLine.vue'
 import ThreadStatusPill from './ThreadStatusPill.vue'
 
 const props = defineProps<{ post: Post; inThread?: boolean }>()
@@ -80,6 +82,8 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
 
   <OutcomeCard v-else-if="post.kind === 'outcome'" :post="post" />
 
+  <ArtifactCard v-else-if="post.kind === 'artifact'" :post="post" />
+
   <div v-else-if="post.kind === 'notice'" class="my-1 ml-[44px] text-[12.5px] text-muted italic" data-testid="notice" :data-budget="meta.budget ? meta.scope : undefined">{{ author?.displayName }}: {{ post.body }}
     <Button v-if="canRaise" size="sm" variant="outline" class="ml-1.5 h-6 px-2 text-xs not-italic" data-testid="raise-cap" @click="raise">Raise this thread's cap</Button></div>
 
@@ -91,6 +95,7 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
         <AgentBadge v-if="author?.kind === 'agent'" />
         <span class="text-xs text-muted">{{ time }}</span>
       </div>
+      <QuoteLine v-if="meta.quote" :post="post" />
       <div class="body" :class="{ streaming: post.streaming }" v-html="html" />
       <button v-if="!inThread && (post.hasThread || post.replyCount > 0)"
         class="mt-1.5 flex w-full max-w-[560px] cursor-pointer items-center gap-2 rounded-card border border-border bg-card-bg px-3 py-2 text-left transition-colors hover:border-accent" data-testid="thread-card"

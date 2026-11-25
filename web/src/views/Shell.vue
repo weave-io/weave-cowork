@@ -36,12 +36,16 @@ import AddAgentToProject from '../components/modals/AddAgentToProject.vue'
 import ProjectSettings from './ProjectSettings.vue'
 import WhereAgentsRun from '../components/modals/WhereAgentsRun.vue'
 import ServerSettings from '../components/modals/ServerSettings.vue'
+import ArtifactPage from '../components/artifacts/ArtifactPage.vue'
+import { canvasOpenFor } from '../artifacts'
 
 const route = useRoute(), router = useRouter()
 // /c/:id the channel, /c/:id/t/:root a thread's quick look beside it, /c/:id/threads All threads, /c/:id/threads/:root a thread's full view
 const ids = computed(() => parseChannelPath(route.path))
 const view = computed(() => ids.value.view)
 const projectPage = computed(() => { const m = /^\/p\/(\d+)/.exec(route.path); return m ? Number(m[1]) : null })
+// /artifacts/:id: an artifact on its own page ("Open full view" in the canvas)
+const artifactPage = computed(() => { const m = /^\/artifacts\/(\d+)\/?$/.exec(route.path); return m ? Number(m[1]) : null })
 const scroller = ref<HTMLElement | null>(null)
 const searching = computed(() => route.path === '/search')
 
@@ -83,6 +87,7 @@ watch([ids, () => store.channels.length], async () => {
   if (!ok) {
     const first = store.channels.find(c => c.name === 'general') ?? store.channels[0]
     if (projectPage.value != null) { await openChannel(null); return }          // a project's settings page: no channel open
+    if (artifactPage.value != null) return                                       // an artifact's own page keeps whatever was open
     if (first && (want != null || route.path === '/' || route.path === '')) router.replace(`/c/${first.id}`)
     else if (!first) await openChannel(null)
     return
@@ -134,6 +139,7 @@ async function send(text: string) {
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-panel-bg" :class="isPhone ? '' : 'rounded-panel border border-border shadow-(--sheet-shadow)'">
         <SearchView v-if="searching" />
         <ProjectSettings v-else-if="projectPage != null" :key="projectPage" :project-id="projectPage" class="min-h-0 min-w-0 flex-1" />
+        <ArtifactPage v-else-if="artifactPage != null" :id="artifactPage" />
         <template v-else>
         <ThreadsView v-if="view === 'threads' && currentChannel" :key="'threads' + currentChannel.id" :channel-id="currentChannel.id" />
         <ThreadView v-else-if="view === 'full' && currentChannel" />
@@ -163,7 +169,7 @@ async function send(text: string) {
         </main>
 
         <ThreadPanel v-if="view === 'panel' && store.feed.thread" class="border-l border-border" :class="isPhone ? 'w-full' : 'w-[400px] shrink-0'" @close="closeT" />
-        <MemberList v-if="!isPhone && (view !== 'panel' || !store.feed.thread || isWide)" class="shrink-0 border-l border-border" :class="view === 'panel' && store.feed.thread ? 'w-[220px]' : 'w-[244px]'" />
+        <MemberList v-if="!isPhone && (view !== 'panel' || !store.feed.thread || isWide) && !(view === 'full' && canvasOpenFor(ids.thread))" class="shrink-0 border-l border-border" :class="view === 'panel' && store.feed.thread ? 'w-[220px]' : 'w-[244px]'" />
         </template>
       </div>
 

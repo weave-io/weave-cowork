@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { store } from '../store'
 import { post } from '../api'
@@ -11,6 +11,7 @@ import SessionLines from './threads/SessionLines.vue'
 import ThreadConversation from './threads/ThreadConversation.vue'
 import { threadPath } from '../threads'
 import ThreadTitle from './threads/ThreadTitle.vue'
+import { canvas } from '../artifacts'
 
 // A thread's quick look beside the channel (from a post's "N replies"); "Open full view" gives it the main area.
 const emit = defineEmits<{ close: [] }>()
@@ -18,6 +19,14 @@ const router = useRouter()
 const t = computed(() => store.feed.thread)
 const channelName = computed(() => store.channels.find(c => c.id === store.feed.channelId)?.name)
 const full = () => { if (t.value && store.feed.channelId != null) router.push(threadPath(store.feed.channelId, t.value.rootId)) }
+// the canvas opens by itself for whoever started the thread: from the quick look, that means the full view, with the artifact in the canvas
+watch(() => t.value?.rootId ?? null, id => { canvas.panel = id }, { immediate: true })
+onBeforeUnmount(() => { canvas.panel = null })
+watch(() => canvas.request, req => {
+  if (!req || store.feed.channelId == null || req.threadId !== t.value?.rootId) return
+  canvas.request = null
+  router.push({ path: threadPath(store.feed.channelId, req.threadId), query: { a: String(req.id) } })
+})
 async function send(text: string) {
   if (!t.value) return
   await post(`/channels/${store.feed.channelId}/posts`, { body: text, threadId: t.value.rootId })
