@@ -23,11 +23,14 @@ export interface Boundary {
 }
 export interface Post {
   id: number; channelId: number; threadId: number | null; authorId: number; body: string
-  kind: 'text' | 'tool' | 'ask' | 'notice' | 'sandbox'; meta: any; streaming: boolean; createdAt: number
+  kind: 'text' | 'tool' | 'ask' | 'notice' | 'sandbox' | 'outcome'; meta: any; streaming: boolean; createdAt: number
   replyCount: number; hasThread: boolean; threadAgents?: string[] | null
+  /** a thread's root: where its work stands */
+  threadStatus?: ThreadStatus | null
   /** the position of the last event that changed this post: of two copies, the higher one is newer */
   position?: number
 }
+export interface ThreadStatus { state: 'starting' | 'working' | 'waiting' | 'done'; waitingForId: number | null; waitingFor: string | null; outcome: string | null; outcomePostId: number | null }
 export interface ThreadAgent {
   id: number; handle: string; displayName: string; online: boolean; busy: boolean; queued: number
   harnessCommand: string[]; runnerHost: string | null; ownerId: number

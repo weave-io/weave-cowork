@@ -12,6 +12,8 @@ import { Spinner } from '@/components/ui/spinner'
 import MemberAvatar from './MemberAvatar.vue'
 import AgentBadge from './AgentBadge.vue'
 import SandboxCard from './SandboxCard.vue'
+import OutcomeCard from './OutcomeCard.vue'
+import ThreadStatusPill from './ThreadStatusPill.vue'
 
 const props = defineProps<{ post: Post; inThread?: boolean }>()
 const emit = defineEmits<{ 'open-thread': [id: number] }>()
@@ -48,7 +50,7 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
   </details>
   <div v-else-if="post.kind === 'tool'" class="my-0.5 ml-[44px] flex max-w-[560px] items-center gap-2 rounded-card border border-border bg-card-bg px-2.5 py-1 text-[12.5px]" data-testid="tool-row">
     <component :is="toolIcon" :size="13" class="shrink-0 text-muted" aria-hidden="true" />
-    <span v-if="(meta.toolKind || 'tool') !== post.body.toLowerCase()" class="font-mono text-[11.5px] text-muted">{{ meta.toolKind || 'tool' }}</span>
+    <span v-if="(meta.toolKind || 'tool') !== post.body.toLowerCase()" class="font-mono text-[11.5px] text-muted">{{ !meta.toolKind || meta.toolKind === 'other' ? 'tool' : meta.toolKind }}</span>
     <span class="min-w-0 truncate font-mono text-[12px]">{{ post.body }}</span>
     <span class="ml-auto flex shrink-0 items-center gap-1 text-[12px]" :class="meta.status === 'failed' ? 'text-error-text' : meta.status === 'completed' ? 'text-running-text' : 'text-muted'">
       <Check v-if="meta.status === 'completed'" :size="13" aria-label="Done" />
@@ -76,6 +78,8 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
 
   <SandboxCard v-else-if="post.kind === 'sandbox'" :post="post" />
 
+  <OutcomeCard v-else-if="post.kind === 'outcome'" :post="post" />
+
   <div v-else-if="post.kind === 'notice'" class="my-1 ml-[44px] text-[12.5px] text-muted italic" data-testid="notice" :data-budget="meta.budget ? meta.scope : undefined">{{ author?.displayName }}: {{ post.body }}
     <Button v-if="canRaise" size="sm" variant="outline" class="ml-1.5 h-6 px-2 text-xs not-italic" data-testid="raise-cap" @click="raise">Raise this thread's cap</Button></div>
 
@@ -92,8 +96,10 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
         class="mt-1.5 flex w-full max-w-[560px] cursor-pointer items-center gap-2 rounded-card border border-border bg-card-bg px-3 py-2 text-left transition-colors hover:border-accent" data-testid="thread-card"
         @click="emit('open-thread', post.id)">
         <MessageSquare :size="14" class="shrink-0 text-accent-text" aria-hidden="true" />
-        <span class="text-[13px] font-semibold text-accent-text">{{ post.replyCount === 1 ? '1 reply' : `${post.replyCount} replies` }}</span>
+        <span class="shrink-0 text-[13px] font-semibold whitespace-nowrap text-accent-text">{{ post.replyCount === 1 ? '1 reply' : `${post.replyCount} replies` }}</span>
         <span v-for="h in post.threadAgents ?? []" :key="h" class="rounded-[5px] bg-accent-dim px-1.5 font-mono text-[11.5px] text-accent-text">@{{ h }}</span>
+        <ThreadStatusPill :status="post.threadStatus" />
+        <span v-if="post.threadStatus?.state === 'done' && post.threadStatus.outcome" class="min-w-0 truncate text-xs text-muted" data-testid="thread-outcome">{{ post.threadStatus.outcome }}</span>
       </button>
       <Button v-if="!inThread && !post.hasThread && post.replyCount === 0" variant="outline" size="sm" class="absolute top-1 right-2 hidden h-7 gap-1 px-2 text-[12px] group-hover:inline-flex focus-visible:inline-flex" @click="emit('open-thread', post.id)"><MessageSquare :size="12" aria-hidden="true" />Reply in thread</Button>
     </div>

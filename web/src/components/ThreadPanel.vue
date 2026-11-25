@@ -8,6 +8,7 @@ import StatusDot from './StatusDot.vue'
 import PostItem from './PostItem.vue'
 import Composer from './Composer.vue'
 import type { ThreadAgent } from '../types'
+import ThreadStatusPill from './ThreadStatusPill.vue'
 
 const emit = defineEmits<{ close: [] }>()
 const t = computed(() => store.feed.thread)
@@ -43,7 +44,7 @@ function dot(a: ThreadAgent) {
 function status(a: ThreadAgent) {
   if (a.pausedBy) return `paused by ${a.pausedBy}`
   if (a.placement === 'pool' && !a.online)
-    return ({ waiting: 'waiting for room', starting: 'starting…', resuming: 'resuming…', suspending: 'stopping…', suspended: 'stopped, volume kept', failed: "couldn't start", deleted: 'deleted' } as Record<string, string>)[a.sandbox?.state ?? ''] ?? 'starting…'
+    return ({ waiting: 'waiting for room', starting: 'starting…', resuming: 'resuming…', suspending: 'stopping…', suspended: 'stopped, volume kept', failed: "couldn't start", deleting: 'deleting its volume', kept: 'stopped, volume kept', deleted: 'done, volume deleted' } as Record<string, string>)[a.sandbox?.state ?? ''] ?? 'starting…'
   if (!isOnline(a)) return a.queued > 0 ? 'waiting for the runner' : 'offline'
   if (a.busy) return 'working…'
   return a.queued > 0 ? 'queued' : 'idle'
@@ -59,6 +60,7 @@ async function send(text: string) {
       <div class="flex items-center gap-2">
         <h2 class="m-0 text-[15px] font-semibold">Thread</h2>
         <span class="flex items-center gap-0.5 text-[13px] text-muted">in <Hash :size="12" aria-hidden="true" class="ml-0.5" />{{ channelName }}</span>
+        <ThreadStatusPill :status="t.root.threadStatus" class="ml-1" />
         <Button variant="toolbar-icon" size="toolbar" class="ml-auto" aria-label="Close thread" @click="emit('close')"><X :size="16" /></Button>
       </div>
       <div v-for="a in t.agents" :key="a.id" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted" data-testid="session-line">

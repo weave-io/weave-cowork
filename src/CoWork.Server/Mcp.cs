@@ -193,7 +193,8 @@ public sealed class Mcp
         if (outcomes.Count > 0) { sb.AppendLine("Outcomes:"); foreach (var o in outcomes) sb.AppendLine($"- {Clean((string?)o!["title"])} (thread {o["threadId"]} in #{o["channelName"]}): {Clean((string?)o["snippet"])}"); }
         if (threads.Count > 0) { sb.AppendLine("Threads:"); foreach (var t in threads) sb.AppendLine($"- thread {t!["rootId"]} in #{t["channelName"]}: {Clean((string?)t["title"])}{(t["match"] is JsonObject mm ? " … " + Clean((string?)mm["snippet"]) : "")}"); }
         if (messages.Count > 0) { sb.AppendLine("Messages:"); foreach (var m in messages) sb.AppendLine($"- #{m!["channelName"]}{(m["threadId"] is JsonValue tv ? $" (thread {tv})" : "")}: {Clean((string?)m["snippet"])}"); }
-        return (sb.ToString().TrimEnd(), false, new { query, found = outcomes.Count + threads.Count + messages.Count });
+        var channels = outcomes.Concat(threads).Concat(messages).Select(x => (string?)x!["channelName"]).Distinct().ToArray();
+        return (sb.ToString().TrimEnd(), false, new { query, found = outcomes.Count + threads.Count + messages.Count, channels });
     }
 
     /// <summary>The thread is done: an outcome with what was found or done, how long it took, what it used and what became of its branch.</summary>

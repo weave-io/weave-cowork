@@ -17,3 +17,9 @@ pre code { background: none; padding: 0; }
 mark { background: color-mix(in srgb, var(--idle) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 /* a post opened from search: it is scrolled into view and lit for a moment */
 [data-post].post-flash { background: var(--accent-dim); transition: background 1.2s ease; }
+/* a thread's status (starting, working, waiting for someone, done): on its post, in the thread and in search */
+.status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border-radius: 999px; font-size: 11.5px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+.status-pill.starting { color: var(--queued-text); background: color-mix(in srgb, var(--queued) 14%, transparent); }
+.status-pill.working { color: var(--running-text); background: color-mix(in srgb, var(--running) 14%, transparent); }
+.status-pill.waiting { color: var(--idle-text); background: color-mix(in srgb, var(--idle) 16%, transparent); }
+.status-pill.done { color: var(--complete-text); background: color-mix(in srgb, var(--complete) 14%, transparent); }

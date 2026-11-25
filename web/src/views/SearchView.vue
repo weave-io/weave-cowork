@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, Menu, MessageSquare, X, Hash } from 'lucide-vue-next'
+import { Search, Menu, MessageSquare, X, Hash, CircleCheck } from 'lucide-vue-next'
 import { get, ApiError } from '../api'
 import { store, memberById, me } from '../store'
 import { isPhone, navOpen } from '../layout'
@@ -20,7 +20,8 @@ interface ThreadHit {
   agents: string[]; match: { postId: number; authorId: number; snippet: string } | null
 }
 interface MessageHit { postId: number; channelId: number; channelName: string; threadId: number | null; authorId: number; at: number; snippet: string; threadTitle: string | null }
-interface Results { empty: boolean; threads: { total: number; items: ThreadHit[] }; messages: { total: number; items: MessageHit[] } }
+interface OutcomeHit { postId: number; threadId: number; channelId: number; channelName: string; authorId: number; at: number; title: string; snippet: string; askedBy: number | null; done: boolean }
+interface Results { empty: boolean; outcomes: { total: number; items: OutcomeHit[] }; threads: { total: number; items: ThreadHit[] }; messages: { total: number; items: MessageHit[] } }
 
 const route = useRoute(), router = useRouter()
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
@@ -50,12 +51,16 @@ const chips = computed(() => {
   ]
 })
 
-type Flat = { kind: 'thread'; hit: ThreadHit } | { kind: 'message'; hit: MessageHit }
+type Flat = { kind: 'outcome'; hit: OutcomeHit } | { kind: 'thread'; hit: ThreadHit } | { kind: 'message'; hit: MessageHit }
 const flat = computed<Flat[]>(() => results.value ? [
+  ...(results.value.outcomes?.items ?? []).map(hit => ({ kind: 'outcome' as const, hit })),
   ...results.value.threads.items.map(hit => ({ kind: 'thread' as const, hit })),
   ...results.value.messages.items.map(hit => ({ kind: 'message' as const, hit })),
 ] : [])
-const total = computed(() => results.value ? results.value.threads.total + results.value.messages.total : 0)
+const total = computed(() => results.value ? (results.value.outcomes?.total ?? 0) + results.value.threads.total + results.value.messages.total : 0)
+// keyboard positions: outcomes first, then threads, then messages
+const oN = computed(() => results.value?.outcomes?.items.length ?? 0)
+const tN = computed(() => oN.value + (results.value?.threads.items.length ?? 0))
 
 let seq = 0, timer: ReturnType<typeof setTimeout> | null = null
 async function run(offset = 0) {
@@ -83,7 +88,8 @@ function clear() { q.value = ''; input.value?.focus() }
 function open(item: Flat | undefined) {
   if (!item) return
   navOpen.value = false
-  if (item.kind === 'thread') router.push(resultPath({ channelId: item.hit.channelId, threadId: item.hit.rootId, postId: item.hit.match?.postId ?? item.hit.rootId }))
+  if (item.kind === 'outcome') router.push(resultPath({ channelId: item.hit.channelId, threadId: item.hit.threadId, postId: item.hit.postId }))
+  else if (item.kind === 'thread') router.push(resultPath({ channelId: item.hit.channelId, threadId: item.hit.rootId, postId: item.hit.match?.postId ?? item.hit.rootId }))
   else router.push(resultPath(item.hit))
 }
 function key(e: KeyboardEvent) {
@@ -129,10 +135,25 @@ const isAgent = (id: number) => memberById(id)?.kind === 'agent'
         <EmptyState v-else-if="results && !loading && total === 0" :icon="Search" :title="`No results for “${q.trim()}”`" description="Try fewer words, or take a filter out." class="mt-8" data-testid="search-none" />
 
         <div v-if="results" id="search-results" role="listbox" aria-label="Results">
+          <section v-if="results.outcomes?.items.length" class="mt-4" data-testid="search-outcomes">
+            <h3 class="group-h">Outcomes · {{ results.outcomes.total }}</h3>
+            <button v-for="(o, i) in results.outcomes.items" :id="`search-hit-${i}`" :key="'o' + o.postId" type="button" role="option" :aria-selected="active === i"
+              class="hit" :data-active="active === i" data-testid="search-hit" data-kind="outcome" :data-root="o.threadId" @click="open(flat[i])" @mousemove="active = i">
+              <span class="flex items-start gap-2 font-semibold"><CircleCheck :size="14" class="mt-[3px] shrink-0 text-running-text" aria-hidden="true" /><Highlighted :text="o.title" class="min-w-0" />
+                <span v-if="o.done" class="status-pill done ml-1">done</span></span>
+              <Highlighted :text="o.snippet" class="block text-[13px] text-text" />
+              <span class="meta">
+                <MemberAvatar :member="memberById(o.authorId)" size="xs" />{{ name(o.authorId) }}<template v-if="o.askedBy"> · asked by {{ name(o.askedBy) }}</template>
+                <span class="flex items-center"><Hash :size="11" aria-hidden="true" />{{ o.channelName }}</span>
+                <RelativeTime :at="o.at" compact class="ml-auto" />
+              </span>
+            </button>
+          </section>
+
           <section v-if="results.threads.items.length" class="mt-4" data-testid="search-threads">
             <h3 class="group-h">Threads · {{ results.threads.total }}</h3>
-            <button v-for="(t, i) in results.threads.items" :id="`search-hit-${i}`" :key="'t' + t.rootId" type="button" role="option" :aria-selected="active === i"
-              class="hit" :data-active="active === i" data-testid="search-hit" data-kind="thread" :data-root="t.rootId" @click="open(flat[i])" @mousemove="active = i">
+            <button v-for="(t, i) in results.threads.items" :id="`search-hit-${oN + i}`" :key="'t' + t.rootId" type="button" role="option" :aria-selected="active === oN + i"
+              class="hit" :data-active="active === oN + i" data-testid="search-hit" data-kind="thread" :data-root="t.rootId" @click="open(flat[oN + i])" @mousemove="active = oN + i">
               <span class="flex items-start gap-2 font-semibold"><MessageSquare :size="14" class="mt-[3px] shrink-0 text-accent-text" aria-hidden="true" /><Highlighted :text="t.title" class="min-w-0" /></span>
               <span v-if="t.match" class="block text-[13px] text-muted"><b class="font-semibold text-text">{{ name(t.match.authorId) }}</b>: <Highlighted :text="t.match.snippet" class="text-text" /></span>
               <span class="meta">
@@ -148,9 +169,9 @@ const isAgent = (id: number) => memberById(id)?.kind === 'agent'
 
           <section v-if="results.messages.items.length" class="mt-4" data-testid="search-messages">
             <h3 class="group-h">Messages · {{ results.messages.total }}</h3>
-            <button v-for="(m, j) in results.messages.items" :id="`search-hit-${results.threads.items.length + j}`" :key="'m' + m.postId" type="button" role="option"
-              :aria-selected="active === results.threads.items.length + j" class="hit" :data-active="active === results.threads.items.length + j"
-              data-testid="search-hit" data-kind="message" :data-post-id="m.postId" @click="open(flat[results.threads.items.length + j])" @mousemove="active = results.threads.items.length + j">
+            <button v-for="(m, j) in results.messages.items" :id="`search-hit-${tN + j}`" :key="'m' + m.postId" type="button" role="option"
+              :aria-selected="active === tN + j" class="hit" :data-active="active === tN + j"
+              data-testid="search-hit" data-kind="message" :data-post-id="m.postId" @click="open(flat[tN + j])" @mousemove="active = tN + j">
               <Highlighted :text="m.snippet" class="block text-[13.5px] break-words" />
               <span class="meta">
                 <MemberAvatar :member="memberById(m.authorId)" size="xs" />{{ name(m.authorId) }}<AgentBadge v-if="isAgent(m.authorId)" />

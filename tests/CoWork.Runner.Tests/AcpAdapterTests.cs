@@ -206,4 +206,25 @@ public class ConfigTests
         cfg.Remove(all[0]);
         Assert.Empty(cfg.Load());
     }
+
+    [Fact]
+    public void An_mcp_tool_called_through_opencodes_code_tool_is_named_by_the_tool_and_its_arguments()
+    {
+        // what OpenCode 2.4.1 sends for an MCP call (checked 25 Nov 2026): a bare "execute", then the code that calls it
+        static System.Text.Json.Nodes.JsonObject Update(string code) => new()
+        {
+            ["sessionUpdate"] = "tool_call_update", ["toolCallId"] = "t1", ["status"] = "in_progress", ["kind"] = "other", ["title"] = "execute",
+            ["locations"] = new System.Text.Json.Nodes.JsonArray(), ["rawInput"] = new System.Text.Json.Nodes.JsonObject { ["code"] = code },
+        };
+        Assert.Equal("cowork_read_channel #checkout-app", AcpAdapter.Describe(Update("\nconst result = await tools.cowork.cowork_read_channel({ channel: '#checkout-app' });\nreturn result;\n")));
+        // and as it arrives: parsed from the line OpenCode wrote
+        var line = System.Text.Json.Nodes.JsonNode.Parse("{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"t2\",\"status\":\"in_progress\",\"kind\":\"other\",\"title\":\"execute\",\"locations\":[],\"rawInput\":{\"code\":\"\\nconst result = await tools.cowork.cowork_search({ query: 'Q4 refund budget' });\\nreturn result;\\n\"}}")!;
+        Assert.Equal("cowork_search Q4 refund budget", AcpAdapter.Describe(line));
+        Assert.Equal(StreamKinds.ToolUpdate, AcpAdapter.Map(42, line).Single().Kind);
+        Assert.Equal("cowork_search Q4 refund budget", AcpAdapter.Map(42, line, "/work/repo").Single().Title);
+        Assert.Equal("cowork_resolve_thread Rounding (per line) fixed",
+            AcpAdapter.Describe(Update("await tools.cowork.cowork_resolve_thread({ title: \"Rounding (per line) fixed\", summary: \"See (1) and (2).\" })")));
+        Assert.Equal("cowork_search refund rounding, cowork_resolve_thread done",
+            AcpAdapter.Describe(Update("await tools.cowork.cowork_search({ query: \"refund rounding\" }); await tools.cowork.cowork_resolve_thread({ summary: 'done' })")));
+    }
 }

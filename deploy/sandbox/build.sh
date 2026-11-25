@@ -20,6 +20,8 @@ sum="$(sha256sum "$OPENCODE_BIN" | cut -c1-64)"
 [ "$sum" = "$OPENCODE_SHA256" ] || { echo "$OPENCODE_BIN has SHA-256 $sum, not the pinned $OPENCODE_SHA256." >&2; exit 1; }
 
 rm -rf "$CTX"; mkdir -p "$CTX/runner"
+# a clean Release build every time: an incremental publish once put a stale runner in the image
+rm -rf "$REPO/src/CoWork.Runner/obj/Release" "$REPO/src/CoWork.Runner/bin/Release" "$REPO/src/CoWork.Contracts/obj/Release" "$REPO/src/CoWork.Contracts/bin/Release"
 cp "$OPENCODE_BIN" "$CTX/opencode"                         # a copy into the build context; the original is only read
 cp "$REPO/deploy/sandbox/Containerfile" "$CTX/Containerfile"
 dotnet publish "$REPO/src/CoWork.Runner/CoWork.Runner.csproj" -c Release -r linux-x64 --self-contained true \

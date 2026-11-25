@@ -10,23 +10,25 @@ import { Spinner } from '@/components/ui/spinner'
 
 // Server settings: where CoWork's model gateway sends a sandbox's model calls (the key stays here, never in a sandbox), and how long an idle
 // sandbox keeps running before it stops (its volume is kept).
-interface S { models: { kind: string | null; baseUrl: string; hasKey: boolean; copilotSignedIn: boolean }; sandboxes: { idleSeconds: number } }
+interface S { models: { kind: string | null; baseUrl: string; hasKey: boolean; copilotSignedIn: boolean }; sandboxes: { idleSeconds: number; retentionSeconds: number } }
 const s = ref<S | null>(null), error = ref(''), saved = ref(''), busy = ref(false)
-const kind = ref<'openai-compatible' | 'github-copilot'>('openai-compatible'), baseUrl = ref(''), apiKey = ref(''), idle = ref('900')
+const kind = ref<'openai-compatible' | 'github-copilot'>('openai-compatible'), baseUrl = ref(''), apiKey = ref(''), idle = ref('900'), keep = ref('604800')
 onMounted(async () => {
   try {
     s.value = await get('/settings/server')
     kind.value = (s.value!.models.kind as any) ?? (s.value!.models.copilotSignedIn ? 'github-copilot' : 'openai-compatible')
-    baseUrl.value = s.value!.models.baseUrl; idle.value = String(s.value!.sandboxes.idleSeconds)
+    baseUrl.value = s.value!.models.baseUrl; idle.value = String(s.value!.sandboxes.idleSeconds); keep.value = String(s.value!.sandboxes.retentionSeconds)
   } catch (e) { error.value = e instanceof ApiError ? e.message : 'Try again.' }
 })
-const idleLabel = computed(() => { const n = Number(idle.value); return n >= 60 && n % 60 === 0 ? `${n / 60} minute${n === 60 ? '' : 's'}` : `${n} seconds` })
+const span = (n: number) => n >= 86400 && n % 86400 === 0 ? `${n / 86400} day${n === 86400 ? '' : 's'}` : n >= 3600 && n % 3600 === 0 ? `${n / 3600} hour${n === 3600 ? '' : 's'}` : n >= 60 && n % 60 === 0 ? `${n / 60} minute${n === 60 ? '' : 's'}` : `${n} seconds`
+const idleLabel = computed(() => span(Number(idle.value)))
+const keepLabel = computed(() => span(Number(keep.value)))
 async function run(what: string, f: () => Promise<unknown>) {
   error.value = ''; saved.value = ''; busy.value = true
   try { await f(); saved.value = what; s.value = await get('/settings/server'); apiKey.value = '' } catch (e) { error.value = e instanceof ApiError ? e.message : 'Try again.' } finally { busy.value = false }
 }
 const saveModels = () => run('models', () => put('/settings/models', kind.value === 'github-copilot' ? { kind: kind.value } : { kind: kind.value, baseUrl: baseUrl.value, apiKey: apiKey.value }))
-const saveIdle = () => run('sandboxes', () => put('/settings/sandboxes', { idleSeconds: Number(idle.value) }))
+const saveIdle = () => run('sandboxes', () => put('/settings/sandboxes', { idleSeconds: Number(idle.value), retentionSeconds: Number(keep.value) }))
 </script>
 <template>
   <AppDialog title="Server settings" wide @close="closeModal">
@@ -56,8 +58,13 @@ const saveIdle = () => run('sandboxes', () => put('/settings/sandboxes', { idleS
         <div class="flex items-end gap-3">
           <div class="w-56"><Field name="idleSeconds" label="Stop when idle for (seconds)" v-model="idle" type="number" /></div>
           <span class="mb-5 text-[13px] text-muted">{{ idleLabel }}</span>
+        </div>
+        <p class="mt-1 mb-1 text-[13px] text-muted">When a thread is done, its stopped sandbox keeps its volume this long. Then the volume is deleted, and the thread's branch with it unless the branch has changes.</p>
+        <div class="flex items-end gap-3">
+          <div class="w-56"><Field name="retentionSeconds" label="Keep a done thread's volume for (seconds)" v-model="keep" type="number" /></div>
+          <span class="mb-5 text-[13px] text-muted">{{ keepLabel }}</span>
           <span v-if="saved === 'sandboxes'" class="mb-5 ml-auto text-[13px] text-running-text" data-testid="idle-saved">Saved.</span>
-          <Button class="mb-3" :class="saved !== 'sandboxes' && 'ml-auto'" data-testid="save-idle" :disabled="busy || !(Number(idle) >= 5)" @click="saveIdle">Save</Button>
+          <Button class="mb-3" :class="saved !== 'sandboxes' && 'ml-auto'" data-testid="save-idle" :disabled="busy || !(Number(idle) >= 5) || !(Number(keep) >= 5)" @click="saveIdle">Save</Button>
         </div>
       </section>
     </template>

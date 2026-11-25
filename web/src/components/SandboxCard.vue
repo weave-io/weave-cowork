@@ -20,6 +20,7 @@ const footer = computed(() => {
     case 'suspending': return paused.value ? `Stopping: ${paused.value} paused the project's agents.` : `Stopping: nothing happened for ${idle(meta.value.idleSeconds)}.`
     case 'suspended': return paused.value ? `Stopped: ${paused.value} paused the project's agents. Its volume is kept, so it picks up where it left off when they're resumed.`
       : `Stopped after ${idle(meta.value.idleSeconds)} idle. Its volume is kept, so the next message picks up where it left off.`
+    case 'deleted': return 'The thread is done: its sandbox and its volume were deleted.'
     case 'failed': return meta.value.reason ? `It couldn't start: ${meta.value.reason}` : "It couldn't start."
     default: return ''
   }

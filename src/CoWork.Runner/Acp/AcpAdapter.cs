@@ -225,6 +225,9 @@ public sealed class AcpAdapter : IAsyncDisposable
         var sid = (string?)p["sessionId"];
         if (sid is null || !_threads.TryGetValue(sid, out var thread)) return;
         var u = p["update"]; if (u is null) return;
+        // a tool call this adapter can only name by its bare title: say what it carried, so the next harness update can be taught
+        if ((string?)u["sessionUpdate"] == "tool_call_update" && (string?)u["status"] == "in_progress" && Describe(u, _workspaces.GetValueOrDefault(thread)) == (string?)u["title"])
+            Log?.Invoke($"thread {thread}: tool {(string?)u["title"]} has no detail; rawInput: {Trim(u["rawInput"]?.ToJsonString())}");
         try { foreach (var e in Map(thread, u, _workspaces.GetValueOrDefault(thread), _recordOutput.GetValueOrDefault(thread))) Emit(e); }
         catch (Exception ex) { Log?.Invoke($"thread {thread}: couldn't read an update ({ex.Message}); skipped"); }     // one odd update must not stop the session
     }
@@ -294,6 +297,19 @@ public sealed class AcpAdapter : IAsyncDisposable
     {
         var title = (string?)u["title"];
         var kind = (string?)u["kind"];
+        // OpenCode 2.4.1 runs MCP tools through a code tool: the row is "execute" and the calls are in rawInput.code, as
+        // `tools.<server>.<tool>({ … })`. Name them: "cowork_read_channel #checkout-app".
+        if (u["rawInput"]?["code"] is JsonValue cv && cv.TryGetValue<string>(out var code) && McpCall.Matches(code) is { Count: > 0 } calls)
+            return string.Join(", ", calls.Select(c =>
+            {
+                // its arguments: the quoted strings after it, up to the next call (a summary may hold brackets of its own)
+                var next = code.IndexOf("tools.", c.Index + c.Length, StringComparison.Ordinal);
+                var tail = code[(c.Index + c.Length)..(next < 0 ? code.Length : next)];
+                var args = ArgText.Matches(tail).Select(a => a.Groups[1].Success ? a.Groups[1].Value : a.Groups[2].Value).Where(a => a.Length > 0).Take(1)
+                    .Select(a => a.Length > 60 ? a[..60] + "…" : a).ToList();
+                var text = args.Count == 0 ? c.Groups[1].Value : $"{c.Groups[1].Value} {args[0]}";
+                return text.Length > 120 ? text[..120] + "…" : text;
+            }));
         string? detail = null;
         if (u["rawInput"] is JsonObject raw)
             // a search names its pattern first (its "path" is only where it looked); anything else names the file, command or address
@@ -308,6 +324,9 @@ public sealed class AcpAdapter : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(title) || string.Equals(title, kind, StringComparison.OrdinalIgnoreCase)) return detail;
         return title.Contains(detail) ? title : $"{title} {detail}";
     }
+    private static readonly System.Text.RegularExpressions.Regex McpCall = new(@"tools\.[\w-]+\.([\w-]+)\s*\(", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex ArgText = new("'([^']*)'|\"([^\"]*)\"", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static string Trim(string? s) => s is null ? "none" : s.Length > 300 ? s[..300] + "…" : s;
     private static string? Norm(string? s) => s switch { "in_progress" or "pending" => "running", null => null, _ => s };
 
     private async Task<JsonNode?> OnRequest(string method, JsonNode? p)
