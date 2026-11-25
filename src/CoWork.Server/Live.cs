@@ -54,8 +54,10 @@ public static class Effects
                     list.Add(new Effect(e.Long("channelId"), EffectKind.PostDeleted, e.Long("postId"), e.Position));
                     if (e.LongOrNull("threadId") is { } inThread) Thread(inThread, e.Position);        // the thread's reply count changed
                     break;
-                case "ToolCallDetailed": case "ToolCallFinished": case "PermissionGranted": case "PermissionDenied": case "MessageRedacted":
+                case "ToolCallDetailed": case "ToolCallFinished": case "MessageRedacted":
                     Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); break;
+                case "PermissionGranted": case "PermissionDenied":        // the thread stops waiting for someone
+                    Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
                 case "AgentReplied":
                     if (e.Long("segment") == 0) { Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); }
                     else Post(EffectKind.PostUpdated, e.Long("postId"), e.Position);
@@ -73,9 +75,15 @@ public static class Effects
                     if (e.LongOrNull("postId") is { } created) Post(EffectKind.PostCreated, created, e.Position);
                     Thread(t, e.Position); break;
                 case "EgressAllowed": case "EgressDenied":
-                    Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); break;
+                    Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
+                case "ThreadResolved":
+                    Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
+                case "ThreadReopened": case "SandboxKept": case "SandboxDeleteRequested":
+                    foreach (var o in c.Query<long>("SELECT id FROM posts WHERE thread_id=@t AND kind='outcome'", new { t })) Post(EffectKind.PostUpdated, o, e.Position);
+                    Thread(t, e.Position); break;
                 case "SandboxStarted": case "SandboxResumed": case "SandboxConnected": case "SandboxSuspending": case "SandboxSuspended": case "SandboxFailed": case "SandboxDeleted":
                     if (e.LongOrNull("postId") is { } card) Post(EffectKind.PostUpdated, card, e.Position);
+                    if (e.Type == "SandboxDeleted") foreach (var o in c.Query<long>("SELECT id FROM posts WHERE thread_id=@t AND kind='outcome'", new { t })) Post(EffectKind.PostUpdated, o, e.Position);
                     Thread(t, e.Position); break;
                 case "TurnInterrupted":
                     if (e.LongOrNull("postId") is { } notice) Post(EffectKind.PostCreated, notice, e.Position);

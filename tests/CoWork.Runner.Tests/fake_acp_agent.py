@@ -8,12 +8,15 @@ n = 0
 pending = {}
 loaded = set()
 cwds = {}
+mcps = {}
 for line in sys.stdin:
     m = json.loads(line)
     if "method" not in m:                      # a response to our request
         pending[m["id"]] = m; continue
     if m["method"] == "initialize":
-        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}}})
+        caps = {"loadSession": True}
+        if __import__('os').environ.get("FAKE_MCP_HTTP") == "1": caps["mcpCapabilities"] = {"http": True}
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": caps}})
     elif m["method"] == "session/load":
         sid = m["params"]["sessionId"]
         if sid.startswith("bad"):
@@ -25,7 +28,7 @@ for line in sys.stdin:
             send({"jsonrpc": "2.0", "id": m["id"], "result": {}})
     elif m["method"] == "session/new":
         n += 1
-        sid = f"s{n}-{__import__('os').getpid()}"; cwds[sid] = m["params"].get("cwd")
+        sid = f"s{n}-{__import__('os').getpid()}"; cwds[sid] = m["params"].get("cwd"); mcps[sid] = m["params"].get("mcpServers")
         send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessionId": sid}})
     elif m["method"] == "session/prompt":
         sid = m["params"]["sessionId"]; text = m["params"]["prompt"][0]["text"]
@@ -36,6 +39,8 @@ for line in sys.stdin:
             open(os.path.join(cwds[sid], name), "w").write("written in " + sid + "\n")
         if "WHERE" in text:                    # where the session and the process are, and where the harness keeps its data
             upd({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "WHERE cwd=" + str(cwds.get(sid)) + " data=" + os.environ.get("XDG_DATA_HOME", "-") + " pid=" + str(os.getpid()) + ("LOADED" if sid in loaded else "")}})
+        elif "MCPS" in text:                   # the MCP servers the session was given
+            upd({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": json.dumps(mcps.get(sid))}})
         elif "ECHO" in text:
             upd({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "ECHO[" + text + "]" + ("LOADED:" + sid if sid in loaded else "")}})
         else:

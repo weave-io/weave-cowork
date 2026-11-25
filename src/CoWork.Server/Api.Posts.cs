@@ -12,7 +12,7 @@ public static partial class Api
             using var c = db.Open();
             if (!Access.CanSee(c, id, Me(ctx))) return Err(404, "No such channel.");
             var rows = c.Query<PostRow>(Q.PostSelect + " WHERE p.channel_id=@id AND p.thread_id IS NULL ORDER BY p.id DESC LIMIT 200", new { id }).Reverse().ToList();
-            return Results.Ok(rows.Select(p => Q.PostDto(p, Q.ThreadAgentHandles(c, p.Id))));
+            return Results.Ok(rows.Select(p => Q.PostDto(p, Q.ThreadAgentHandles(c, p.Id), p.HasThread ? ThreadStatus.Of(c, p.Id) : null)));
         });
 
         authed.MapPost("/channels/{id:long}/posts", async (long id, PostBody b, HttpContext ctx, Db db, Dispatcher d) =>

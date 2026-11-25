@@ -5,6 +5,9 @@ using CoWork.Contracts;
 namespace CoWork.Runner.Acp;
 
 /// <summary>Where the adapter sends what the agent does: the runner's server connection, or a test's recorder.</summary>
+/// <summary>CoWork's own tools for agents: an MCP server on the CoWork server, reached with this runner's token (a sandbox's: its thread token).</summary>
+public sealed record McpEndpoint(string Url, string Token);
+
 public interface IRunnerSink
 {
     Task Stream(StreamEvent e);
@@ -37,6 +40,10 @@ public sealed class AcpAdapter : IAsyncDisposable
     private readonly ConcurrentDictionary<string, bool> _canLoad = new();
 
     private readonly bool _sandbox;
+    private readonly ConcurrentDictionary<string, bool> _mcpHttp = new();         // process key → the harness takes MCP servers over HTTP
+
+    /// <summary>CoWork's tools, given to every session (null: none).</summary>
+    public McpEndpoint? Mcp { get; init; }
 
     /// <param name="agentRoot">This agent's own folder on the runner: clones, worktrees and per-project harness data live under it.</param>
     /// <param name="sandboxWorkspace">Inside a sandbox: the one workspace every message works in. The sandbox is the thread's, so the harness
@@ -152,6 +159,7 @@ public sealed class AcpAdapter : IAsyncDisposable
             p.Client.OnRequest = OnRequest;
             var init = await p.Client.Request("initialize", new JsonObject { ["protocolVersion"] = 1, ["clientCapabilities"] = new JsonObject(), ["clientInfo"] = new JsonObject { ["name"] = "cowork-runner", ["version"] = "0.1" } });
             _canLoad[key] = (bool?)init?["agentCapabilities"]?["loadSession"] == true;
+            _mcpHttp[key] = (bool?)init?["agentCapabilities"]?["mcpCapabilities"]?["http"] == true;
             _procs[key] = p;
             return p;
         }
@@ -176,18 +184,37 @@ public sealed class AcpAdapter : IAsyncDisposable
             try
             {
                 // the harness replays the old conversation as session/update; the session isn't registered yet, so those are dropped
-                await proc.Client.Request("session/load", new JsonObject { ["sessionId"] = saved, ["cwd"] = cwd, ["mcpServers"] = new JsonArray() });
+                await proc.Client.Request("session/load", new JsonObject { ["sessionId"] = saved, ["cwd"] = cwd, ["mcpServers"] = McpServers(key, m.ThreadId) });
                 _sessions[m.ThreadId] = saved; _threads[saved] = m.ThreadId;
                 Log?.Invoke($"thread {m.ThreadId}: loaded session {saved}");
                 return (saved, false);
             }
             catch (Exception e) { Log?.Invoke($"thread {m.ThreadId}: couldn't load session {saved} ({e.Message}); starting a new one"); }
         }
-        var res = await proc.Client.Request("session/new", new JsonObject { ["cwd"] = cwd, ["mcpServers"] = new JsonArray() });
+        var res = await proc.Client.Request("session/new", new JsonObject { ["cwd"] = cwd, ["mcpServers"] = McpServers(key, m.ThreadId) });
         var id = (string?)res?["sessionId"] ?? throw new InvalidOperationException("The harness didn't open a session.");
         _sessions[m.ThreadId] = id; _threads[id] = m.ThreadId;
         _store?.Set(m.ThreadId, id);
         return (id, true);
+    }
+
+    /// <summary>The session's MCP servers: CoWork's, for this thread. Over HTTP when the harness says it can (OpenCode 2.4.1 does); else a stdio
+    /// bridge, this runner's own binary (`cowork-runner mcp`), which forwards each message to the same endpoint.</summary>
+    public JsonArray McpServers(string key, long threadId)
+    {
+        if (Mcp is not { } mcp) return new JsonArray();
+        if (_mcpHttp.GetValueOrDefault(key))
+            return new JsonArray(new JsonObject
+            {
+                ["type"] = "http", ["name"] = "cowork", ["url"] = mcp.Url,
+                ["headers"] = new JsonArray(new JsonObject { ["name"] = "Authorization", ["value"] = "Bearer " + mcp.Token }, new JsonObject { ["name"] = "X-Cowork-Thread", ["value"] = threadId.ToString() }),
+            });
+        var (command, args) = McpBridge.Command(mcp.Url);
+        return new JsonArray(new JsonObject
+        {
+            ["name"] = "cowork", ["command"] = command, ["args"] = new JsonArray(args.Select(a => (JsonNode)a).ToArray()),
+            ["env"] = new JsonArray(new JsonObject { ["name"] = "COWORK_MCP_TOKEN", ["value"] = mcp.Token }, new JsonObject { ["name"] = "COWORK_MCP_THREAD", ["value"] = threadId.ToString() }),
+        });
     }
 
     // ---- agent → us ----

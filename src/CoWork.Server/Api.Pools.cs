@@ -7,7 +7,7 @@ namespace CoWork.Server;
 
 public record PoolBody(string? Name);
 public record ModelsBody(string? Kind, string? BaseUrl, string? ApiKey);
-public record SandboxSettingsBody(int? IdleSeconds);
+public record SandboxSettingsBody(int? IdleSeconds, int? RetentionSeconds = null);
 
 public static partial class Api
 {
@@ -134,7 +134,8 @@ public static partial class Api
             {
                 models = new { kind = S("model_provider"), baseUrl = S("model_base_url") ?? "", hasKey = c.ExecuteScalar<int>("SELECT COUNT(*) FROM server_secrets WHERE key='model_api_key'") > 0,
                     copilotSignedIn = Gateway.CopilotGitHubToken() is not null },
-                sandboxes = new { idleSeconds = int.TryParse(S("sandbox_idle_seconds"), out var s) ? s : Sandboxes.DefaultIdleSeconds },
+                sandboxes = new { idleSeconds = int.TryParse(S("sandbox_idle_seconds"), out var s) ? s : Sandboxes.DefaultIdleSeconds,
+                    retentionSeconds = int.TryParse(S("sandbox_retention_seconds"), out var r) ? r : Sandboxes.DefaultRetentionSeconds },
             });
         });
 
@@ -161,9 +162,13 @@ public static partial class Api
         {
             var me = Me(ctx);
             using (var c = db.Open()) if (!Access.IsAdmin(c, me)) return Err(403, "Only admins can do that.");
-            var s = b.IdleSeconds ?? 0;
-            if (s is < 5 or > 7 * 24 * 3600) return Err(400, "The idle time is between 5 seconds and 7 days.");
-            store.Append(new[] { new NewEvent("server", "SandboxIdleSet", new { seconds = s }, me) });
+            if (b.IdleSeconds is null && b.RetentionSeconds is null) return Err(400, "Say the idle time, the retention time, or both.");
+            if (b.IdleSeconds is < 5 or > 7 * 24 * 3600) return Err(400, "The idle time is between 5 seconds and 7 days.");
+            if (b.RetentionSeconds is < 5 or > 365 * 24 * 3600) return Err(400, "A done thread's volume is kept between 5 seconds and a year.");
+            var evs = new List<NewEvent>();
+            if (b.IdleSeconds is { } idle) evs.Add(new NewEvent("server", "SandboxIdleSet", new { seconds = idle }, me));
+            if (b.RetentionSeconds is { } keep) evs.Add(new NewEvent("server", "SandboxRetentionSet", new { seconds = keep }, me));
+            store.Append(evs);
             return Results.Ok(new { ok = true });
         });
     }

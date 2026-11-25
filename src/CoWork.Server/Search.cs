@@ -60,9 +60,12 @@ public static class Search
         public long? AuthorId { get; set; } public long OccurredAt { get; set; } public string Snippet { get; set; } = ""; public double Rank { get; set; }
     }
 
-    public static object Run(SqliteConnection c, long me, SearchQuery q, int limit, int offset)
+    /// <summary>What a person sees: <see cref="Access.SeesChannel"/>. An agent's boundary: the channels it takes part in (cowork_search).</summary>
+    public const string AgentSees = "ch.id IN (SELECT channel_id FROM channel_audience WHERE member_id=@m)";
+
+    public static object Run(SqliteConnection c, long me, SearchQuery q, int limit, int offset, string? visibility = null)
     {
-        if (q.IsEmpty) return new { empty = true, threads = new { total = 0, items = Array.Empty<object>() }, messages = new { total = 0, items = Array.Empty<object>() } };
+        if (q.IsEmpty) return new { empty = true, outcomes = new { total = 0, items = Array.Empty<object>() }, threads = new { total = 0, items = Array.Empty<object>() }, messages = new { total = 0, items = Array.Empty<object>() } };
         var match = q.Match();
         // the documents that match AND that the caller may see, with a rank (bm25: lower is better; no words: newest first) and a snippet
         var hits = match is null
@@ -73,10 +76,17 @@ public static class Search
                    snippet(search_fts, -1, char(2), char(3), '…', 32) AS snippet, bm25(search_fts, 4.0, 1.0) AS rank
                FROM search_fts JOIN search_docs d ON d.id = search_fts.rowid";
         var where = (match is null ? " WHERE " : " WHERE search_fts MATCH @match AND ") + @"d.gone = 0
-              AND d.channel_id IN (SELECT ch.id FROM channels ch WHERE " + Access.SeesChannel + ")"     // who sees a channel: one rule (Access), projects included
+              AND d.channel_id IN (SELECT ch.id FROM channels ch WHERE " + (visibility ?? Access.SeesChannel) + ")"     // who sees a channel: one rule (Access), projects included
             + (q.In.Count > 0 ? " AND d.channel_id IN (SELECT id FROM channels WHERE name IN @ins)" : "")
             + (q.From.Count > 0 ? " AND d.author_id IN (SELECT id FROM members WHERE handle IN @froms)" : "");
-        var sql = hits + where;
+        var sql = hits + where + " AND d.kind='message'";
+        // outcomes: a resolved thread's title and summary, first; the title is weighted 4x
+        var outcomeSql = (match is null
+            ? @"SELECT d.ref_id AS post_id, d.channel_id, d.thread_id, d.author_id, d.occurred_at, f.title AS title, substr(f.body, 1, 240) AS snippet, -d.position AS rank
+               FROM search_docs d JOIN search_fts f ON f.rowid = d.id"
+            : @"SELECT d.ref_id AS post_id, d.channel_id, d.thread_id, d.author_id, d.occurred_at, highlight(search_fts, 0, char(2), char(3)) AS title,
+                   snippet(search_fts, 1, char(2), char(3), '…', 32) AS snippet, bm25(search_fts, 4.0, 1.0) AS rank
+               FROM search_fts JOIN search_docs d ON d.id = search_fts.rowid") + where + " AND d.kind='outcome'";
         var args = new DynamicParameters(new { me, m = me, match, ins = q.In, froms = q.From, limit, offset });
 
         // threads: grouped from their matching messages (the opening post or any reply), best match first; a thread whose opening post is gone isn't listed
@@ -85,6 +95,8 @@ public static class Search
             SELECT g.thread_id AS root_id, g.rank, g.matches, g.best_post, g.best_snippet, g.best_author, p.channel_id, p.author_id, p.body, p.created_at,
                 (SELECT COUNT(*) FROM posts r WHERE r.thread_id = p.id AND r.kind = 'text' AND r.deleted = 0) AS reply_count
             FROM g JOIN posts p ON p.id = g.thread_id AND p.deleted = 0";
+        var outcomeTotal = q.ThreadsOnly ? 0 : c.ExecuteScalar<int>($"SELECT COUNT(*) FROM ({outcomeSql})", args);
+        var outcomes = q.ThreadsOnly ? new List<OutcomeHit>() : c.Query<OutcomeHit>(outcomeSql + " ORDER BY rank, post_id DESC LIMIT @limit", args).ToList();
         var threadTotal = c.ExecuteScalar<int>($"SELECT COUNT(*) FROM ({threadSql})", args);
         var threads = c.Query<ThreadHit>(threadSql + " ORDER BY g.rank, g.thread_id DESC LIMIT @limit", args).ToList();
 
@@ -102,6 +114,17 @@ public static class Search
         {
             empty = false,
             query = new { terms = q.Terms, @in = q.In, from = q.From, isThread = q.ThreadsOnly },
+            outcomes = new
+            {
+                total = outcomeTotal,
+                items = outcomes.Select(o => new
+                {
+                    postId = o.PostId, threadId = o.ThreadId, channelId = o.ChannelId, channelName = Channel(o.ChannelId), authorId = o.AuthorId, at = o.OccurredAt,
+                    title = o.Title, snippet = o.Snippet,
+                    askedBy = c.ExecuteScalar<long?>("SELECT started_by FROM threads WHERE root_id=@t", new { t = o.ThreadId }),
+                    done = c.ExecuteScalar<long?>("SELECT resolved_post FROM threads WHERE root_id=@t", new { t = o.ThreadId }) == o.PostId,
+                }),
+            },
             threads = new
             {
                 total = threadTotal,
@@ -129,6 +152,12 @@ public static class Search
     {
         var s = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return s.Length > max ? s[..max].TrimEnd() + "…" : s;
+    }
+
+    sealed class OutcomeHit
+    {
+        public long PostId { get; set; } public long ChannelId { get; set; } public long ThreadId { get; set; } public long? AuthorId { get; set; } public long OccurredAt { get; set; }
+        public string Title { get; set; } = ""; public string Snippet { get; set; } = ""; public double Rank { get; set; }
     }
 
     sealed class ThreadHit

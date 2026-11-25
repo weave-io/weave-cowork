@@ -82,7 +82,9 @@ public record SandboxSpec(
 public record CreateSandbox(SandboxSpec Spec);
 public record ResumeSandbox(SandboxSpec Spec);
 public record SuspendSandbox(string SandboxId);
-public record DeleteSandbox(string SandboxId);
+/// <summary>Delete the sandbox's volume (the thread is done and its retention passed). With <see cref="KeepIfChanged"/> the pool first looks at the
+/// thread's branch in the volume (with <see cref="Image"/>): changes to tracked files, or commits not on <see cref="BaseBranch"/>, keep it.</summary>
+public record DeleteSandbox(string SandboxId, bool KeepIfChanged = false, string? Image = null, string? BaseBranch = null);
 
 /// <summary>Pool → server: a sandbox's state. <see cref="WorkspaceMs"/> and <see cref="ContainerMs"/>: how long preparing the volume and starting
 /// the container took (for the thread's starting rows).</summary>
@@ -96,5 +98,5 @@ public record EgressRefusal(string SandboxId, string Host, int Port);
 
 public static class SandboxStates
 {
-    public const string Suspended = "suspended", Resuming = "resuming", Running = "running", Suspending = "suspending", Failed = "failed", Deleted = "deleted";
+    public const string Suspended = "suspended", Resuming = "resuming", Running = "running", Suspending = "suspending", Failed = "failed", Deleted = "deleted", Kept = "kept";
 }

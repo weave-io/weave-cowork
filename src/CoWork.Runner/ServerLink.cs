@@ -18,7 +18,7 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
     public ServerLink(SavedAgent agent, string host, Func<HttpMessageHandler>? handler = null, SessionStore? sessions = null, string? agentRoot = null, string? sandboxWorkspace = null)
     {
         _agent = agent; _host = host;
-        _adapter = new AcpAdapter(this, sessions, agentRoot, sandboxWorkspace) { Log = m => Log($"[{agent.Handle}] {m}") };
+        _adapter = new AcpAdapter(this, sessions, agentRoot, sandboxWorkspace) { Log = m => Log($"[{agent.Handle}] {m}"), Mcp = new McpEndpoint(agent.Server.TrimEnd('/') + "/mcp", agent.Token) };
         _hub = new HubConnectionBuilder()
             .WithUrl(agent.Server.TrimEnd('/') + "/hubs/runner", o =>
             {

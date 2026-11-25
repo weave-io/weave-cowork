@@ -93,6 +93,21 @@ public static partial class Api
             return Results.Ok(new { ok = true });
         });
 
+        // Reopen a done thread: its outcome stays as what was done then, and the thread isn't done any more
+        authed.MapPost("/threads/{id:long}/reopen", async (long id, HttpContext ctx, Db db, IEventStore store, Dispatcher d) =>
+        {
+            var me = Me(ctx);
+            using (var c = db.Open())
+            {
+                var ch = c.ExecuteScalar<long?>("SELECT channel_id FROM threads WHERE root_id=@id", new { id });
+                if (ch is null || !Access.CanSee(c, ch.Value, me)) return Err(404, "No such thread.");
+                if (c.ExecuteScalar<long?>("SELECT resolved_post FROM threads WHERE root_id=@id", new { id }) is null) return Results.Ok(new { ok = true });
+            }
+            store.Append(new[] { new NewEvent($"thread-{id}", "ThreadReopened", new { threadId = id }, me) });
+            await d.BroadcastThread(id);
+            return Results.Ok(new { ok = true });
+        });
+
         authed.MapPost("/projects/{id:long}/pause", async (long id, HttpContext ctx, Db db, IEventStore store, Realtime rt, Sandboxes sandboxes, Dispatcher d) =>
         {
             var me = Me(ctx);

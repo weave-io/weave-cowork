@@ -61,9 +61,10 @@ public sealed class SandboxProjection : IInlineProjection
                 var resume = e.Bool("resume");
                 x.Execute(@"INSERT INTO sandboxes(id, thread_id, agent_id, project_id, state, image, memory_mb, branch, requested_by, requested_at, post_id)
                             VALUES (@id,@t,@a,@p,'waiting',@image,@mem,@branch,@by,@at,@post)
-                            ON CONFLICT(id) DO UPDATE SET state='waiting', pool_id=NULL, image=@image, memory_mb=@mem, requested_by=@by, requested_at=@at, post_id=@post, reason=NULL",
+                            ON CONFLICT(id) DO UPDATE SET state='waiting', pool_id=NULL, image=@image, memory_mb=@mem, requested_by=@by, requested_at=@at, post_id=@post, reason=NULL,
+                              starts=CASE WHEN @resume THEN starts ELSE 0 END",            // not a resume (its volume was deleted): it starts afresh
                     new { id, t = ThreadProjection.ThreadOf(e), a = e.Long("agentId"), p = e.LongOrNull("projectId"), image = e.Str("image"), mem = e.LongOrNull("memoryMb"),
-                          branch = e.Str("branch"), by = e.OnBehalfOf, at = e.OccurredAt, post = e.Long("postId") });
+                          branch = e.Str("branch"), by = e.OnBehalfOf, at = e.OccurredAt, post = e.Long("postId"), resume });
                 var harness = e.Str("harness") ?? "the harness";
                 var ws = e.Str("workspace");
                 var line = x.Scalar<int>("SELECT COUNT(*) FROM sandboxes WHERE state='waiting'");          // this one included: its place in the queue
@@ -151,6 +152,7 @@ public sealed class SandboxProjection : IInlineProjection
             case "SandboxDeleted":
                 x.Execute("UPDATE sandboxes SET state='deleted' WHERE id=@id", new { id = e.Long("sandboxId") });
                 Card(x, e, m => m["state"] = "deleted");
+                Branch(x, e, "deleted", null);
                 break;
 
             // a turn in a sandbox's thread keeps it busy: the idle clock starts again when a turn ends
@@ -225,10 +227,56 @@ public sealed class SandboxProjection : IInlineProjection
                     x.Execute("INSERT OR IGNORE INTO thread_egress VALUES (@t,@a,@h)", new { t = ThreadProjection.ThreadOf(e), a = e.Long("agentId"), h = e.Str("host") });
                 Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "answered"; m["answer"] = e.Str("scope"); }, kind: "ask");
                 break;
+            // ---- round 3: threads as work ----
+            case "ThreadResolved":
+            {
+                var t = ThreadProjection.ThreadOf(e);
+                x.Execute("UPDATE threads SET resolved_post=@post, resolved_at=@at, resolved_by=@a WHERE root_id=@t", new { post = e.Long("postId"), at = e.OccurredAt, a = e.Long("agentId"), t });
+                var meta = JsonNode.Parse(e.Data.GetRawText())!.AsObject();
+                meta["state"] = "done"; meta["resolvedAt"] = e.OccurredAt;
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@body,'outcome',@meta,@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t, a = e.Long("agentId"), body = e.Str("title"), meta = meta.ToJsonString(), at = e.OccurredAt, pos = e.Position });
+                break;
+            }
+            case "ThreadReopened":
+            {
+                var t = ThreadProjection.ThreadOf(e);
+                if (x.Scalar<long?>("SELECT resolved_post FROM threads WHERE root_id=@t", new { t }) is { } post)
+                    Meta(x, post, e.Position, m => { m["state"] = "reopened"; m["reopenedBy"] = e.ActorId; }, kind: "outcome");
+                x.Execute("UPDATE threads SET resolved_post=NULL, resolved_at=NULL, resolved_by=NULL WHERE root_id=@t", new { t });
+                break;
+            }
+            case "MessageDelivered" when !e.Bool("system"):
+                // new work for a done thread opens it again (its outcome stays, as what was done then)
+                if (x.Scalar<long?>("SELECT resolved_post FROM threads WHERE root_id=@t", new { t = ThreadProjection.ThreadOf(e) }) is { } open)
+                {
+                    Meta(x, open, e.Position, m => { m["state"] = "reopened"; m["reopenedBy"] = e.OnBehalfOf; }, kind: "outcome");
+                    x.Execute("UPDATE threads SET resolved_post=NULL, resolved_at=NULL, resolved_by=NULL WHERE root_id=@t", new { t = ThreadProjection.ThreadOf(e) });
+                }
+                break;
+            case "SandboxRetentionSet":
+                x.Execute("INSERT OR REPLACE INTO settings VALUES ('sandbox_retention_seconds', @s)", new { s = e.Long("seconds").ToString() });
+                break;
+            case "SandboxDeleteRequested":
+                x.Execute("UPDATE sandboxes SET state='deleting' WHERE id=@id", new { id = e.Long("sandboxId") });
+                break;
+            case "SandboxKept":
+                x.Execute("UPDATE sandboxes SET state='kept', reason=@r WHERE id=@id", new { r = e.Str("reason"), id = e.Long("sandboxId") });
+                Branch(x, e, "kept", e.Str("reason"));
+                break;
             case "EgressDenied":
                 Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "denied"; m["answer"] = null; }, kind: "ask");
                 break;
         }
+    }
+
+    /// <summary>The done thread's outcome says what became of its branch: deleted with the volume (no changes), or kept (it has changes).</summary>
+    static void Branch(ProjectionContext x, StoredEvent e, string state, string? reason)
+    {
+        var t = ThreadProjection.ThreadOf(e);
+        var post = x.Scalar<long?>("SELECT id FROM posts WHERE thread_id=@t AND kind='outcome' ORDER BY id DESC LIMIT 1", new { t });
+        if (post is null) return;
+        Meta(x, post.Value, e.Position, m => { if (m["branch"] is JsonObject b) { b["state"] = state; b["reason"] = reason; } }, kind: "outcome");
     }
 
     static double? Num(StoredEvent e, string k) => e.Data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
@@ -333,6 +381,7 @@ public sealed class Sandboxes
 {
     public const string DefaultImage = "cowork-sandbox-opencode:2.4.1";
     public const int DefaultIdleSeconds = 15 * 60;
+    public const int DefaultRetentionSeconds = 7 * 24 * 3600;
     private readonly Db _db;
     private readonly IEventStore _store;
     private readonly PoolRegistry _pools;
@@ -355,6 +404,45 @@ public sealed class Sandboxes
         return int.TryParse(c.ExecuteScalar<string?>("SELECT value FROM settings WHERE key='sandbox_idle_seconds'"), out var s) && s > 0 ? s : DefaultIdleSeconds;
     }
 
+    /// <summary>How long a done thread's stopped sandbox keeps its volume (Server settings; 7 days unless changed).</summary>
+    public int RetentionSeconds()
+    {
+        using var c = _db.Open();
+        return int.TryParse(c.ExecuteScalar<string?>("SELECT value FROM settings WHERE key='sandbox_retention_seconds'"), out var s) && s > 0 ? s : DefaultRetentionSeconds;
+    }
+
+    /// <summary>Done threads whose sandbox has been stopped for the retention time: their volumes go (the branch with them, unless it has
+    /// changes, which keeps the volume). Asked of the pool once; it reports deleted or kept.</summary>
+    public async Task Retire(int retentionSeconds)
+    {
+        List<SandboxRow> due;
+        using (var c = _db.Open())
+            due = c.Query<SandboxRow>(@"SELECT s.* FROM sandboxes s JOIN threads t ON t.root_id=s.thread_id
+                WHERE s.state='suspended' AND t.resolved_at IS NOT NULL AND t.resolved_at < @cutoff", new { cutoff = Db.Now() - retentionSeconds * 1000L }).ToList();
+        foreach (var s in due)
+        {
+            if (s.PoolId is not { } poolId || _pools.Get(poolId)?.Connection is not { } conn) continue;        // its pool is away: next time
+            string? baseBranch;
+            using (var c = _db.Open()) baseBranch = c.ExecuteScalar<string?>("SELECT w.branch FROM workspaces w WHERE w.project_id=@p AND w.kind='repository' ORDER BY w.id LIMIT 1", new { p = s.ProjectId });
+            var asked = false;
+            await _lock.WaitAsync();
+            try
+            {
+                _store.Append(ctx =>
+                {
+                    asked = false;
+                    if (ctx.Scalar<string?>("SELECT state FROM sandboxes WHERE id=@id", new { id = s.Id }) != "suspended") return Array.Empty<NewEvent>();
+                    asked = true;
+                    return new[] { new NewEvent($"thread-{s.ThreadId}", "SandboxDeleteRequested", new { sandboxId = s.Id, agentId = s.AgentId, poolId, retentionSeconds }, s.AgentId, s.RequestedBy) };
+                });
+            }
+            finally { _lock.Release(); }
+            if (asked)
+                try { await _poolHub.Clients.Client(conn).SendAsync("DeleteSandbox", new DeleteSandbox(Name(s.Id), true, s.Image, baseBranch ?? "main")); }
+                catch (Exception e) { _log.LogWarning(e, "couldn't ask pool {Pool} to delete {Id}", poolId, s.Id); }
+        }
+    }
+
     /// <summary>The thread needs the template's sandbox: ask for one (or for the suspended one back) unless it is already on its way.</summary>
     public async Task Ensure(long threadId, long agentId, long? behalf)
     {
@@ -364,7 +452,7 @@ public sealed class Sandboxes
             _store.Append(ctx =>
             {
                 var row = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE thread_id=@threadId AND agent_id=@agentId", new { threadId, agentId }).FirstOrDefault();
-                if (row is not null && row.State is "waiting" or "starting" or "resuming" or "running" or "suspending") return Array.Empty<NewEvent>();
+                if (row is not null && row.State is "waiting" or "starting" or "resuming" or "running" or "suspending" or "deleting") return Array.Empty<NewEvent>();
                 if (ctx.Scalar<int>(@"SELECT COUNT(*) FROM threads t JOIN channels c ON c.id=t.channel_id JOIN projects p ON p.id=c.project_id
                     WHERE t.root_id=@threadId AND p.paused_at IS NOT NULL", new { threadId }) > 0) return Array.Empty<NewEvent>();        // its project's agents are paused: the message waits
                 var agent = ctx.Query<MemberRow>(Q.MemberSelect + " WHERE m.id=@agentId", new { agentId }).FirstOrDefault();
@@ -377,7 +465,7 @@ public sealed class Sandboxes
                 {
                     new NewEvent($"thread-{threadId}", "SandboxRequested", new
                     {
-                        sandboxId = id, agentId, projectId = project, channelId, postId = ctx.NextId("posts"), resume = row is not null && row.Starts > 0,
+                        sandboxId = id, agentId, projectId = project, channelId, postId = ctx.NextId("posts"), resume = row is not null && row.Starts > 0 && row.State != "deleted",       // a deleted volume starts afresh
                         image = agent.Image ?? DefaultImage, memoryMb = (long?)null, branch = where?.Branch ?? Projects.Branch(Projects.Slug("", threadId)),
                         harness = string.Join(' ', cmd.Select(a => a.Split('/').Last())), workspace = where is { Kind: "repository" } ? where.Name : null,
                         waiting = WaitingFor(ctx),
@@ -565,9 +653,11 @@ public sealed class Sandboxes
                         ctx.Execute("UPDATE thread_tokens SET revoked_at=@now WHERE sandbox_id=@id AND revoked_at IS NULL", new { now = Db.Now(), id });
                         return new[] { new NewEvent(stream, "SandboxSuspended", new { sandboxId = id, agentId = s.AgentId, postId = s.PostId, poolId }, s.AgentId, s.RequestedBy) };
                     case SandboxStates.Deleted when s.State != "deleted":
-                        freed = true;
+                        freed = s.State != "deleting";
                         ctx.Execute("UPDATE thread_tokens SET revoked_at=@now WHERE sandbox_id=@id AND revoked_at IS NULL", new { now = Db.Now(), id });
-                        return new[] { new NewEvent(stream, "SandboxDeleted", new { sandboxId = id, agentId = s.AgentId, postId = s.PostId, poolId }, s.AgentId, s.RequestedBy) };
+                        return new[] { new NewEvent(stream, "SandboxDeleted", new { sandboxId = id, agentId = s.AgentId, postId = s.PostId, poolId, branch = s.Branch, branchDeleted = true }, s.AgentId, s.RequestedBy) };
+                    case SandboxStates.Kept when s.State == "deleting":
+                        return new[] { new NewEvent(stream, "SandboxKept", new { sandboxId = id, agentId = s.AgentId, poolId, branch = s.Branch, reason = r.Reason ?? "it has changes" }, s.AgentId, s.RequestedBy) };
                     case SandboxStates.Failed when s.State is not ("failed" or "deleted"):
                         freed = true;
                         return FailEvents(ctx, s, r.Reason ?? "the sandbox didn't start");
@@ -736,6 +826,7 @@ public sealed class SandboxReaper(Sandboxes sandboxes, ILogger<SandboxReaper> lo
             {
                 var idle = sandboxes.IdleSeconds();
                 foreach (var id in sandboxes.Idle(idle)) await sandboxes.Suspend(id, "idle", idle);
+                await sandboxes.Retire(sandboxes.RetentionSeconds());
             }
             catch (Exception e) { log.LogWarning(e, "couldn't check idle sandboxes"); }
         }

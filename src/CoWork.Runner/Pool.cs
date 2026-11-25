@@ -77,7 +77,7 @@ public sealed class PoolLink : IAsyncDisposable
         _hub.On<CreateSandbox>("CreateSandbox", c => { _ = Task.Run(() => Start(c.Spec, resume: false)); });
         _hub.On<ResumeSandbox>("ResumeSandbox", c => { _ = Task.Run(() => Start(c.Spec, resume: true)); });
         _hub.On<SuspendSandbox>("SuspendSandbox", c => { _ = Task.Run(() => Suspend(c.SandboxId)); });
-        _hub.On<DeleteSandbox>("DeleteSandbox", c => { _ = Task.Run(() => Delete(c.SandboxId)); });
+        _hub.On<DeleteSandbox>("DeleteSandbox", c => { _ = Task.Run(() => Delete(c)); });
         _hub.On<AllowEgress>("AllowEgress", a =>
         {
             if (_proxies.TryGetValue(a.SandboxId, out var p)) { p.Allow(a.Host, a.Once); Log($"[{pool.Name}] {a.SandboxId}: {a.Host} allowed {(a.Once ? "once" : "for the thread")}"); }
@@ -298,8 +298,9 @@ public sealed class PoolLink : IAsyncDisposable
         finally { gate.Release(); }
     }
 
-    private async Task Delete(string sandboxId)
+    private async Task Delete(DeleteSandbox d)
     {
+        var sandboxId = d.SandboxId;
         var gate = _locks.GetOrAdd(sandboxId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
         try
@@ -308,12 +309,44 @@ public sealed class PoolLink : IAsyncDisposable
             await RemoveContainer(sandboxId);
             await CloseWay(sandboxId);
             var name = Name(sandboxId);
+            if (d.KeepIfChanged && d.Image is { } image && await Changes(name, image, d.BaseBranch ?? "main") is { } changes)
+            {
+                Log($"[{_pool.Name}] {sandboxId}: kept: {changes}");
+                await Report(new SandboxStateReport(sandboxId, SandboxStates.Kept, changes));
+                return;
+            }
             if (await LabelOf("volume", name) == _key) await Must(_podman, TimeSpan.FromMinutes(2), "volume", "rm", name);
             Log($"[{_pool.Name}] {sandboxId}: deleted with its volume");
             await Report(new SandboxStateReport(sandboxId, SandboxStates.Deleted));
         }
         catch (Exception e) { Log($"[{_pool.Name}] {sandboxId}: couldn't delete: {e.Message}"); }
         finally { gate.Release(); }
+    }
+
+    /// <summary>What the thread's branch has that the project's branch doesn't: changes to tracked files, or commits. Null when it has none
+    /// (untracked files, such as what a setup command installed, don't count). Looked at by a short-lived container with no network.</summary>
+    private async Task<string?> Changes(string volume, string image, string baseBranch)
+    {
+        if (await LabelOf("volume", volume) != _key) return null;
+        const string Script = """
+            cd /work/repo 2>/dev/null && [ -d .git ] || { echo "0 0"; exit 0; }
+            export HOME=/tmp
+            git config --global --add safe.directory /work/repo
+            d=$(git status --porcelain --untracked-files=no | wc -l)
+            c=$(git rev-list --count "origin/$BASE..HEAD" 2>/dev/null || echo 0)
+            echo "$d $c $(git rev-parse --abbrev-ref HEAD)"
+            """;
+        var (code, o, err) = await Run(_podman, null, TimeSpan.FromMinutes(2), "run", "--rm", "--label", $"cowork.pool={_key}", "--network", "none", "--entrypoint", "/bin/sh",
+            "-v", $"{volume}:/work", "-e", $"BASE={baseBranch}", image, "-c", Script);
+        if (code != 0) return $"couldn't look at its branch ({err.Trim()}), so its volume is kept";
+        var parts = o.Trim().Split(' ');
+        var dirty = int.TryParse(parts.ElementAtOrDefault(0), out var x) ? x : 0; var commits = int.TryParse(parts.ElementAtOrDefault(1), out var y) ? y : 0;
+        var branch = parts.ElementAtOrDefault(2) ?? "its branch";
+        if (dirty == 0 && commits == 0) return null;
+        var what = new List<string>();
+        if (commits > 0) what.Add($"{commits} commit{(commits == 1 ? "" : "s")} not on {baseBranch}");
+        if (dirty > 0) what.Add($"{dirty} changed file{(dirty == 1 ? "" : "s")} not committed");
+        return $"{branch} has {string.Join(" and ", what)}, so its volume is kept";
     }
 
     /// <summary>Stops and removes the sandbox's container, if there is one and it carries this pool's label. Never anything else.</summary>

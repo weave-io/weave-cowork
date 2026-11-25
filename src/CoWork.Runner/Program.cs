@@ -41,6 +41,7 @@ static class Cli
         if (cmd == "run") return await Serve(config, Opt(args, "--host") ?? host);
         if (cmd == "pool") return await PoolMode(config, args.Skip(1).ToArray(), host);
         if (cmd == "sandbox") return await SandboxMode();
+        if (cmd == "mcp" && args.Length > 1) return await CoWork.Runner.Acp.McpBridge.Run(args[1], Console.In, Console.Out);
         Console.Error.WriteLine("cowork-runner connect <server> --code XXXX-XXXX\ncowork-runner run\ncowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M\ncowork-runner pool run");
         return cmd is null or "--help" or "-h" ? 0 : 2;
     }

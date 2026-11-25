@@ -37,6 +37,7 @@ builder.Services.AddSingleton<SandboxRegistry>();
 builder.Services.AddSingleton<Sandboxes>();
 builder.Services.AddHostedService<SandboxReaper>();
 builder.Services.AddSingleton<Gateway>();
+builder.Services.AddSingleton<Mcp>();
 builder.Services.AddSingleton<Dispatcher>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();
 builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
@@ -129,6 +130,7 @@ app.MapHub<AppHub>("/hubs/app");
 app.MapHub<RunnerHub>("/hubs/runner");
 app.MapHub<PoolHub>("/hubs/pool");
 Gateway.Map(app);
+Mcp.Map(app);
 Api.Map(app);
 app.MapFallback(async ctx =>
 {

@@ -37,6 +37,14 @@ public sealed class SearchProjection : IAsyncProjection
                     x.Execute("UPDATE search_fts SET body = body || @text WHERE rowid=@id", new { id = doc.Id, text });
                 break;
             }
+            case "ThreadResolved":
+            {
+                // an outcome is a document of its own: its title ranks higher than its summary
+                var post = e.Long("postId");
+                var id = Add(x, "outcome", post, e.Long("channelId"), ThreadProjection.ThreadOf(e), e.Long("agentId"), e);
+                if (id is not null) x.Execute("INSERT INTO search_fts(rowid, title, body) VALUES (@id,@title,@summary)", new { id, title = e.Str("title") ?? "", summary = e.Str("summary") ?? "" });
+                break;
+            }
             case "ThreadStarted":
                 // the opening post belongs to its thread from now on (a thread's id is its root post's id)
                 x.Execute("UPDATE search_docs SET thread_id=@r WHERE kind='message' AND ref_id=@r", new { r = e.Long("rootId") });
