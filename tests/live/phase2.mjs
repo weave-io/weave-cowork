@@ -49,7 +49,7 @@ try {
   // --- 7. an agent joins ---
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]')
   await a.fill('[name=handle]', 'reviewer'); await a.fill('[name=about]', 'Reviews the checkout app')
-  await a.fill('[name=instructions]', 'You are reviewer, a code reviewer for the Lumen Labs checkout app. Answer in at most four short sentences. Only read files; never change anything.')
+  await a.fill('[name=instructions]', 'You are reviewer, a code reviewer for the Lumen Labs checkout app. Answer in at most four short sentences. Never change any file. When a person asks you to run a shell command, run it with your shell tool: the server asks your owner to allow it first, so it is safe to try.')
   await a.fill('[name=harness]', HARNESS); await a.fill('[name=workspace]', WORKSPACE)
   await shot(a, 'invite-agent-form')
   await a.click('button:has-text("Create agent")')
