@@ -20,7 +20,7 @@ public class AcpMappingTests
     public void Tool_rows_say_what_was_touched()
     {
         var e = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c","title":"read","kind":"read","locations":[{"path":"src/Api.cs"}]}""")).First();
-        Assert.Equal("read src/Api.cs", e.Title);
+        Assert.Equal("src/Api.cs", e.Title);          // the row already says "read"
         e = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c","title":"glob","kind":"search","rawInput":{"pattern":"**/*.csproj"}}""")).First();
         Assert.Equal("glob **/*.csproj", e.Title);
     }
@@ -30,6 +30,30 @@ public class AcpMappingTests
     {
         var e = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c","title":"bash","locations":[],"rawInput":{"command":"ls"}}""")).First();
         Assert.Equal("bash ls", e.Title);
+    }
+
+    // Real OpenCode 2.4.1 output (docs/build/oc2-tool-calls.jsonl): the first tool_call is bare, the detail comes in the in_progress update
+    [Fact]
+    public void OpenCode2_detail_arrives_in_the_update_after_a_bare_tool_call()
+    {
+        const string ws = "/home/alex/checkout-app";
+        var start = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"a","name":"grep","title":"grep","kind":"search","status":"pending","locations":[],"rawInput":{}}"""), ws).Single();
+        Assert.Equal("grep", start.Title);
+        var up = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"a","status":"in_progress","kind":"search","title":"grep","locations":[],"rawInput":{"pattern":"roundTax","caseSensitive":false}}"""), ws).Single();
+        Assert.Equal((StreamKinds.ToolUpdate, "a", "grep roundTax", null), (up.Kind, up.ToolId, up.Title, up.Status));
+        up = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"b","status":"in_progress","kind":"read","title":"read","locations":[{"path":"/home/alex/checkout-app/src/Api.cs"}],"rawInput":{"path":"/home/alex/checkout-app/src/Api.cs","limit":2000}}"""), ws).Single();
+        Assert.Equal("src/Api.cs", up.Title);
+        up = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"e","status":"in_progress","kind":"read","title":"read","rawInput":{"path":"/home/alex/checkout-app"}}"""), ws).Single();
+        Assert.Equal(".", up.Title);          // the workspace itself
+        // a search's "path" is where it looked, not what it looked for
+        up = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"d","status":"in_progress","kind":"search","title":"grep","rawInput":{"pattern":"roundTax","path":"/home/alex/checkout-app/src"}}"""), ws).Single();
+        Assert.Equal("grep roundTax", up.Title);
+        // a shell tool's only location is its working folder: the command is the detail
+        var sh = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"c","status":"in_progress","kind":"execute","title":"ls src","locations":[{"path":"/home/alex/checkout-app"}],"rawInput":{"command":"ls src","cwd":"/home/alex/checkout-app"}}"""), ws).Single();
+        Assert.Equal("ls src", sh.Title);
+        // the completed update carries neither title nor input: it must not blank the row
+        var end = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"b","status":"completed","locations":[{"path":"/home/alex/checkout-app/src/Api.cs"}]}"""), ws).Single();
+        Assert.Equal((StreamKinds.ToolEnd, null), (end.Kind, end.Title));
     }
 
     [Fact]

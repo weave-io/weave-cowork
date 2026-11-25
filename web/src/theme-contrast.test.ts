@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { themes } from './theme'
+import { avatarColors } from './avatarColors'
 
 // Text keeps 4.5:1 on the surfaces it sits on, in every theme (Fleet's tokens already do; this guards our copy of them).
 const css = readFileSync(new URL('./assets/main.css', import.meta.url), 'utf8')
@@ -27,4 +28,9 @@ for (const t of themes) test(`${t.id}: text reads at 4.5:1 on its surfaces`, () 
   const surfaces = ['rail-bg', 'panel-bg', 'card-bg', 'main-bg'].map(n => resolve(v, n))
   for (const s of surfaces) for (const fg of ['text', 'muted', 'accent-text', 'error-text', 'running-text', 'idle-text'])
     expect(ratio(resolve(v, fg), s), `${fg} on ${s}`).toBeGreaterThanOrEqual(4.5)
+})
+
+test('avatar colours: white initials read at 4.5:1 and no two colours are alike', () => {
+  for (const c of avatarColors) expect(ratio('#FFFFFF', c), c).toBeGreaterThanOrEqual(4.5)
+  expect(new Set(avatarColors).size).toBe(avatarColors.length)
 })

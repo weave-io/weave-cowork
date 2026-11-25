@@ -140,7 +140,8 @@ public class RoutingTests
         var root = (await alex.Post(ch, "@reviewer hi")).GetProperty("id").GetInt64();
         await runner.NextDelivery();
         await runner.Say(root, "Hel"); await runner.Say(root, "lo");
-        await runner.Conn!.InvokeAsync("Stream", new StreamEvent(root, StreamKinds.ToolStart, null, "t1", "Read README.md", "read", "running"));
+        await runner.Conn!.InvokeAsync("Stream", new StreamEvent(root, StreamKinds.ToolStart, null, "t1", "read", "read", "running"));
+        await runner.Conn!.InvokeAsync("Stream", new StreamEvent(root, StreamKinds.ToolUpdate, null, "t1", "README.md", null, null));     // the detail arrives later
         await runner.Conn!.InvokeAsync("Stream", new StreamEvent(root, StreamKinds.ToolEnd, null, "t1", null, null, "completed"));
         await runner.Say(root, "Done."); await runner.End(root);
         var t = await rosa.Http.GetFromJsonAsync<JsonElement>($"/api/threads/{root}");
@@ -148,6 +149,7 @@ public class RoutingTests
         Assert.Equal(new[] { "text", "tool", "text" }, replies.Select(x => x.GetProperty("kind").GetString()).ToArray());
         Assert.Equal("Hello", replies[0].GetProperty("body").GetString());
         Assert.Equal("completed", replies[1].GetProperty("meta").GetProperty("status").GetString());
+        Assert.Equal("README.md", replies[1].GetProperty("body").GetString());          // an update fills in the row; it doesn't end the tool
         Assert.All(replies, x => Assert.False(x.GetProperty("streaming").GetBoolean()));
         Assert.Equal("lo", Assert.Single(deltas, d => d == "lo"));
         Assert.Contains("tool", created);

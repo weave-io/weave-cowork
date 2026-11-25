@@ -282,12 +282,12 @@ public sealed class Dispatcher
                 if (e.ToolId is not null) st.Tools[e.ToolId] = pid;
                 await EmitPost(pid);
                 break;
-            case StreamKinds.ToolEnd when e.ToolId is not null && st.Tools.TryGetValue(e.ToolId, out var tp):
+            case StreamKinds.ToolEnd or StreamKinds.ToolUpdate when e.ToolId is not null && st.Tools.TryGetValue(e.ToolId, out var tp):
                 using (var c = _db.Open())
                 {
                     var old = c.ExecuteScalar<string>("SELECT meta FROM posts WHERE id=@tp", new { tp });
                     var node = System.Text.Json.Nodes.JsonNode.Parse(old ?? "{}")!.AsObject();
-                    node["status"] = e.Status ?? "completed";
+                    if (e.Kind == StreamKinds.ToolEnd) node["status"] = e.Status ?? "completed";
                     if (!string.IsNullOrEmpty(e.Title)) { node["title"] = e.Title; c.Execute("UPDATE posts SET body=@t WHERE id=@tp", new { t = e.Title, tp }); }
                     c.Execute("UPDATE posts SET meta=@m WHERE id=@tp", new { m = node.ToJsonString(), tp });
                 }

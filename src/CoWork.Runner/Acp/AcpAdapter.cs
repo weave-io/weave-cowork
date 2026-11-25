@@ -23,6 +23,7 @@ public sealed class AcpAdapter : IAsyncDisposable
     private readonly ConcurrentDictionary<long, string> _sessions = new();           // thread → ACP session id
     private readonly ConcurrentDictionary<string, long> _threads = new();            // ACP session id → thread
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _threadLocks = new();
+    private readonly ConcurrentDictionary<long, string> _workspaces = new();         // thread → its folder, so paths read relative to it
     public Action<string>? Log;
     // events go to the server one at a time, in the order the agent produced them
     private readonly System.Threading.Channels.Channel<StreamEvent> _outbox = System.Threading.Channels.Channel.CreateUnbounded<StreamEvent>();
@@ -100,6 +101,7 @@ public sealed class AcpAdapter : IAsyncDisposable
     {
         if (_sessions.TryGetValue(m.ThreadId, out var existing)) return (existing, false);
         var cwd = Path.GetFullPath(m.Workspace);
+        _workspaces[m.ThreadId] = cwd;
         var saved = _store?.Get(m.ThreadId);
         if (saved is not null && _canLoad)
         {
@@ -128,12 +130,12 @@ public sealed class AcpAdapter : IAsyncDisposable
         var sid = (string?)p["sessionId"];
         if (sid is null || !_threads.TryGetValue(sid, out var thread)) return;
         var u = p["update"]; if (u is null) return;
-        try { foreach (var e in Map(thread, u)) Emit(e); }
+        try { foreach (var e in Map(thread, u, _workspaces.GetValueOrDefault(thread))) Emit(e); }
         catch (Exception ex) { Log?.Invoke($"thread {thread}: couldn't read an update ({ex.Message}); skipped"); }     // one odd update must not stop the session
     }
 
     /// <summary>session/update → stream events. Only what a thread shows: the agent's words and its tool calls.</summary>
-    public static IEnumerable<StreamEvent> Map(long thread, JsonNode u)
+    public static IEnumerable<StreamEvent> Map(long thread, JsonNode u, string? workspace = null)
     {
         switch ((string?)u["sessionUpdate"])
         {
@@ -142,27 +144,40 @@ public sealed class AcpAdapter : IAsyncDisposable
                     yield return new StreamEvent(thread, StreamKinds.Text, t);
                 break;
             case "tool_call":
-                yield return new StreamEvent(thread, StreamKinds.ToolStart, null, (string?)u["toolCallId"], Describe(u) ?? "tool", (string?)u["kind"], Norm((string?)u["status"]));
+                yield return new StreamEvent(thread, StreamKinds.ToolStart, null, (string?)u["toolCallId"], Describe(u, workspace) ?? "tool", (string?)u["kind"], Norm((string?)u["status"]));
                 if (Norm((string?)u["status"]) is "completed" or "failed")
                     yield return new StreamEvent(thread, StreamKinds.ToolEnd, null, (string?)u["toolCallId"], null, null, Norm((string?)u["status"]));
                 break;
             case "tool_call_update":
+                // OpenCode 2 sends the first tool_call bare (no input, no locations); what the tool touches arrives in the
+                // in_progress update that follows, so a non-final update refines the row's title when it carries any detail
+                if (Norm((string?)u["status"]) is not ("completed" or "failed") && (string?)u["toolCallId"] is { } uid && Describe(u, workspace) is { } refined)
+                    yield return new StreamEvent(thread, StreamKinds.ToolUpdate, null, uid, refined, null, null);
                 if (Norm((string?)u["status"]) is "completed" or "failed" && (string?)u["toolCallId"] is { } id)
                     yield return new StreamEvent(thread, StreamKinds.ToolEnd, null, id, (string?)u["title"], null, Norm((string?)u["status"]));
                 break;
         }
     }
-    /// <summary>What a tool touched: the title, plus the first path, pattern or command from locations / rawInput when there is one.</summary>
-    public static string? Describe(JsonNode u)
+    /// <summary>What a tool touched: the title, plus the first path, pattern or command from rawInput (or locations) when there is one.
+    /// A shell tool's location is only its working folder, so for "execute" the command alone counts. When the title is just the
+    /// kind ("read"), the row already shows the kind, so the detail stands alone ("src/Api.cs"). Paths under the workspace are relative.</summary>
+    public static string? Describe(JsonNode u, string? workspace = null)
     {
         var title = (string?)u["title"];
-        string? detail = u["locations"] is JsonArray { Count: > 0 } locs ? (locs[0]?["path"] as JsonValue)?.GetValue<string>() : null;
-        if (detail is null && u["rawInput"] is JsonObject raw)
-            foreach (var k in new[] { "filePath", "path", "pattern", "command", "query", "url" })
+        var kind = (string?)u["kind"];
+        string? detail = null;
+        if (u["rawInput"] is JsonObject raw)
+            // a search names its pattern first (its "path" is only where it looked); anything else names the file, command or address
+            foreach (var k in kind == "search" ? new[] { "pattern", "query", "filePath", "path" } : new[] { "filePath", "path", "command", "pattern", "query", "url" })
                 if (raw[k] is JsonValue v && v.TryGetValue<string>(out var sv) && !string.IsNullOrWhiteSpace(sv)) { detail = sv; break; }
-        if (detail is null) return title;
+        if (detail is null && kind != "execute" && u["locations"] is JsonArray { Count: > 0 } locs)
+            detail = (locs[0]?["path"] as JsonValue)?.GetValue<string>();
+        if (detail is null) return string.IsNullOrWhiteSpace(title) ? null : title;
+        if (workspace is not null && detail.TrimEnd('/') == workspace.TrimEnd('/')) detail = ".";
+        else if (workspace is not null && detail.StartsWith(workspace.TrimEnd('/') + "/", StringComparison.Ordinal)) detail = detail[(workspace.TrimEnd('/').Length + 1)..];
         if (detail.Length > 120) detail = detail[..120] + "…";
-        return string.IsNullOrWhiteSpace(title) || title!.Contains(detail) ? detail : $"{title} {detail}";
+        if (string.IsNullOrWhiteSpace(title) || string.Equals(title, kind, StringComparison.OrdinalIgnoreCase)) return detail;
+        return title.Contains(detail) ? title : $"{title} {detail}";
     }
     private static string? Norm(string? s) => s switch { "in_progress" or "pending" => "running", null => null, _ => s };
 

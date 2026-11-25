@@ -14,7 +14,7 @@ public record DeliverMessage(
 /// <summary>Runner → server: what the agent is doing in a thread.</summary>
 public record StreamEvent(
     long ThreadId,
-    string Kind,            // text | toolStart | toolEnd | turnEnded | error
+    string Kind,            // text | toolStart | toolUpdate | toolEnd | turnEnded | error
     string? Text = null,    // text delta, or the error message
     string? ToolId = null,
     string? Title = null,
@@ -27,5 +27,5 @@ public record PermissionAnswerMsg(string RequestId, string? OptionId);   // null
 
 public static class StreamKinds
 {
-    public const string Text = "text", ToolStart = "toolStart", ToolEnd = "toolEnd", TurnEnded = "turnEnded", Error = "error";
+    public const string Text = "text", ToolStart = "toolStart", ToolEnd = "toolEnd", ToolUpdate = "toolUpdate", TurnEnded = "turnEnded", Error = "error";
 }

@@ -58,7 +58,7 @@ try {
   // the agent
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]')
   await a.fill('[name=handle]', 'reviewer'); await a.fill('[name=about]', 'Reviews the checkout app')
-  await a.fill('[name=instructions]', 'You are reviewer, a code reviewer for the Lumen Labs checkout app. Answer in at most four short sentences. Only read files; never change anything.')
+  await a.fill('[name=instructions]', 'You are reviewer, a code reviewer for the Lumen Labs checkout app. Answer in at most four short sentences. Only use your read, grep and glob tools, with paths inside the workspace; never run shell commands and never change anything.')
   await a.fill('[name=harness]', HARNESS); await a.fill('[name=workspace]', REPO)
   await a.click('button:has-text("Create agent")'); await a.waitForSelector('[data-testid=runner-command]')
   await shot(a, 'invite-agent-dark')
@@ -71,7 +71,7 @@ try {
   // reply in a thread on Alex's first post, mentioning the agent
   await a.hover('[data-post]:has-text("cart total")')
   await a.click('[data-post]:has-text("cart total") >> text=Reply in thread')
-  await a.fill('[data-testid=thread-panel] [data-testid=composer]', '@reviewer can you find where the tax is rounded in this repository? Name the file.'); await a.keyboard.press('Enter')
+  await a.fill('[data-testid=thread-panel] [data-testid=composer]', '@reviewer can you find where the tax is rounded in this repository? Use grep and read, then name the file.'); await a.keyboard.press('Enter')
   await a.waitForSelector('[data-testid=thread-panel] [data-post]:has-text("reviewer")', { timeout: LONG })
   await idle(a)
   const tools = await a.locator('[data-testid=thread-panel] [data-testid=tool-row]').count()

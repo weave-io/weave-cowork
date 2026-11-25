@@ -86,6 +86,9 @@ try {
   console.log('  first answer: ' + first.slice(0, 500).replace(/\n/g, ' | '))
   const tools = await a.locator('[data-testid=thread-panel] [data-testid=tool-row]').count()
   ok(`reviewer answered in the thread (${tools} tool rows)`)
+  const bodies = await a.locator('[data-testid=thread-panel] [data-testid=tool-row] span.truncate').allTextContents()
+  console.log('  tool rows: ' + bodies.join(' | '))
+  expect(tools > 0 && bodies.every(b => !/^(read|grep|glob|search|edit|shell|list)$/i.test(b.trim())), 'every tool row says what it touched (a path, a pattern or a command), not just the tool')
   await shot(a, 'agent-answer')
 
   await r.click('[data-testid=thread-card]')
@@ -101,27 +104,24 @@ try {
   expect(deliveries.every(d => d[1] === 'done'), 'both deliveries are done')
   await shot(r, 'rosa-reply')
 
-  // permission: only the owner gets buttons
+  // permission: only the owner gets buttons. The scratch OpenCode config asks for every shell command ("bash": "ask"), and the
+  // command is new each run, in a new thread, so no earlier "allow" can apply: the ask card MUST appear, or this check fails.
   auto = false
-  await a.fill('[data-testid=thread-panel] [data-testid=composer]', '@reviewer please run `ls -la /home | head -3` in the shell and show me what it printed'); await a.keyboard.press('Enter')
-  const gotAsk = await Promise.race([
-    a.waitForSelector('[data-testid=ask-card]', { timeout: LONG }).then(() => true),
-    a.waitForFunction(() => /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? '') && document.querySelectorAll('[data-testid=thread-panel] [data-post]').length >= 6, null, { timeout: LONG }).then(() => false),
-  ])
-  if (gotAsk) {
-    await r.waitForSelector('[data-testid=ask-card]')
-    expect((await r.textContent('[data-testid=ask-waiting]')).includes('waiting for Alex'), 'Rosa sees "reviewer is waiting for Alex"')
-    expect(await r.locator('[data-testid=ask-card] button').count() === 0, 'Rosa has no Allow / Deny buttons')
-    expect(await a.locator('[data-testid=ask-card] button:has-text("Deny")').count() === 1, 'Alex has Allow / Deny')
-    await shot(a, 'permission-owner'); await shot(r, 'permission-rosa')
-    const denied = await r.evaluate(async () => (await fetch(`/api/posts/${document.querySelector('[data-testid=ask-card]') ? 0 : 0}/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"optionId":"x"}' })).status)
-    const askId = JSON.parse(sql("select id from posts where kind='ask' order by id desc limit 1"))[0][0]
-    const rosaTry = await r.evaluate(async (id) => (await fetch(`/api/posts/${id}/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"optionId":null}' })).status, askId)
-    expect(rosaTry === 403, 'the server refuses Rosa answering the owner\'s ask (403)')
-    await a.click('[data-testid=ask-card] button:has-text("Allow once")')
-    await a.waitForFunction(() => /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? ''), null, { timeout: LONG })
-    ok('Alex allowed it; the harness carried on and answered')
-  } else console.log('  (the harness did not ask permission for that command; permission path is covered by the fake-agent tests)')
+  const nonce = Math.random().toString(36).slice(2, 8)
+  await a.fill('[data-testid=composer]', `@reviewer Use your shell tool to run exactly this command and nothing else: echo ask-${nonce}   Then tell me what it printed.`); await a.keyboard.press('Enter')
+  await a.waitForSelector('[data-testid=thread-panel] [data-testid=ask-card]', { timeout: LONG }).catch(() => { throw new Error('FAILED: the harness did not ask permission for a new shell command, so the owner-approval checks could not run (not a pass)') })
+  await r.click(`[data-post]:has-text("ask-${nonce}") >> [data-testid=thread-card]`)
+  await r.waitForSelector('[data-testid=ask-card]')
+  expect((await r.textContent('[data-testid=ask-waiting]')).includes('waiting for Alex'), 'Rosa sees "reviewer is waiting for Alex"')
+  expect(await r.locator('[data-testid=ask-card] button').count() === 0, 'Rosa has no Allow / Deny buttons')
+  expect(await a.locator('[data-testid=ask-card] button:has-text("Deny")').count() === 1, 'Alex has Allow / Deny')
+  await shot(a, 'permission-owner'); await shot(r, 'permission-rosa')
+  const askId = JSON.parse(sql("select id from posts where kind='ask' order by id desc limit 1"))[0][0]
+  const rosaTry = await r.evaluate(async (id) => (await fetch(`/api/posts/${id}/answer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"optionId":null}' })).status, askId)
+  expect(rosaTry === 403, 'the server refuses Rosa answering the owner\'s ask (403)')
+  await a.click('[data-testid=ask-card] button:has-text("Allow once")')
+  await a.waitForFunction((n) => document.querySelector('[data-testid=thread-panel]')?.textContent?.includes('ask-' + n) && /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? ''), nonce, { timeout: LONG })
+  expect(await a.locator('[data-testid=ask-card]:has-text("chose")').count() === 1, 'Alex allowed it; the harness carried on and answered')
   auto = true
   await a.waitForFunction(() => /idle/.test(document.querySelector('[data-testid=agent-status]')?.textContent ?? ''), null, { timeout: LONG })
 
