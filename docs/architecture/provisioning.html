@@ -120,7 +120,7 @@ svg.seq .arrowhead { fill: var(--muted); }
 </head>
 <body>
 <div class="page">
-  <div class="eyebrow">WEAVE COWORK · ARCHITECTURE · APPROVED 25 NOVEMBER 2026</div>
+  <div class="eyebrow">WEAVE COWORK · ARCHITECTURE · APPROVED 25 NOVEMBER 2026 · BUILT IN BRIEF 7</div>
   <h1>How a provisioned agent works</h1>
   <p class="sub">What happens between Rosa typing "@researcher …" and an answer, when no runner is serving researcher and nothing is running yet. One request, step by step, across every part involved. Then what has to be set up once, how it differs from today's pinned agents, and what happens when things go wrong.</p>
 
@@ -132,7 +132,7 @@ svg.seq .arrowhead { fill: var(--muted); }
     <button role="tab" aria-selected="false" data-tab="wrong">When things go wrong</button>
     <button role="tab" aria-selected="false" data-tab="images">Images</button>
     <button role="tab" aria-selected="false" data-tab="substrate">Agent Substrate</button>
-    <button role="tab" aria-selected="false" data-tab="build">What we'd build</button>
+    <button role="tab" aria-selected="false" data-tab="build">What was built</button>
   </nav>
 
   <section id="flow">
@@ -146,7 +146,7 @@ svg.seq .arrowhead { fill: var(--muted); }
       </div>
       <div class="ctl"><button id="prev" aria-label="Previous step">← Back</button><button id="next" aria-label="Next step">Next →</button></div>
     </div>
-    <p class="muted" style="margin:0 0 8px;font-size:12.5px">Click any arrow, or use ← and → on the keyboard. <span class="oldtag">exists</span> works like this today; <span class="newtag">new</span> is to build.</p>
+    <p class="muted" style="margin:0 0 8px;font-size:12.5px">Click any arrow, or use ← and → on the keyboard. Every step works like this today (brief 7, rounds 1 to 3). Where the build differs from the approved plan, the step says how; <span class="newtag">new</span> marks what is still to build.</p>
     <div class="seqwrap"><svg class="seq" id="seq" role="img" aria-label="Sequence of one request to a provisioned agent"></svg></div>
   </section>
 
@@ -187,9 +187,9 @@ svg.seq .arrowhead { fill: var(--muted); }
     <div class="setup">
       <div class="card"><h3><b class="n">1</b>Connect a pool</h3><p>On any Linux box with podman, the admin runs the runner in pool mode with a one-time code from <b>Where agents run → Add a pool</b>:</p><pre>cowork-runner pool connect https://cowork.lumen.example \
   --code K7QF-2M9X --slots 4 --memory 2500M</pre><p>It enrols like a runner today, but its token may only start and stop sandboxes. It serves no agent itself and holds no agent's identity. It shows as <b>pool-01 · 4 slots · online</b>.</p></div>
-      <div class="card"><h3><b class="n">2</b>Add model access</h3><p><b>Server settings → Models</b>: a provider and its API key (Anthropic, OpenAI, OpenRouter, a local model). The key stays in the server. Sandboxes reach models only through the gateway with their thread token.</p><p class="muted">Subscriptions (a Claude or ChatGPT plan) can't be shared this way: they stay with pinned agents on their owner's machine.</p></div>
-      <div class="card"><h3><b class="n">3</b>Make a template</h3><p><b>Agents → New team template</b>: researcher. Instructions, the harness (<code>opencode acp</code> 2.4.1), its model through the gateway, and the sandbox image it starts from (see the Images tab).</p></div>
-      <div class="card"><h3><b class="n">4</b>Enable it in a project</h3><p>In <b>New project</b> or the project's settings, Alex switches researcher on for Checkout app, with a budget. Checkout app's workspaces, sources, rules and network list then apply to every researcher thread there.</p><p class="muted">That's all. Nobody connects anything per thread.</p></div>
+      <div class="card"><h3><b class="n">2</b>Add model access</h3><p><b>Server settings → Models</b>: an OpenAI-compatible provider and its key (OpenAI, OpenRouter, a local model), or, for a server only its owner uses, GitHub Copilot signed in on the server's machine. The key stays in the server. Sandboxes reach models only through the gateway with their thread token. The idle and retention times are set here too.</p><p class="muted">Subscriptions (a Claude or ChatGPT plan) can't be shared this way: they stay with pinned agents on their owner's machine.</p></div>
+      <div class="card"><h3><b class="n">3</b>Make a template</h3><p><b>Invite an agent → Runs on: a pool</b> (admins): researcher. Instructions, the harness (<code>opencode acp</code> 2.4.1), its model through the gateway, and the sandbox image it starts from (see the Images tab).</p></div>
+      <div class="card"><h3><b class="n">4</b>Enable it in a project</h3><p>In <b>New project</b> or the project's settings, Alex adds researcher to Checkout app. Its settings hold the network list, the setup command and the budget (a month and a thread, in tokens and in dollars); they apply to every researcher thread there.</p><p class="muted">That's all. Nobody connects anything per thread.</p></div>
     </div>
   </section>
 
@@ -201,10 +201,10 @@ svg.seq .arrowhead { fill: var(--muted); }
         <tr><td><b>Who connects it</b></td><td>Its owner runs <code>cowork-runner connect</code> once</td><td>Nobody per agent: the admin connected a pool once</td></tr>
         <tr><td><b>Running when nobody asks?</b></td><td>The runner is; the harness starts per thread</td><td>Nothing runs. A container starts when a thread needs one</td></tr>
         <tr><td><b>Where the harness runs</b></td><td>The owner's machine, as the owner's user</td><td>A container per thread on a pool</td></tr>
-        <tr><td><b>Workspace</b></td><td>A clone on that machine, a worktree per thread</td><td>The pool's mirror, a worktree per thread in the thread's volume</td></tr>
+        <tr><td><b>Workspace</b></td><td>A clone on that machine, a worktree per thread</td><td>The pool's mirror, a copy per thread in the thread's volume</td></tr>
         <tr><td><b>Model access</b></td><td>The owner's own sign-in or key</td><td>The server's key, through the gateway</td></tr>
-        <tr><td><b>Cost</b></td><td>The owner's; not in the project's budget</td><td>The project's, counted per thread</td></tr>
-        <tr><td><b>Sandbox</b></td><td>Optional; labelled "unsandboxed" when off</td><td>Always: container, mounts, egress proxy</td></tr>
+        <tr><td><b>Cost</b></td><td>The owner's; not in the project's budget</td><td>The project's, counted per thread in tokens (and dollars when reported)</td></tr>
+        <tr><td><b>Sandbox</b></td><td>Optional; labelled "unsandboxed" when off</td><td>Always: a container with no network, its volume, and two sockets (the server, the egress proxy)</td></tr>
         <tr><td><b>Who approves</b></td><td>Its owner</td><td>Whoever started the thread; a lead as fallback</td></tr>
         <tr><td><b>Parallel threads</b></td><td>As many as the machine copes with</td><td>As many as the pools have slots; the rest wait in order</td></tr>
         <tr><td><b>Offline</b></td><td>When the owner's machine sleeps; requests wait</td><td>Only when no pool is online</td></tr>
@@ -217,13 +217,13 @@ svg.seq .arrowhead { fill: var(--muted); }
       <thead><tr><th>What happens</th><th>What the thread says</th><th>What CoWork does</th></tr></thead>
       <tbody>
         <tr><td>Every slot is busy</td><td>"Waiting for room on pool-01 (4 of 4 busy), 2nd in line"</td><td>Queues the start; the first slot that frees goes to the oldest request</td></tr>
-        <tr><td>No pool is online</td><td>"No pool is online. Alex has been told."</td><td>Keeps the message; starts the sandbox when a pool connects</td></tr>
-        <tr><td>First use of an image</td><td>"Getting the sandbox image (310 MB)…"</td><td>Pulls once per pool; later starts take seconds</td></tr>
+        <tr><td>No pool is online</td><td>"No pool is online, 1st in line"</td><td>Keeps the message; starts the sandbox when a pool connects. <span class="newtag">new</span> Telling an admin</td></tr>
+        <tr><td>First use of an image</td><td>"…couldn't start: podman run failed: …" when the image is missing</td><td>The image is built on the pool's machine (<code>deploy/sandbox/build.sh</code>); later starts take about a second</td></tr>
         <tr><td>The container dies mid-turn</td><td>"researcher's sandbox stopped unexpectedly. Trying again."</td><td><code>TurnInterrupted</code>; starts it again once on the same volume with <code>session/load</code>; fails the turn the second time</td></tr>
         <tr><td>The pool's machine goes away</td><td>"pool-01 went offline during this turn."</td><td>The volume is on pool-01, so the thread waits for it, or a lead starts it fresh elsewhere (the branch is pushed, the harness's memory is lost)</td></tr>
-        <tr><td>The thread reaches its cap</td><td>"Reached $5 for this thread. A lead can raise it."</td><td>The gateway refuses further model calls; the turn ends cleanly</td></tr>
+        <tr><td>The thread reaches its cap</td><td>"Reached this thread's cap of 200,000 tokens. A lead can raise it."</td><td>The gateway refuses further model calls (once per turn in the thread); the turn ends cleanly; a lead gets Raise this thread's cap</td></tr>
         <tr><td>A host not on the list</td><td>An ask card to whoever started the thread</td><td>The proxy refuses and reports it; an allow opens it once or for the thread</td></tr>
-        <tr><td>Someone presses Pause</td><td>"Paused by Alex"</td><td>Stops every sandbox in the project; volumes kept; messages wait</td></tr>
+        <tr><td>Someone presses Pause</td><td>"paused by Alex"; a turn that was running goes back in line</td><td>Stops every sandbox in the project; volumes kept; messages wait</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -283,24 +283,24 @@ svg.seq .arrowhead { fill: var(--muted); }
   </section>
 
   <section id="build" hidden>
-    <p class="lead">The runner already runs whatever the server sends it (<code>DeliverMessage</code> carries the instructions, harness command and workspace), so the runner inside a sandbox is today's runner. What's new is around it.</p>
+    <p class="lead">The runner inside a sandbox is the same runner people connect for their own agents; what brief 7 built is around it. <span class="newtag">new</span> marks what is still to build.</p>
     <div class="tablewrap"><table>
       <thead><tr><th>Part</th><th>What</th></tr></thead>
       <tbody>
         <tr><td><b>Templates</b></td><td>An agent with placement "pool" instead of a pinned runner, enabled per project</td></tr>
-        <tr><td><b>Pool mode</b></td><td><code>cowork-runner pool</code>: enrols as a pool, receives <code>StartSandbox</code> / <code>StopSandbox</code> / <code>DeleteSandbox</code>, keeps repository mirrors, makes volumes and worktrees, runs podman with limits, reports slots</td></tr>
-        <tr><td><b>Sandbox tokens</b></td><td>Minted per thread, hashed, bound to agent, project and thread; used for the runner's connection, CoWork's tools and the gateway</td></tr>
-        <tr><td><b>Routing</b></td><td>A message for a template with no live sandbox asks a pool to start one, and waits; idle sandboxes stop after 15 minutes</td></tr>
-        <tr><td><b>Gateway</b></td><td>An OpenAI- and Anthropic-compatible endpoint in the server that swaps the token for the real key and counts cost per thread</td></tr>
-        <tr><td><b>Egress proxy</b></td><td>A small proxy per pool; each sandbox's network only reaches it; it applies the project's list and reports refusals</td></tr>
-        <tr><td><b>CoWork tools</b></td><td>The <code>cowork</code> MCP server passed in <code>session/new</code> (today the list is empty): read a channel, search, save to the library, resolve the thread</td></tr>
-        <tr><td><b>The image</b></td><td><code>cowork-sandbox-opencode</code>: the runner and OpenCode at a pinned version, git, a non-root user. Plus the project's setup command, if question 3 goes that way</td></tr>
+        <tr><td><b>Pool mode</b></td><td><code>cowork-runner pool</code>: enrols as a pool, receives <code>CreateSandbox</code> / <code>ResumeSandbox</code> / <code>SuspendSandbox</code> / <code>DeleteSandbox</code> and <code>AllowEgress</code>, keeps repository mirrors, makes a labelled volume per thread with a copy of the repository, runs rootless podman with <code>--network none</code> and the memory limit, reports slots and state</td></tr>
+        <tr><td><b>Sandbox tokens</b></td><td>Minted per start and resume, hashed, bound to sandbox, agent, project and thread, revoked on suspend; used for the runner's connection, CoWork's tools and the gateway. <span class="newtag">new</span> A signed token the proxy could check itself</td></tr>
+        <tr><td><b>Routing</b></td><td>A message for a template with no live sandbox asks a pool to start one, and waits in line; idle sandboxes stop after the idle time; a sandbox that dies mid-turn is started again once; Pause all agents holds a project's messages</td></tr>
+        <tr><td><b>Gateway</b></td><td>An OpenAI-compatible endpoint in the server (<code>/gateway/v1</code>) that swaps the token for the real credential, counts tokens and dollars per turn, thread and month, and stops a thread at its project's caps. <span class="newtag">new</span> An Anthropic-compatible endpoint</td></tr>
+        <tr><td><b>Egress proxy</b></td><td>A proxy per sandbox in the pool process, reached only through a unix socket mounted into the sandbox (which has no network); it applies the project's list, refuses and reports anything else, and opens a host once or for the thread when someone allows it. <span class="newtag">new</span> Credentials by placeholder</td></tr>
+        <tr><td><b>CoWork tools</b></td><td>The <code>cowork</code> MCP server (<code>/mcp</code>) passed in <code>session/new</code> to every agent, pinned and pool: read a channel, search, resolve the thread, each checked against the agent's boundary. <span class="newtag">new</span> Save to a library</td></tr>
+        <tr><td><b>The image</b></td><td><code>cowork-sandbox-opencode:2.4.1</code>: the runner and OpenCode at a pinned version, git, ripgrep, a non-root user; plus the project's setup command, run once per thread and kept in the volume</td></tr>
         <tr><td><b>Runner, inbound</b></td><td>Later, for a Substrate provider: the runner also takes messages on an HTTP endpoint and streams events back</td></tr>
       </tbody>
     </table></div>
     <h2>Decided</h2>
     <div class="q"><h3>1 · The first harness in sandboxes <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">OpenCode only, with the gateway as its model provider.</p></div>
-    <div class="q"><h3>2 · The network in the first version <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">The egress proxy with the project's list and asks, from day one.</p></div>
+    <div class="q"><h3>2 · The network in the first version <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">The egress proxy with the project's list and asks, from day one. Built with no network at all and a socket to the proxy, rather than an internal podman network.</p></div>
     <div class="q"><h3>3 · Where the tools a project needs come from <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">A stock image per harness, plus the project's setup command, run once per thread and kept.</p></div>
     <div class="q"><h3>4 · How the pool contract is shaped <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">Like Agent Substrate's: create, resume, suspend, delete; network rules and credential references as data. Podman first.</p></div>
   </section>
@@ -314,30 +314,31 @@ const LANES = [
 // [from, to, label, phase, isNew, title, body]
 const S = [
   [0,1,'"@researcher compare three tax APIs…"','Rosa asks',0,'Rosa posts in #checkout-app','The same as mentioning any agent today. The post is stored, everyone in the channel sees it, and a thread opens on it.'],
-  [1,1,'route: a template, no sandbox yet','Rosa asks',1,'The server decides who answers','researcher is a team template enabled in Checkout app, and no runner serves it. The server checks Rosa may give it work (she\'s a member), that the project has budget left, and that the thread has no sandbox yet. It records ThreadStarted, AgentJoinedThread and the delivery as queued. Rosa sees "starting".'],
-  [1,1,'mint a token for thread 42','Rosa asks',1,'A token for this one thread','It\'s good for researcher, in Checkout app, in thread 42, and nothing else. The server keeps only its hash. The sandbox will use it to connect, to call CoWork\'s tools and to reach the model gateway. It dies when the sandbox is deleted.'],
-  [1,2,'StartSandbox(thread 42, researcher, app@main, 2 GB, network list, token)','A sandbox starts',1,'The server asks a pool','Over pool-01\'s existing connection: the pool connected out when the admin enrolled it, like any runner. The server never reaches into a machine and holds no cloud keys. With several pools it picks the least busy one that matches the template.'],
-  [2,2,'fetch mirror, worktree in volume thread-42','A sandbox starts',1,'The pool prepares the files','pool-01 keeps one mirror of lumen/checkout-app and fetches it. It makes a volume for thread 42 with a worktree on cowork/compare-tax-apis, and a home folder for the harness. The volume outlives the container, so the thread can be picked up later.'],
-  [2,3,'podman run cowork-sandbox-opencode, limits, env','A sandbox starts',1,'The pool starts the container','Rootless podman, 2 GB of memory, its own network that only reaches pool-01\'s egress proxy. It mounts the thread\'s volume and gets three settings: the server\'s address, the thread token, and the gateway as its model provider. No API keys go in.'],
-  [3,1,'connect with the thread token','A sandbox starts',1,'The runner inside connects out','The same cowork-runner as on a laptop, started with a thread token instead of an enrolment. The server binds the connection to researcher in thread 42 and tells Rosa "ready". About 6 seconds with the image already on the pool.'],
-  [1,3,'deliver Rosa\'s message (queued until now)','It works',0,'The waiting message goes out','The delivery that was queued in step 2 is sent, exactly as today: wrapped as <cowork-message from="@rosa" …>, with researcher\'s instructions in front because it\'s the session\'s first prompt.'],
-  [3,3,'opencode acp: session/new in /work/app','It works',1,'The harness starts a session','The runner starts OpenCode and opens a session in the worktree. New: it passes MCP servers in session/new (today the list is empty): CoWork\'s own tools, which call back to the server with the thread token, and the project\'s sources.'],
-  [3,4,'model call, thread token as the key','It works',1,'The agent thinks','OpenCode talks to "its provider", which is the gateway. The gateway checks the token, sees thread 42 in Checkout app, and checks the thread is under its $5 cap.'],
-  [4,5,'forward with the server\'s real key','It works',1,'The gateway forwards and counts','It swaps in the provider key from Server settings, forwards the call, and counts tokens and dollars against thread 42 and Checkout app. The key never enters the sandbox.'],
-  [3,5,'web search, fetch (through the egress proxy)','It works',1,'The agent reaches out','Its traffic goes through pool-01\'s proxy, which lets through the hosts on Checkout app\'s list: github.com, the package registry, web search and the gateway.'],
+  [1,1,'route: a template, no sandbox yet','Rosa asks',0,'The server decides who answers','researcher is a team template enabled in Checkout app, and no runner serves it. The server checks Rosa may give it work (she\'s a member), that the project has budget left, and that the thread has no sandbox yet. It records ThreadStarted, AgentJoinedThread and the delivery as queued. Rosa sees "starting".'],
+  [1,1,'mint a token for thread 42','Rosa asks',0,'A token for this one thread','It\'s good for researcher, in Checkout app, in thread 42, and nothing else. The server keeps only its hash. The sandbox uses it to connect, to call CoWork\'s tools and to reach the model gateway. A fresh one is minted at every start and resume; it dies when the sandbox stops or is deleted.'],
+  [1,2,'CreateSandbox(thread 42, researcher, app@main, 1.5 GB, network list, token)','A sandbox starts',0,'The server asks a pool','Over pool-01\'s existing connection: the pool connected out when the admin enrolled it, like any runner. The server never reaches into a machine and holds no cloud keys. With several pools it picks the one with the most free slots; when they\'re all full the request waits in line, oldest first. The command is shaped like Agent Substrate\'s: create, resume, suspend, delete, with the network rules as data.'],
+  [2,2,'fetch mirror, copy on cowork/compare-tax-apis in volume thread-42','A sandbox starts',0,'The pool prepares the files','pool-01 keeps one mirror of lumen/checkout-app and fetches it. It makes a volume for thread 42 with a copy of the repository on cowork/compare-tax-apis, made from the mirror by a short-lived container with no network, and a home folder for the harness. Built as a copy, not the planned worktree: a worktree would point at the mirror, outside the volume. The volume outlives the container, so the thread can be picked up later.'],
+  [2,3,'podman run --network none, limits, two sockets','A sandbox starts',0,'The pool starts the container','Rootless podman with the pool\'s memory limit and no network at all. Built differently from the planned internal network: its only ways out are two unix sockets of its own, mounted from pool-01: server.sock (the server and its gateway, always reachable) and proxy.sock (the egress proxy with Checkout app\'s list). The runner inside offers them on loopback ports. It gets the server\'s address, the thread token by name, and the gateway as its model provider. No API keys go in.'],
+  [3,1,'connect with the thread token','A sandbox starts',0,'The runner inside connects out','The same cowork-runner as on a laptop, started with a thread token instead of an enrolment, through server.sock. The server binds the connection to researcher in thread 42: it hears only that thread and may post only its events. The thread shows "Connected; starting opencode acp". About a second with the image already on the pool.'],
+  [3,3,'setup: sh scripts/agent-setup.sh (once per thread)','A sandbox starts',0,'The project\'s setup command runs','Before the first prompt the runner runs Checkout app\'s setup command in the copy of the repository, through the proxy like everything else (so a package registry has to be on the list). Its output is a tool row in the thread. What it installs, and a marker that it ran, stay in the volume, so later starts skip it.'],
+  [1,3,'deliver Rosa\'s message (queued until now)','It works',0,'The waiting message goes out','The delivery that was queued in step 2 is sent, exactly as for any agent: wrapped as <cowork-message from="@rosa" …>, with researcher\'s instructions in front because it\'s the session\'s first prompt.'],
+  [3,3,'opencode acp: session/new in /work/repo, with CoWork\'s tools','It works',0,'The harness starts a session','The runner starts OpenCode and opens a session in the copy of the repository. It passes CoWork\'s own tools as an MCP server in session/new: cowork_read_channel, cowork_search and cowork_resolve_thread, which call back to the server with the thread token and only ever see what researcher may see. OpenCode 2.4.1 takes them over HTTP; a harness that can\'t gets a stdio bridge. Pinned agents get the same tools with their runner\'s token.'],
+  [3,4,'model call, thread token as the key','It works',0,'The agent thinks','OpenCode talks to "its provider", which is the gateway. The gateway checks the token, sees thread 42 in Checkout app, and checks the thread and the project\'s month are under their caps. Caps are in tokens and in dollars: GitHub Copilot reports no cost, so its threads are held by the token caps.'],
+  [4,5,'forward with the server\'s credential','It works',0,'The gateway forwards and counts','It forwards with the provider from Server settings (an OpenAI-compatible key, or the server machine\'s GitHub Copilot sign-in), streams the answer back, and counts tokens, and dollars when the provider says, against the turn, thread 42 and Checkout app\'s month. The credential never enters the sandbox.'],
+  [3,5,'fetch (through the egress proxy)','It works',0,'The agent reaches out','Its traffic goes through proxy.sock to pool-01\'s proxy, which lets through the hosts on Checkout app\'s list: github.com and the package registry. Web search as a service is still to build.'],
   [3,1,'text and tool rows as they happen','It works',0,'The answer streams back','The same StreamEvents as today: text, tool starts and ends. The server records them as events.'],
   [1,0,'live to everyone in the channel','It works',0,'Everyone watches it work','Rosa, Alex and Sam see the text and the tool rows arrive, as today.'],
-  [2,1,'refused: api.levy.example','It asks',1,'A host not on the list','The agent tries Levy.io\'s API reference. The proxy refuses the connection and tells the server through pool-01. The agent sees a refused connection, as it would on any locked-down network.'],
-  [1,0,'ask card to Rosa, who started the thread','It asks',1,'The person who asked decides','Rosa gets Allow once, Allow for this thread, Deny. Alex sees "waiting for Rosa" and gets the card himself after 30 minutes, because he leads the project.'],
-  [0,1,'Allow once','It asks',0,'Rosa allows it','Recorded as PermissionGranted, caused by the request, with Rosa as the actor: the audit can tell the story later.'],
-  [1,2,'open api.levy.example once for thread 42','It asks',1,'The proxy is told','pool-01\'s proxy lets one connection through for this sandbox.'],
-  [1,3,'"api.levy.example is allowed once; try again"','It asks',1,'The agent is told','A short system message in the session, so the agent knows to retry instead of giving up.'],
-  [3,1,'cowork_save_doc, cowork_resolve_thread','It finishes',1,'It saves its work and finishes','Through CoWork\'s tools it saves "Tax APIs compared" to Checkout app\'s library and resolves the thread with a summary: the outcome people see and search. The turn ends with its cost, $1.40, from the gateway.'],
-  [1,2,'15 idle minutes: StopSandbox','It finishes',1,'The sandbox stops','The container is removed and the slot freed. The volume stays: the worktree and OpenCode\'s own record of the session.'],
+  [2,1,'refused: api.levy.example','It asks',0,'A host not on the list','The agent tries Levy.io\'s API reference. The proxy refuses at once with a 403 that says why, and tells the server through pool-01. The agent sees a refused request and carries on.'],
+  [1,0,'ask card to Rosa, who started the thread','It asks',0,'The person who asked decides','Rosa gets Allow once, Allow for this thread, Deny. Alex sees "researcher is waiting for Rosa" and may answer himself after 30 minutes, because he leads the project.'],
+  [0,1,'Allow once','It asks',0,'Rosa allows it','Recorded as EgressAllowed with Rosa as the actor: the audit can tell the story later.'],
+  [1,2,'AllowEgress: api.levy.example, once','It asks',0,'The proxy is told','pool-01\'s proxy lets one connection through for this sandbox. "For this thread" is also kept by the server and goes into every later start\'s rules.'],
+  [1,3,'"Rosa allowed api.levy.example once. Try again."','It asks',0,'The agent is told','A short system message, queued as its next prompt, so the agent tries again instead of giving up.'],
+  [3,1,'cowork_resolve_thread','It finishes',0,'It finishes with an outcome','Through CoWork\'s tools it resolves the thread with a title and a summary: the outcome people see on the post ("done"), in the thread with its time, tokens and tool calls, and first in search. Saving "Tax APIs compared" to a project library is still to build.'],
+  [1,2,'idle: SuspendSandbox','It finishes',0,'The sandbox stops','After the server\'s idle time (15 minutes unless an admin sets it) the token is revoked and the container is removed; the slot is freed. The volume stays: the copy of the repository and OpenCode\'s own record of the session.'],
   [0,1,'Sam replies in the thread','Later',0,'Sam asks a follow-up','"Can you add a fourth provider?" A reply in a thread with researcher in it is a message for researcher, as today.'],
-  [1,2,'StartSandbox(thread 42, same volume)','Later',1,'The same thread starts again','Steps 4 to 7 again, but the volume already exists, so there\'s nothing to clone.'],
-  [3,3,'session/load: it remembers','Later',0,'It picks up where it left off','The runner reloads the saved session by id, as it does after a restart today, so researcher remembers the first answer and Rosa\'s allow.'],
-  [1,2,'7 days after done: DeleteSandbox','Later',1,'Clean-up','The volume is deleted, and the branch with it if it has no changes. Pushed branches and library documents stay.'],
+  [1,2,'ResumeSandbox(thread 42, same volume)','Later',0,'The same thread starts again','Steps 4 to 7 again with a fresh token, but the volume already exists, so there\'s nothing to copy and the setup doesn\'t run again.'],
+  [3,3,'session/load: it remembers','Later',0,'It picks up where it left off','The runner reloads the saved session by id, as it does after a restart, so researcher remembers the first answer and Rosa\'s allow. A new message also opens the done thread again.'],
+  [1,2,'after the retention time: DeleteSandbox','Later',0,'Clean-up','After the server\'s retention time (7 days unless an admin sets it) the pool looks at the thread\'s branch in the volume. With no commits and no changed tracked files the volume is deleted, the branch with it; otherwise the volume is kept and the outcome says why.'],
 ];
 const W = 1000, X0 = 85, DX = (W - 2 * X0) / (LANES.length - 1), TOP = 62, ROW = 34, PH = 22;
 const svg = document.getElementById('seq');
