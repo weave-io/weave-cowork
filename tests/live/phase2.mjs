@@ -74,7 +74,7 @@ try {
 
   // --- 8. the agent takes part ---
   await a.click('[data-channel=checkout-app]')
-  await a.fill('[data-testid=composer]', '@reviewer what does this repository do?'); await a.keyboard.press('Enter')
+  await a.fill('[data-testid=composer]', '@reviewer what does this repository do? Read README.md with your read tool before you answer.'); await a.keyboard.press('Enter')
   await a.waitForSelector('[data-testid=thread-panel]')
   ok('posting a mention opens a thread on that post')
   const sess = await a.textContent('[data-testid=session-line]')
