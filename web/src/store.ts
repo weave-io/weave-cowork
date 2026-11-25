@@ -16,6 +16,8 @@ export const store = reactive({
   voice: { enabled: false, url: null as string | null },
   voicePresence: {} as Record<number, number[]>,
   live: false,
+  /** the last event position this browser has seen: a reconnect asks for everything after it */
+  position: 0,
   modal: null as null | { name: string; props?: any },
 })
 
@@ -31,7 +33,7 @@ export async function init() {
   const st = await get('/setup/status')
   store.serverName = st.serverName ?? ''
   if (st.needsSetup) { store.phase = 'setup'; return }
-  try { await loadBootstrap(); store.phase = 'app'; startHub() }
+  try { store.position = (await loadBootstrap()).position ?? 0; store.phase = 'app'; startHub() }
   catch (e) { if (e instanceof ApiError && e.status === 401) store.phase = 'signin'; else throw e }
 }
 
@@ -44,10 +46,11 @@ export async function loadBootstrap() {
   store.channels = b.channels
   store.voice = b.voice ?? { enabled: false, url: null }
   store.voicePresence = b.voicePresence ?? {}
+  return b
 }
 
 export async function signedIn() {
-  await loadBootstrap()
+  store.position = (await loadBootstrap()).position ?? 0
   store.phase = 'app'
   startHub()
 }
@@ -87,7 +90,7 @@ export async function openThread(rootId: number | null) {
 
 async function reloadFeed() {
   const id = store.feed.channelId, tid = store.feed.thread?.rootId ?? null
-  await loadBootstrap()
+  store.position = (await loadBootstrap()).position ?? store.position
   store.feed.channelId = null; store.feed.thread = null
   if (id != null && store.channels.some(c => c.id === id)) { await openChannel(id); await openThread(tid) }
 }
@@ -99,17 +102,49 @@ export const hubInvoke = (method: string, ...args: unknown[]) => hub ? hub.invok
 export const afterReconnect = (f: () => void) => { onReconnect.push(f) }
 let pending: ReturnType<typeof setTimeout> | null = null
 
+// Live messages that arrive while a reconnect is catching up wait, so they land after what was missed
+let catchingUp = false
+const held: Array<[string, any]> = []
+function applyLive(evt: string, p: any) {
+  if (catchingUp) { held.push([evt, p]); return }
+  if (typeof p?.at === 'number' && p.at > store.position) store.position = p.at
+  applyEvent(store.feed, evt, p)
+}
+
+/** After a reconnect: ask for everything after the last position seen, and apply it as if it had arrived live. */
+export async function catchUp() {
+  if (!hub || catchingUp) return
+  catchingUp = true
+  try {
+    const r = await hub.invoke('CatchUp', store.position)
+    if (r.truncated) { await reloadFeed(); store.position = r.head; return }     // too far behind (or the server was reset): show it afresh
+    for (const m of r.messages) applyEvent(store.feed, m.name, m.payload)
+    if (r.head > store.position) store.position = r.head
+  } finally {
+    catchingUp = false
+    for (const [evt, p] of held.splice(0)) applyLive(evt, p)
+  }
+}
+
 function startHub() {
   if (hub) return
-  hub = new signalR.HubConnectionBuilder().withUrl('/hubs/app').withAutomaticReconnect([0, 1000, 3000, 5000, 10000]).build()
+  // never gives up: a laptop that sleeps for an hour should come back to a live page
+  hub = new signalR.HubConnectionBuilder().withUrl('/hubs/app')
+    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: c => [0, 1000, 3000, 5000][c.previousRetryCount] ?? 10000 }).build()
   for (const evt of ['post-created', 'post-updated', 'post-delta', 'thread-updated'])
-    hub.on(evt, (p: any) => applyEvent(store.feed, evt, p))
+    hub.on(evt, (p: any) => applyLive(evt, p))
   hub.on('voice-presence', (p: { channelId: number; memberIds: number[] }) => { store.voicePresence = { ...store.voicePresence, [p.channelId]: p.memberIds } })
   hub.on('bootstrap-changed', () => {
     if (pending) return
     pending = setTimeout(async () => { pending = null; try { await loadBootstrap() } catch { /* signed out */ } }, 120)
   })
-  hub.onreconnected(() => { store.live = true; reloadFeed().catch(() => {}); for (const f of onReconnect) f() })
+  hub.onreconnected(() => {
+    store.live = true
+    catchingUp = false
+    catchUp().catch(() => reloadFeed().catch(() => {}))
+    loadBootstrap().catch(() => {})
+    for (const f of onReconnect) f()
+  })
   hub.onreconnecting(() => { store.live = false })
   hub.onclose(() => { store.live = false })
   hub.start().then(() => { store.live = true }).catch(() => { store.live = false })

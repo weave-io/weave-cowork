@@ -1,0 +1,117 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace CoWork.Server;
+
+/// <summary>
+/// The inline projection of the thread stream: keeps `posts`, `threads`, `thread_agents` and `deliveries` (what the app reads)
+/// in step with the events, in the transaction that appended them. A post's `position` is the last event that changed it.
+/// </summary>
+public sealed class ThreadProjection : IInlineProjection
+{
+    public static long ThreadOf(StoredEvent e) => e.StreamId.StartsWith("thread-") ? long.Parse(e.StreamId[7..]) : 0;
+
+    public void Apply(ProjectionContext x, StoredEvent e)
+    {
+        switch (e.Type)
+        {
+            case "MessagePosted":
+            {
+                var thread = e.LongOrNull("threadId");
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@by,@body,'text',@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = thread, by = e.ActorId, body = e.Str("body"), at = e.OccurredAt, pos = e.Position });
+                if (thread is not null) x.Execute("UPDATE threads SET agent_chain=0 WHERE root_id=@thread", new { thread });      // a person spoke: the agent-to-agent count starts again
+                break;
+            }
+            case "ThreadStarted":
+                x.Execute("INSERT OR IGNORE INTO threads(root_id, channel_id, started_by) VALUES (@r,@ch,@by)", new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy") });
+                break;
+            case "AgentJoinedThread":
+                x.Execute("INSERT OR IGNORE INTO thread_agents VALUES (@t,@a)", new { t = ThreadOf(e), a = e.Long("agentId") });
+                break;
+            case "MessageDelivered":
+                x.Execute("INSERT INTO deliveries(id, thread_id, agent_id, post_id, text, status, created_at, turn, behalf, cause) VALUES (@id,@t,@a,@post,@text,'queued',@at,@turn,@behalf,@cause)",
+                    new { id = e.Long("deliveryId"), t = ThreadOf(e), a = e.Long("agentId"), post = e.Long("postId"), text = e.Str("text"), at = e.OccurredAt, turn = e.Correlation, behalf = e.OnBehalfOf, cause = e.Position });
+                if (e.Bool("chained")) x.Execute("UPDATE threads SET agent_chain=agent_chain+1 WHERE root_id=@t", new { t = ThreadOf(e) });
+                break;
+            case "TurnStarted":
+                x.Execute("UPDATE deliveries SET status='sent' WHERE id=@id", new { id = e.Long("deliveryId") });
+                break;
+            case "TurnEnded":
+                x.Execute("UPDATE deliveries SET status='done' WHERE thread_id=@t AND agent_id=@a AND status='sent'", new { t = ThreadOf(e), a = e.Long("agentId") });
+                break;
+            case "TurnFailed":
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@a,@body,'notice',@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), body = e.Str("reason"), at = e.OccurredAt, pos = e.Position });
+                if (e.Bool("ended")) x.Execute("UPDATE deliveries SET status='failed' WHERE thread_id=@t AND agent_id=@a AND status='sent'", new { t = ThreadOf(e), a = e.Long("agentId") });
+                break;
+            case "TurnInterrupted":
+            {
+                var t = ThreadOf(e); var a = e.Long("agentId");
+                x.Execute("UPDATE deliveries SET status=@s WHERE thread_id=@t AND agent_id=@a AND status='sent'", new { s = e.Bool("requeued") ? "queued" : "failed", t, a });
+                if (e.Data.TryGetProperty("finalizedPostIds", out var ids))
+                    foreach (var id in ids.EnumerateArray())
+                        x.Execute("UPDATE posts SET streaming=0, position=@pos WHERE id=@id", new { id = id.GetInt64(), pos = e.Position });
+                if (e.LongOrNull("postId") is { } notice)
+                    x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@a,@body,'notice',@at,@pos)",
+                        new { id = notice, ch = e.Long("channelId"), t, a, body = e.Str("reason"), at = e.OccurredAt, pos = e.Position });
+                break;
+            }
+            case "ToolCallStarted":
+            {
+                var meta = new JsonObject { ["toolId"] = e.Str("toolId"), ["title"] = e.Str("title"), ["toolKind"] = e.Str("toolKind"), ["status"] = e.Str("status") };
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@title,'tool',@meta,@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.ActorId, title = e.Str("title") ?? "tool", meta = meta.ToJsonString(), at = e.OccurredAt, pos = e.Position });
+                break;
+            }
+            case "ToolCallDetailed":
+            case "ToolCallFinished":
+            {
+                var id = e.Long("postId");
+                var title = e.Str("title");
+                Meta(x, id, e.Position, m =>
+                {
+                    if (e.Type == "ToolCallFinished") m["status"] = e.Str("status") ?? "completed";
+                    if (!string.IsNullOrEmpty(title)) m["title"] = title;
+                });
+                if (!string.IsNullOrEmpty(title)) x.Execute("UPDATE posts SET body=@title WHERE id=@id", new { title, id });
+                break;
+            }
+            case "AgentReplied":
+            {
+                var id = e.Long("postId"); var complete = e.Bool("complete");
+                if (x.Scalar<int>("SELECT COUNT(*) FROM posts WHERE id=@id", new { id }) == 0)
+                    x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, streaming, created_at, position) VALUES (@id,@ch,@t,@a,@body,'text',@s,@at,@pos)",
+                        new { id, ch = e.Long("channelId"), t = ThreadOf(e), a = e.ActorId, body = e.Str("text") ?? "", s = complete ? 0 : 1, at = e.OccurredAt, pos = e.Position });
+                else
+                    x.Execute("UPDATE posts SET body = body || @text, streaming=@s, position=@pos WHERE id=@id", new { text = e.Str("text") ?? "", s = complete ? 0 : 1, pos = e.Position, id });
+                break;
+            }
+            case "PermissionRequested":
+            {
+                var meta = new JsonObject
+                {
+                    ["requestId"] = e.Str("requestId"), ["agentId"] = e.Long("agentId"), ["ownerId"] = e.Long("ownerId"), ["title"] = e.Str("title"),
+                    ["options"] = JsonNode.Parse(e.Data.GetProperty("options").GetRawText()), ["status"] = "pending",
+                };
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@title,'ask',@meta,@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), title = e.Str("title"), meta = meta.ToJsonString(), at = e.OccurredAt, pos = e.Position });
+                break;
+            }
+            case "PermissionGranted":
+                Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "answered"; m["answer"] = e.Str("optionId"); });
+                break;
+            case "PermissionDenied":
+                Meta(x, e.Long("postId"), e.Position, m => { m["status"] = "denied"; m["answer"] = null; });
+                break;
+        }
+    }
+
+    private static void Meta(ProjectionContext x, long postId, long position, Action<JsonObject> change)
+    {
+        var old = x.Scalar<string>("SELECT meta FROM posts WHERE id=@postId", new { postId });
+        var node = JsonNode.Parse(old ?? "{}")!.AsObject();
+        change(node);
+        x.Execute("UPDATE posts SET meta=@m, position=@position WHERE id=@postId", new { m = node.ToJsonString(), position, postId });
+    }
+}

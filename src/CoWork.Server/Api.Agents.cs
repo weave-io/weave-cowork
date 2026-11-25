@@ -56,7 +56,8 @@ public static partial class Api
             if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
             var m = Q.Member(c, id)!;
             return Results.Ok(new { id, handle = m.Handle, displayName = m.DisplayName, about = m.About ?? "", instructions = m.Instructions ?? "",
-                harnessCommand = string.Join(' ', JsonSerializer.Deserialize<string[]>(m.HarnessCommand!)!.Select(a => a.Any(char.IsWhiteSpace) ? $"\"{a}\"" : a)), workspace = m.Workspace });
+                harnessCommand = string.Join(' ', JsonSerializer.Deserialize<string[]>(m.HarnessCommand!)!.Select(a => a.Any(char.IsWhiteSpace) ? $"\"{a}\"" : a)), workspace = m.Workspace,
+                recordToolOutput = c.ExecuteScalar<int>("SELECT record_tool_output FROM agents WHERE member_id=@id", new { id }) == 1 });
         });
 
         // edit an agent; new threads use the new settings, running sessions keep theirs
@@ -70,6 +71,7 @@ public static partial class Api
                 if (!CanAdminAgent(c, id, Me(ctx))) return Err(403, "Only the agent's owner or an admin can do that.");
                 c.Execute("UPDATE agents SET about=@about, instructions=@ins, harness_command=@cmd, workspace=@ws WHERE member_id=@id",
                     new { about = b.About ?? "", ins = b.Instructions ?? "", cmd = JsonSerializer.Serialize(cmd), ws = b.Workspace.Trim(), id });
+                if (b.RecordToolOutput is { } rec) c.Execute("UPDATE agents SET record_tool_output=@rec WHERE member_id=@id", new { rec = rec ? 1 : 0, id });
                 if (!string.IsNullOrWhiteSpace(b.DisplayName)) c.Execute("UPDATE members SET display_name=@n WHERE id=@id", new { n = b.DisplayName.Trim(), id });
             }
             await rt.ToAll("bootstrap-changed");
@@ -142,6 +144,7 @@ public static partial class Api
     {
         var runners = rt.Services.GetRequiredService<RunnerRegistry>();
         var hub = rt.Services.GetRequiredService<IHubContext<RunnerHub>>();
+        rt.Services.GetRequiredService<Dispatcher>().AbandonAgent(id, "the agent was removed");
         using (var c = db.Open())
         {
             using var tx = c.BeginTransaction();

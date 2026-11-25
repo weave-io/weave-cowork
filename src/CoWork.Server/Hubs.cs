@@ -13,7 +13,34 @@ public sealed class AppHub : Hub
     private readonly Db _db;
     private readonly VoicePresence _voice;
     private readonly VoiceOptions _vo;
-    public AppHub(Realtime rt, Db db, VoicePresence voice, VoiceOptions vo) { _rt = rt; _db = db; _voice = voice; _vo = vo; }
+    private readonly IEventStore _store;
+    public AppHub(Realtime rt, Db db, VoicePresence voice, VoiceOptions vo, IEventStore store) { _rt = rt; _db = db; _voice = voice; _vo = vo; _store = store; }
+
+    /// <summary>The most events one catch-up replays; further behind than that, the browser reloads what it shows.</summary>
+    public const int MaxCatchUp = 5000;
+
+    /// <summary>A browser that reconnects says the last position it saw and gets what it missed, for the channels it may see.
+    /// Each message is what the app already applies live (a post to add or replace, a thread header), with the position it came from.</summary>
+    public object CatchUp(long after)
+    {
+        var me = MemberId(Context.User!);
+        var head = _store.Head();
+        if (after > head) return new { head, truncated = true, messages = Array.Empty<object>() };       // this server is behind the browser: start again
+        var events = _store.ReadAll(after, MaxCatchUp + 1);
+        if (events.Count > MaxCatchUp) return new { head, truncated = true, messages = Array.Empty<object>() };
+        using var c = _db.Open();
+        var seen = new Dictionary<long, bool>();
+        bool Can(long ch) => seen.TryGetValue(ch, out var v) ? v : seen[ch] = Access.CanSee(c, ch, me);     // checked for every channel an event belongs to
+        var posts = new Dictionary<long, Effect>(); var threads = new Dictionary<long, Effect>();
+        foreach (var ef in Effects.From(c, events).Where(e => Can(e.ChannelId)))
+            (ef.Kind == EffectKind.ThreadUpdated ? threads : posts)[ef.Id] = ef;
+        var views = _rt.Services.GetRequiredService<ThreadViews>();
+        // posts oldest first (the order they were created in), then the thread headers
+        var messages = posts.Values.OrderBy(e => e.Id).Select(e => (object)new { name = "post-upsert", payload = (object)ThreadViews.PostPayload(c, e.Id, e.Position) })
+            .Concat(threads.Values.OrderBy(e => e.Position).Select(e => (object)new { name = "thread-updated", payload = views.ThreadUpdated(c, e.Id, e.Position)! }))
+            .ToList();
+        return new { head = events.Count == 0 ? head : events[^1].Position, truncated = false, messages };
+    }
 
     public static long MemberId(ClaimsPrincipal u) => long.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
 

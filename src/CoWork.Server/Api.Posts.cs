@@ -17,10 +17,9 @@ public static partial class Api
 
         authed.MapPost("/channels/{id:long}/posts", async (long id, PostBody b, HttpContext ctx, Db db, Dispatcher d) =>
         {
-            long postId;
+            var me = Me(ctx);                          // the author is the caller, never the body
             using (var c = db.Open())
             {
-                var me = Me(ctx);                      // the author is the caller, never the body
                 if (!Access.CanSee(c, id, me)) return Err(404, "No such channel.");
                 if (Q.Channel(c, id)!.Kind == "voice") return Err(400, "Voice channels have no posts.");
                 var body = (b.Body ?? "").Trim();
@@ -31,11 +30,8 @@ public static partial class Api
                     var root = Q.Post(c, b.ThreadId.Value);
                     if (root is null || root.ChannelId != id || root.ThreadId is not null) return Err(400, "That thread doesn't exist.");
                 }
-                postId = c.ExecuteScalar<long>("INSERT INTO posts(channel_id, thread_id, author_id, body, kind, created_at) VALUES (@id,@t,@me,@body,'text',@now); SELECT last_insert_rowid();",
-                    new { id, t = b.ThreadId, me, body, now = Db.Now() });
             }
-            await d.EmitPost(postId);
-            await d.Route(postId);
+            var postId = await d.Post(me, id, b.ThreadId, (b.Body ?? "").Trim());
             using var c2 = db.Open();
             return Results.Ok(Q.FullPostDto(c2, postId));
         });

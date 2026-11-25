@@ -45,6 +45,7 @@ public class PostRow
     public string? Meta { get; set; }
     public bool Streaming { get; set; }
     public long CreatedAt { get; set; }
+    public long Position { get; set; }
     public int ReplyCount { get; set; }
     public bool HasThread { get; set; }
 }
@@ -74,7 +75,7 @@ public static class Q
     public static object PostDto(PostRow p, IReadOnlyList<string>? threadAgents = null) => new
     {
         id = p.Id, channelId = p.ChannelId, threadId = p.ThreadId, authorId = p.AuthorId, body = p.Body, kind = p.Kind,
-        meta = string.IsNullOrEmpty(p.Meta) ? null : JsonNode.Parse(p.Meta), streaming = p.Streaming, createdAt = p.CreatedAt,
+        meta = string.IsNullOrEmpty(p.Meta) ? null : JsonNode.Parse(p.Meta), streaming = p.Streaming, createdAt = p.CreatedAt, position = p.Position,
         replyCount = p.ReplyCount, hasThread = p.HasThread || p.ReplyCount > 0,
         threadAgents,
     };

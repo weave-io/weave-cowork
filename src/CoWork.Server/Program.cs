@@ -17,6 +17,11 @@ builder.Services.AddSingleton(db);
 builder.Services.AddSingleton<Realtime>();
 builder.Services.AddSingleton<VoicePresence>();
 builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
+builder.Services.AddSingleton<IInlineProjection, ThreadProjection>();
+builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
+builder.Services.AddSingleton<LiveQueue>();
+builder.Services.AddSingleton<ThreadViews>();
+builder.Services.AddHostedService<LivePublisher>();
 builder.Services.AddSingleton<RunnerRegistry>();
 builder.Services.AddSingleton<Dispatcher>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();
@@ -25,6 +30,7 @@ builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
     // a runner that dies hard (or whose connection is dropped silently, e.g. behind a port proxy) is noticed within seconds
     o.KeepAliveInterval = TimeSpan.FromSeconds(3);
     o.ClientTimeoutInterval = TimeSpan.FromSeconds(10);
+    o.MaximumReceiveMessageSize = 1024 * 1024;       // a tool's output (up to 64 kB) rides on one message
 });
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 builder.Services.AddAuthorization();
@@ -48,6 +54,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 
 var app = builder.Build();
+
+// a turn that started and never ended was cut off by a crash or a restart: the thread says so
+app.Services.GetRequiredService<Dispatcher>().RecoverInterruptedTurns();
 
 // runners authenticate with a token, stored only as a hash
 app.Use(async (ctx, next) =>

@@ -17,7 +17,7 @@ public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? 
 public record PostBody(string Body, long? ThreadId);
 public record AnswerBody(string? OptionId);
 public record RoleBody(string Role);
-public record AgentEditBody(string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace);
+public record AgentEditBody(string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace, bool? RecordToolOutput = null);
 public record AgentBody(string Handle, string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace);
 
 public static partial class Api
@@ -128,9 +128,10 @@ public static partial class Api
         });
 
         // ---- everything below needs a signed-in person ----
-        authed.MapGet("/bootstrap", (HttpContext ctx, Db db, RunnerRegistry runners, VoicePresence voice, VoiceOptions vo) =>
+        authed.MapGet("/bootstrap", (HttpContext ctx, Db db, RunnerRegistry runners, VoicePresence voice, VoiceOptions vo, IEventStore store) =>
         {
             var me = Me(ctx);
+            var position = store.Head();          // read first: a browser catches up from here, so nothing after it can be missed
             using var c = db.Open();
             var server = c.ExecuteScalar<string>("SELECT value FROM settings WHERE key='server_name'");
             var members = c.Query<MemberRow>(Q.MemberSelect).Select(m => Q.MemberDto(m, m.Kind == "agent" && runners.IsOnline(m.Id))).ToList();
@@ -142,7 +143,7 @@ public static partial class Api
                 canManage = Access.CanManage(c, ch, me),
             }).ToList();
             var presence = voice.Snapshot().Where(kv => visible.Contains(kv.Key)).ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
-            return Results.Ok(new { server = new { name = server }, meId = me, isAdmin = Access.IsAdmin(c, me), members, channels,
+            return Results.Ok(new { position, server = new { name = server }, meId = me, isAdmin = Access.IsAdmin(c, me), members, channels,
                 voice = new { enabled = vo.Enabled, url = vo.Url }, voicePresence = presence });
         });
 

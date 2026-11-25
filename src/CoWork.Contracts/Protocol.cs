@@ -9,7 +9,8 @@ public record EnrolResponse(long AgentId, string Handle, string Token);
 public record DeliverMessage(
     long DeliveryId, long ThreadId, long AgentId, string Handle,
     string Instructions, string[] HarnessCommand, string Workspace,
-    string Text);
+    string Text,
+    bool RecordToolOutput = false);   // the agent's switch "Record full tool output": only then does the runner send a tool's output text
 
 /// <summary>Runner → server: what the agent is doing in a thread.</summary>
 public record StreamEvent(
@@ -19,7 +20,10 @@ public record StreamEvent(
     string? ToolId = null,
     string? Title = null,
     string? ToolKind = null,
-    string? Status = null);
+    string? Status = null,
+    long? OutputBytes = null,       // toolEnd: how much the tool printed, and its SHA-256 (always sent)
+    string? OutputSha256 = null,
+    string? Output = null);         // toolEnd: the text itself, only when the agent records full tool output
 
 public record PermissionOption(string Id, string Name, string Kind);
 public record PermissionRequestMsg(long ThreadId, string RequestId, string Title, PermissionOption[] Options);

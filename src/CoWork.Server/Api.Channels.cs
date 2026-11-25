@@ -50,7 +50,7 @@ public static partial class Api
             return Results.Ok(new { ok = true });
         });
 
-        authed.MapDelete("/channels/{id:long}", async (long id, HttpContext ctx, Db db, Realtime rt, VoicePresence voice) =>
+        authed.MapDelete("/channels/{id:long}", async (long id, HttpContext ctx, Db db, Realtime rt, VoicePresence voice, IEventStore store) =>
         {
             using (var c = db.Open())
             {
@@ -66,6 +66,7 @@ public static partial class Api
                 c.Execute("DELETE FROM channels WHERE id=@id", new { id }, tx);
                 tx.Commit();
             }
+            store.Append(new[] { new NewEvent($"channel-{id}", "ChannelDeleted", new { channelId = id }, Me(ctx)) });
             voice.ClearChannel(id);
             await rt.RefreshAll();
             await rt.ToAll("bootstrap-changed");

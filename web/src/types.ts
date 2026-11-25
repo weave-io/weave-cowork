@@ -10,6 +10,8 @@ export interface Post {
   id: number; channelId: number; threadId: number | null; authorId: number; body: string
   kind: 'text' | 'tool' | 'ask' | 'notice'; meta: any; streaming: boolean; createdAt: number
   replyCount: number; hasThread: boolean; threadAgents?: string[] | null
+  /** the position of the last event that changed this post: of two copies, the higher one is newer */
+  position?: number
 }
 export interface ThreadAgent {
   id: number; handle: string; displayName: string; online: boolean; busy: boolean; queued: number

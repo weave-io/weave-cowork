@@ -15,9 +15,12 @@ public sealed class TestApp : WebApplicationFactory<Program>
 {
     public string DbPath { get; }
     public const string VoiceKey = "testkey", VoiceSecret = "test-secret-test-secret-test-secret-1234";
-    public TestApp(bool voice = false)
+    private readonly bool _owns;
+    /// <param name="existingDb">Start a second server on a database another one left behind (a restart); it isn't deleted on dispose.</param>
+    public TestApp(bool voice = false, string? existingDb = null)
     {
-        DbPath = Path.Combine(Path.GetTempPath(), $"cowork-test-{Guid.NewGuid():N}.db");
+        _owns = existingDb is null;
+        DbPath = existingDb ?? Path.Combine(Path.GetTempPath(), $"cowork-test-{Guid.NewGuid():N}.db");
         Environment.SetEnvironmentVariable("COWORK_DB", DbPath);
         Environment.SetEnvironmentVariable("LIVEKIT_API_KEY", voice ? VoiceKey : null);
         Environment.SetEnvironmentVariable("LIVEKIT_API_SECRET", voice ? VoiceSecret : null);
@@ -50,7 +53,7 @@ public sealed class TestApp : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        foreach (var f in new[] { DbPath, DbPath + "-wal", DbPath + "-shm" }) try { File.Delete(f); } catch { }
+        if (_owns) foreach (var f in new[] { DbPath, DbPath + "-wal", DbPath + "-shm" }) try { File.Delete(f); } catch { }
     }
 }
 

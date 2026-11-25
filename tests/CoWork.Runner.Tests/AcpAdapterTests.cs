@@ -57,6 +57,20 @@ public class AcpMappingTests
     }
 
     [Fact]
+    public void A_finished_tool_reports_how_much_it_printed_and_a_hash_and_the_text_only_when_the_agent_records_output()
+    {
+        var u = J("""{"sessionUpdate":"tool_call_update","toolCallId":"a","status":"completed","rawOutput":{"output":"hello"}}""");
+        var off = AcpAdapter.Map(1, u).Single();
+        Assert.Equal((5L, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", null), (off.OutputBytes, off.OutputSha256, off.Output));
+        Assert.Equal("hello", AcpAdapter.Map(1, u, null, true).Single().Output);
+        // content as ACP sends it: a list of text blocks
+        var c = J("""{"sessionUpdate":"tool_call_update","toolCallId":"a","status":"completed","content":[{"type":"content","content":{"type":"text","text":"a"}},{"type":"content","content":{"type":"text","text":"b"}}]}""");
+        Assert.Equal("a\nb", AcpAdapter.Map(1, c, null, true).Single().Output);
+        Assert.Null(AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call_update","toolCallId":"a","status":"completed"}""")).Single().OutputBytes);
+        Assert.Equal(64 * 1024, System.Text.Encoding.UTF8.GetByteCount(AcpAdapter.Cap(new string('x', 70_000))!));
+    }
+
+    [Fact]
     public void Tool_calls_start_then_end_and_thoughts_are_ignored()
     {
         var start = AcpAdapter.Map(1, J("""{"sessionUpdate":"tool_call","toolCallId":"c1","title":"Read a.txt","kind":"read","status":"in_progress"}""")).Single();
