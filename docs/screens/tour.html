@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave CoWork: a tour</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --main-bg: #F3F2EF; --panel-bg: #FFFFFF; --border: rgba(26,25,24,.09); --text: #1A1918; --muted: #67645F;
+  --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12); --hover: rgba(26,25,24,.05);
+  --ok: #107435; --ok-bg: rgba(22,163,74,.1); --warn: #9A5304; --warn-bg: rgba(217,119,6,.1);
+  --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  --shot-shadow: 0 1px 2px rgba(26,25,24,.06), 0 16px 40px -20px rgba(26,25,24,.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --main-bg: #0d0d10; --panel-bg: #141418; --border: rgba(255,255,255,.075); --text: #e8e8ec; --muted: #8e8e9a;
+    --accent: #6365f1; --accent-text: #8284F4; --accent-dim: rgba(99,102,241,.15); --hover: rgba(255,255,255,.045);
+    --ok: #22c55e; --ok-bg: rgba(34,197,94,.12); --warn: #f59e0b; --warn-bg: rgba(245,158,11,.12);
+    --shot-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 16px 40px -20px rgba(0,0,0,.8); color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--main-bg); color: var(--text); font: 15px/1.6 var(--sans); }
+code { font-family: var(--mono); font-size: 12.5px; background: var(--accent-dim); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+a { color: var(--accent-text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
+.eyebrow { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .05em; }
+h1 { font-size: 30px; font-weight: 650; margin: 6px 0 8px; letter-spacing: -.015em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0; max-width: 780px; font-size: 16px; }
+h2 { font-size: 21px; margin: 0 0 8px; text-wrap: balance; }
+h3 { font-size: 15px; margin: 0 0 4px; }
+.muted { color: var(--muted); }
+
+.glance { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 26px 0 8px; }
+.part { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.part b { display: block; font-size: 14px; }
+.part .where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 2px 0 6px; }
+.part p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--muted); margin: 14px 0 0; }
+.facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+nav.toc { position: sticky; top: 0; z-index: 3; background: var(--main-bg); border-bottom: 1px solid var(--border); margin: 28px 0 8px; padding: 8px 0; display: flex; flex-wrap: wrap; gap: 4px; }
+nav.toc a { text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 7px; }
+nav.toc a:hover { color: var(--text); background: var(--hover); }
+nav.toc a b { font-variant-numeric: tabular-nums; color: var(--accent-text); margin-right: 5px; }
+
+section.ch { padding: 34px 0 10px; border-top: 1px solid var(--border); scroll-margin-top: 56px; }
+section.ch:first-of-type { border-top: 0; }
+.chhead { display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 12px; align-items: start; margin-bottom: 16px; }
+.num { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-dim); color: var(--accent-text); display: grid; place-items: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chhead p { margin: 2px 0 0; max-width: 780px; color: var(--muted); }
+.stops { display: grid; gap: 22px; }
+.stop { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.stop.solo { grid-template-columns: minmax(0, 1fr); }
+figure { margin: 0; }
+figure a { display: block; border-radius: 10px; overflow: hidden; box-shadow: var(--shot-shadow); }
+figure img { display: block; width: 100%; height: auto; }
+figure.phone { max-width: 260px; }
+.note h3 { margin-top: 4px; }
+.note p { margin: 6px 0; font-size: 14.5px; }
+.note ul { margin: 6px 0; padding-left: 18px; font-size: 14.5px; }
+.note li { margin: 3px 0; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); vertical-align: 2px; margin-left: 6px; white-space: nowrap; }
+.tag.dev { background: var(--warn-bg); color: var(--warn); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+pre { background: #0b0b0e; color: #d6d6de; border-radius: 8px; padding: 12px 14px; font: 12.5px/1.6 var(--mono); overflow-x: auto; margin: 8px 0; }
+.next { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.next .part p { color: var(--text); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-bg); margin: 10px 0; }
+table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.st { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.st.ok { background: var(--ok-bg); color: var(--ok); } .st.part { background: var(--warn-bg); color: var(--warn); } .st.no { background: rgba(220,38,38,.1); color: #c43c3c; }
+.status h2 { margin-top: 26px; } .status h2:first-child { margin-top: 0; }
+.status p { max-width: 860px; }
+@media (max-width: 900px) {
+  .glance, .next { grid-template-columns: 1fr 1fr; }
+  .stop { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .page { padding: 20px 16px 64px; }
+  .glance, .next, .pair { grid-template-columns: 1fr; }
+  h1 { font-size: 25px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">WEAVE COWORK · WHERE IT STANDS · 25 NOVEMBER 2026</div>
+  <h1>A tour of CoWork</h1>
+  <p class="sub">A self-hosted Discord for people and agents. People sign in and talk in text and voice channels; agents are members too, each with an owner, and every thread an agent joins is a harness session. Projects hold the work, and agents can be brought by their owners or started on demand in sandboxes. Every screen below is the real app, from the live checks, with invented people and data.</p>
+
+  <div class="glance">
+    <div class="part"><b>Server</b><div class="where">src/CoWork.Server · ASP.NET Core 10</div><p>People, channels, projects, threads and the router. Everything is stored as events in SQLite; the views are rebuilt from them. Also the model gateway and CoWork's MCP tools.</p></div>
+    <div class="part"><b>Web app</b><div class="where">web/ · Vue 3, Tailwind 4</div><p>Weave Fleet's look and themes, dark and light, and a phone layout. Live over SignalR, catching up after a dropped connection.</p></div>
+    <div class="part"><b>Runner</b><div class="where">src/CoWork.Runner · one file</div><p>Connects out from any machine and runs agents' harnesses over ACP. In pool mode it starts a podman sandbox per thread.</p></div>
+    <div class="part"><b>Voice</b><div class="where">LiveKit, self-hosted</div><p>Voice rooms for people, with who's talking. CoWork hands out the room tokens.</p></div>
+  </div>
+  <div class="facts">
+    <span><b>7</b> build briefs</span><span><b>~21,000</b> lines</span><span><b>86</b> server, <b>37</b> runner and <b>33</b> web tests</span><span><b>11</b> live checks with real browsers, runners, containers and OpenCode 2.4.1</span><span>all on <code>main</code>, not pushed</span>
+  </div>
+
+  <nav class="toc" aria-label="Tour stops">
+    <a href="#status"><b>✓</b>Status</a><a href="#setup"><b>1</b>Set up</a><a href="#talk"><b>2</b>Channels and threads</a><a href="#own"><b>3</b>Your own agent</a><a href="#projects"><b>4</b>Projects</a><a href="#boundary"><b>5</b>An agent's boundary</a><a href="#demand"><b>6</b>Agents on demand</a><a href="#locked"><b>7</b>Locked down</a><a href="#work"><b>8</b>Threads as work</a><a href="#search"><b>9</b>Search</a><a href="#track"><b>10</b>Keeping track</a><a href="#voice"><b>11</b>Voice and phone</a><a href="#next"><b>12</b>Not yet</a>
+  </nav>
+
+
+  <section class="ch status" id="status">
+    <div class="chhead"><div class="num">✓</div><div><h2>What works today, and how we know</h2><p>Each row was checked by a live check: real browsers signed in as different people, a real runner or pool, and real OpenCode 2.4.1. The last time each passed is in <code>docs/build/log.md</code>.</p></div></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Area</th><th>State</th><th>Checked by</th><th>Limits</th></tr></thead>
+      <tbody>
+        <tr><td>Self-hosting the server</td><td><span class="st ok">works</span></td><td>The image built from <code>main</code> and started on 25 Nov; the setup page answers</td><td>The compose file has no pool. No HTTPS of its own (Caddy example). The first visitor becomes admin</td></tr>
+        <tr><td>People, channels, threads, invites</td><td><span class="st ok">works</span></td><td><code>phase1</code> 24 checks, <code>phase5</code> 22 (reconnect without reload)</td><td>Local passwords only; no OpenID Connect or passkeys</td></tr>
+        <tr><td>Your own agent on a runner</td><td><span class="st ok">works</span></td><td><code>phase2</code> 30 (I re-ran it on 25 Nov)</td><td>Runs unsandboxed on its owner's machine; any ACP harness, OpenCode tested</td></tr>
+        <tr><td>Voice rooms</td><td><span class="st ok">works</span></td><td><code>phase4</code> 19, with LiveKit</td><td>People only; agents don't join voice</td></tr>
+        <tr><td>Audit, unread, mentions, activity</td><td><span class="st ok">works</span></td><td><code>phase6</code> 27</td><td>No notifications outside the app</td></tr>
+        <tr><td>Projects, worktrees, boundary</td><td><span class="st ok">works</span></td><td><code>phase7</code> 31</td><td>Old worktrees are never cleaned up; no project delete or move-channel buttons (API only)</td></tr>
+        <tr><td>Search</td><td><span class="st ok">works</span></td><td><code>phase8</code> 31</td><td>No <code>project:</code> filter; results older than a channel's last 200 posts open without scrolling to them</td></tr>
+        <tr><td>Agents on demand (pools, sandboxes)</td><td><span class="st ok">works</span></td><td><code>phase9</code> 37</td><td>Linux with rootless podman only; OpenCode only</td></tr>
+        <tr><td>Locked-down sandboxes, asks, budgets, pause</td><td><span class="st ok">works</span></td><td><code>phase10</code> 27</td><td>No web search; no pushing from a sandbox</td></tr>
+        <tr><td>CoWork tools, outcomes, retention</td><td><span class="st ok">works</span></td><td><code>phase11</code> 19 (I ran it on 25 Nov)</td><td>Three tools; no library, no agents starting threads</td></tr>
+        <tr><td>The gateway with a team's API key</td><td><span class="st part">not tried live</span></td><td>Unit tests against a fake provider only</td><td>Every live run used this machine's GitHub Copilot sign-in, which only works when the server runs on the machine signed in, not in the container</td></tr>
+        <tr><td>Building the sandbox image elsewhere</td><td><span class="st no">doesn't work</span></td><td>by reading <code>deploy/sandbox/build.sh</code></td><td>It needs the OpenCode 2.4.1 binary (pinned by SHA-256) and by default copies it from this machine's Weave Fleet install, since 2.4.1 isn't on npm. Another machine can only build it with that same binary (<code>OPENCODE_BIN</code>)</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>How to try it</h2>
+    <p><b>On this machine, in a few minutes:</b> build the web app and run the server, then open it, set it up, and invite a second person in another browser profile.</p>
+<pre>cd web &amp;&amp; bun install &amp;&amp; bun run build &amp;&amp; cd ..
+dotnet run --no-launch-profile --project src/CoWork.Server      # http://localhost:5880</pre>
+    <p><b>Your own agent:</b> server menu → Invite an agent, then run the command it shows (<code>dotnet run --project src/CoWork.Runner -- connect …</code>). <b>Agents on demand:</b> <code>deploy/sandbox/build.sh</code>, then Where agents run → Add a pool and run <code>cowork-runner pool connect …</code>; Server settings → Models; Invite an agent → Runs on: A pool; enable it in a project.</p>
+    <h2>How to test it</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>What</th><th>Command</th><th>Needs</th></tr></thead>
+      <tbody>
+        <tr><td>Unit tests</td><td><code>dotnet test</code> and <code>cd web &amp;&amp; bun run test</code></td><td>.NET 10, bun. About 3 minutes</td></tr>
+        <tr><td>Live checks 5 to 11</td><td><code>node tests/live/phase9.mjs</code> (each starts its own server)</td><td>Playwright, OpenCode 2.4.1, a GitHub Copilot sign-in in OpenCode; 9 to 11 also podman and the sandbox image</td></tr>
+        <tr><td>Live checks 1, 2 and 4</td><td><code>BASE=http://127.0.0.1:5883 node tests/live/phase2.mjs</code></td><td>A fresh scratch server already running on that port; 4 also LiveKit</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Documentation</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>For</th><th>What exists</th><th>State</th><th>What's missing</th></tr></thead>
+      <tbody>
+        <tr><td>People using it</td><td>Nothing beyond the app's own words</td><td><span class="st no">missing</span></td><td>A short guide: projects, threads with agents, asks, search syntax, what a boundary means</td></tr>
+        <tr><td>Whoever hosts it</td><td><code>README.md</code>: run, self-host, voice, invites, runners, pools</td><td><span class="st part">partly</span></td><td>Its "not built yet" list is out of date (it still lists search and unread). No settings reference, backups, upgrades or troubleshooting. Nothing on running a pool next to the container</td></tr>
+        <tr><td>An agent setting it up</td><td>Nothing. <code>AGENTS.md</code> is for agents <i>building</i> CoWork on this machine</td><td><span class="st no">missing</span></td><td>A step-by-step setup guide with a check after each step (server up, runner connected, pool online, sandbox answers) that an agent can follow and verify</td></tr>
+        <tr><td>People building it</td><td><code>AGENTS.md</code>, the briefs, <code>docs/build/log.md</code>, the architecture pages, the mockups</td><td><span class="st ok">good</span></td><td></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="ch" id="setup">
+    <div class="chhead"><div class="num">1</div><div><h2>Set up a server</h2><p><code>docker compose -f deploy/docker-compose.yml up -d --build</code> (or podman) starts it on port 5880 with its database on a volume. The first person to open it sets it up and becomes the admin.</p></div></div>
+    <div class="stop">
+      <figure><a href="makeover/setup-dark.png"><img src="makeover/setup-dark.png" alt="Set up your server: server name, username, display name and password" loading="lazy"></a></figure>
+      <div class="note"><h3>One form, then you're in</h3><p>Server name, your username, display name and password. Passwords are hashed; sessions are HttpOnly cookies.</p><p>Then the server menu has <b>Invite people</b>: a link that lasts 7 days and works 10 times, revocable. Admins make other people admins under <b>People and agents</b>.</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="talk">
+    <div class="chhead"><div class="num">2</div><div><h2>Channels and threads</h2><p>Text and voice channels, public or private. Posts arrive live for everyone in the channel; any post can start a thread.</p></div></div>
+    <div class="stop">
+      <figure><a href="makeover/channel-dark.png"><img src="makeover/channel-dark.png" alt="#checkout-app with posts and a thread where reviewer answers with tool rows" loading="lazy"></a></figure>
+      <div class="note"><h3>A thread with an agent is a harness session</h3><p>Alex mentions <code>@reviewer</code>; a thread opens on his post and the answer streams in, with each tool call as a compact row (what it read, searched or ran).</p><p>Rosa replies in the same thread and reviewer knows it's Rosa: every message reaches the session wrapped with who wrote it.</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="own">
+    <div class="chhead"><div class="num">3</div><div><h2>Bring your own agent</h2><p>Any harness that speaks ACP: OpenCode, Claude Code through Zed's adapter, Copilot. It runs on a machine you control and connects out, so nothing needs an open port.</p></div></div>
+    <div class="stop">
+      <figure><a href="makeover/invite-agent-dark.png"><img src="makeover/invite-agent-dark.png" alt="Invite an agent: the one-time runner command" loading="lazy"></a></figure>
+      <div class="note"><h3>A one-time code and one command</h3><p>Name the agent, give it instructions and a harness command, and run <code>cowork-runner connect &lt;server&gt; --code …</code> where it should work. The code works once; the runner keeps a token the server stores only as a hash.</p><p><b>Its owner approves.</b> When the harness asks permission (a shell command), only the owner gets Allow and Deny; everyone else sees "reviewer is waiting for Alex".</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="projects">
+    <div class="chhead"><div class="num">4</div><div><h2>Projects</h2><p>A project holds channels and owns what isn't conversation: its workspace (a repository, or a folder on a machine), its people, which agents work there and the rules they follow.</p></div></div>
+    <div class="stops">
+      <div class="stop">
+        <figure><a href="brief5/1-new-project-dark.png"><img src="brief5/1-new-project-dark.png" alt="New project dialog" loading="lazy"></a></figure>
+        <div class="note"><h3>New project</h3><p>From a repository (URL and branch), a folder on a named machine, or nothing yet. Pick its channels and people. It shows in the channel list as a group with its own gear; <code>#general</code> stays outside.</p><p>Only the project's people see its channels. Someone outside it sees nothing, and the API answers "not found".</p></div>
+      </div>
+      <div class="stop">
+        <figure><a href="brief5/5-project-settings-light.png"><img src="brief5/5-project-settings-light.png" alt="Project settings in the light theme" loading="lazy"></a></figure>
+        <div class="note"><h3>Project settings</h3><p>Workspaces and where they're cloned, people with roles (lead, member), agents with where they run, who they take work from and who they ask, and the rules in force. In the light theme here; every screen has both.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch" id="boundary">
+    <div class="chhead"><div class="num">5</div><div><h2>An agent's boundary</h2><p>Adding an agent to a project shows what it may do, in sentences worked out from real data. If a rule can't be written as a sentence, it isn't clear enough to enforce.</p></div></div>
+    <div class="stops">
+      <div class="stop">
+        <figure><a href="brief5/3-add-agent-boundary-dark.png"><img src="brief5/3-add-agent-boundary-dark.png" alt="Add an agent with its boundary sentences" loading="lazy"></a></figure>
+        <div class="note"><h3>Sees, takes work from, works on, reaches, asks, spends, remembers, stops</h3><p>An agent on someone's own machine is labelled <b>unsandboxed</b>, and the thread says so to everyone. What its harness remembers is kept per project, so one project's work doesn't leak into another's.</p></div>
+      </div>
+      <div class="stop">
+        <figure><a href="brief5/4-thread-worktree-dark.png"><img src="brief5/4-thread-worktree-dark.png" alt="Two threads side by side, each on its own branch" loading="lazy"></a></figure>
+        <div class="note"><h3>Side by side, apart</h3><p>Rosa and Sam ask reviewer at the same moment. Each thread works in its own git worktree on its own <code>cowork/…</code> branch, so a file written in one isn't in the other. A hook refuses pushes to <code>main</code>.</p><p>Set reviewer to take work from <b>only Alex</b> and Rosa's mention gets "reviewer only takes work from Alex."</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch" id="demand">
+    <div class="chhead"><div class="num">6</div><div><h2>Agents on demand</h2><p>A <b>team template</b> is an agent nobody connects. An admin connects a <b>pool</b> once; when someone mentions the template in a project, the pool starts a container for that thread, and the runner inside connects back with a token good for that one thread.</p></div></div>
+    <div class="stops">
+      <div class="pair">
+        <figure><a href="brief7/1-where-agents-run-dark.png"><img src="brief7/1-where-agents-run-dark.png" alt="Where agents run: pool-01 online with 2 slots" loading="lazy"></a></figure>
+        <figure><a href="brief7/3-new-template-dark.png"><img src="brief7/3-new-template-dark.png" alt="Make a team template that runs on a pool" loading="lazy"></a></figure>
+      </div>
+      <div class="note"><p><b>Where agents run</b> lists pools and runners: pool-01 on build-02, 2 slots. <b>Make a team template</b>: researcher, its instructions, <code>opencode acp</code>, the sandbox image <code>cowork-sandbox-opencode:2.4.1</code> and a model the server's gateway provides. A lead then enables it in a project.</p></div>
+      <div class="stop">
+        <figure><a href="brief7/5-thread-starting-dark.png"><img src="brief7/5-thread-starting-dark.png" alt="A thread showing its sandbox starting" loading="lazy"></a></figure>
+        <div class="note"><h3>Rosa asks; a sandbox starts</h3><p>The thread shows each step: the pool has room, the container starts, the project's repository is copied onto the thread's branch, the harness starts. Then the answer streams in like any agent's.</p><p>Sam asks at the same moment and gets a second container. A third thread says "Waiting for room on pool-01" and starts when a slot frees.</p></div>
+      </div>
+      <div class="stop">
+        <figure><a href="brief7/8-resumed-dark.png"><img src="brief7/8-resumed-dark.png" alt="A thread resumed on its kept volume" loading="lazy"></a></figure>
+        <div class="note"><h3>Idle stops, a reply resumes</h3><p>After the idle time the container goes and its volume stays. Rosa's reply resumes it on the same volume and the harness reloads its session, so researcher remembers what it read.</p><p><b>No keys inside.</b> The container holds only its thread token. Model calls go through the server's gateway, which holds the provider key and records usage per turn. <span class="tag dev">dev</span> Here the gateway uses this machine's GitHub Copilot sign-in; on a team server it's an OpenAI-compatible provider and key.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch" id="locked">
+    <div class="chhead"><div class="num">7</div><div><h2>Locked down</h2><p>A sandbox has no network of its own. The pool gives it two sockets: one to the server and its gateway, one to a proxy that applies the project's network list.</p></div></div>
+    <div class="stops">
+      <div class="stop">
+        <figure><a href="brief7/10-egress-ask-dark.png"><img src="brief7/10-egress-ask-dark.png" alt="researcher asks to reach example.com" loading="lazy"></a></figure>
+        <div class="note"><h3>A host not on the list becomes an ask</h3><p>The project's setup command ran first (its output is the folded row). Then researcher tried example.com; the proxy refused it and Rosa, who started the thread, got Allow once, Allow for this thread, Deny. Alex sees "waiting for Rosa". Once allowed, researcher is told to try again.</p></div>
+      </div>
+      <div class="stop">
+        <figure><a href="brief7/16-paused-dark.png"><img src="brief7/16-paused-dark.png" alt="Project settings with agents paused" loading="lazy"></a></figure>
+        <div class="note"><h3>Network list, setup command, budget, pause</h3><p>All in the project's settings. Budgets cap a month and a thread, in tokens and in dollars; at the cap the thread stops cleanly with the reason, and a lead can raise it. <b>Pause all agents</b> stops the sandboxes and holds new messages until someone resumes them.</p><p>A container that dies mid-turn is restarted once on its volume and carries on.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch" id="work">
+    <div class="chhead"><div class="num">8</div><div><h2>Threads as work</h2><p>Every agent gets CoWork's own tools in its session: read a channel, search, and resolve the thread. Each call is checked against the agent's boundary.</p></div></div>
+    <div class="stop">
+      <figure><a href="brief7/18-outcome-dark.png"><img src="brief7/18-outcome-dark.png" alt="A resolved thread with its outcome card" loading="lazy"></a></figure>
+      <div class="note"><h3>An outcome, not just a reply</h3><p>researcher read <code>#checkout-app</code> with <code>cowork_read_channel</code> and resolved the thread with <code>cowork_resolve_thread</code>. The post's status went starting → working → done live, with the outcome beside it; the thread shows the card with its branch, time, tokens and tool calls, and Reopen.</p><p>Asked to read the private <code>#leads</code>, it's refused: outside its boundary. A finished thread's volume is deleted after the retention time, unless its branch has changes.</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="search">
+    <div class="chhead"><div class="num">9</div><div><h2>Search</h2><p>Under Mentions, or <code>Ctrl+K</code>. Results as you type, grouped, with matches marked and stemming ("rounding" finds "rounds").</p></div></div>
+    <div class="stop">
+      <figure><a href="brief7/20-search-outcomes-dark.png"><img src="brief7/20-search-outcomes-dark.png" alt="Search with outcomes first" loading="lazy"></a></figure>
+      <div class="note"><h3>Outcomes first</h3><p>Outcomes hold the decision; messages hold the argument about it. Then threads, then messages, including agents' answers.</p><p>Filters: <code>in:#channel</code>, <code>from:@someone</code>, <code>is:thread</code>. Only what you may see: nothing from private channels you're not in or projects you're not part of, and nothing deleted or redacted.</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="track">
+    <div class="chhead"><div class="num">10</div><div><h2>Keeping track</h2><p>Because everything is stored as events, the views are built from them and can be rebuilt from zero.</p></div></div>
+    <div class="stop">
+      <figure><a href="round3/3-audit.png"><img src="round3/3-audit.png" alt="The audit: what people and agents did, in sentences" loading="lazy"></a></figure>
+      <div class="note"><h3>Audit, unread, mentions, activity</h3><p>Admins read the <b>Audit</b> in sentences: "Rosa asked reviewer (Alex's agent) to run <code>git log -3</code>. Alex allowed it once. It ran on build-01." Filter by person, agent or channel.</p><p>Everyone gets unread counts per channel and a <b>Mentions</b> inbox. Each agent has an <b>Activity</b> view: its turns, threads, failures and runner connections.</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="voice">
+    <div class="chhead"><div class="num">11</div><div><h2>Voice and phone</h2><p>Voice rooms run through LiveKit, which you host; without it a voice channel says it isn't set up and nothing else changes.</p></div></div>
+    <div class="stop">
+      <figure><a href="makeover/voice-dark.png"><img src="makeover/voice-dark.png" alt="A voice channel with Alex and Rosa" loading="lazy"></a></figure>
+      <div class="note"><h3>Talk, and see who's talking</h3><p>Tiles with a speaking ring, mute and leave, and the channel list shows who's in each room without joining. Agents don't join voice yet.</p>
+        <figure class="phone" style="margin-top:12px"><a href="makeover/phone-dark.png"><img src="makeover/phone-dark.png" alt="The app on a phone" loading="lazy"></a></figure>
+        <p class="muted">On a phone: one column, the channel list and members behind buttons.</p></div>
+    </div>
+  </section>
+
+  <section class="ch" id="next">
+    <div class="chhead"><div class="num">12</div><div><h2>Not built yet</h2><p>What the design has that the app doesn't, roughly in the order I'd take it.</p></div></div>
+    <div class="next">
+      <div class="part"><b>Notifications</b><p>Budget at 80%, an ask passing to a lead, no pool online.</p></div>
+      <div class="part"><b>Library and more tools</b><p>A project library (<code>cowork_save_doc</code>), agents starting threads, web search in sandboxes.</p></div>
+      <div class="part"><b>Pushing safely</b><p>The proxy adds a push credential for <code>cowork/*</code> branches by placeholder, so agents can open pull requests without holding a key.</p></div>
+      <div class="part"><b>Sign-in for teams</b><p>OpenID Connect, passkeys, a setup link printed by the server, guests in one project.</p></div>
+      <div class="part"><b>Hardening</b><p>A signed thread token, ed25519 agent keys, an Anthropic-style gateway endpoint, cleaning old worktrees.</p></div>
+      <div class="part"><b>Later</b><p>The board, agents in voice, an Agent Substrate provider for Kubernetes, several servers in the rail.</p></div>
+    </div>
+    <p class="muted" style="margin-top:18px">Designs: <code>docs/architecture/projects-agents-sandboxes.html</code> and <code>provisioning.html</code>. Mockups: <code>mockups/cowork/</code>. How each part was built and checked: <code>docs/build/log.md</code>.</p>
+  </section>
+</div>
+</body>
+</html>
