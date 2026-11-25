@@ -278,5 +278,5 @@ AGPL-3.0-only for everything except `src/CoWork.Runner` and `src/CoWork.Contract
 
 **Decisions**
 - Only the packages installed on this machine are listed, so platform-specific optional packages (e.g. `lightningcss-linux-x64-*`) appear for linux-x64 only. Re-run on the build platform (the Docker image) before a release.
-- Non-permissive: **lightningcss (MPL-2.0)**, a build-time CSS tool pulled in by `@tailwindcss/vite`. It is listed with its text, not removed. MPL-2.0 is file-level copyleft and we don't modify it; reported to the owner as a judgement call.
+- lightningcss (MPL-2.0) was listed only because tailwindcss and @tailwindcss/vite were in `dependencies`; they are build-only, so they moved to `devDependencies` and the notices no longer list it. No non-permissive licence remains.
 - NuGet packages without licence text in the package get their SPDX expression only. The .NET runtime isn't listed (Microsoft, MIT).
