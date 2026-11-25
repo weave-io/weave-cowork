@@ -3,8 +3,21 @@
 // BASE is a fresh CoWork server with LIVEKIT_API_KEY / LIVEKIT_API_SECRET / LIVEKIT_URL set and LiveKit running.
 // BASE_NOVOICE (optional) is a fresh server without them: its voice channel must say voice isn't set up.
 import { launch, person, BASE, SHOTS, expect, ok } from './lib.mjs'
+import { writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 const NOVOICE = process.env.BASE_NOVOICE
-const browser = await launch(['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'])
+// The fake microphone: Chromium's default is a faint, intermittent beep that LiveKit's speaker detection may never pick up.
+// Both browsers play a loud, continuous 440 Hz tone instead (a WAV written here), so "speaking" is deterministic.
+function toneWav(path, seconds = 4, hz = 440, rate = 48000) {
+  const n = rate * seconds, buf = Buffer.alloc(44 + n * 2)
+  buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVEfmt ', 8); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22)
+  buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34); buf.write('data', 36); buf.writeUInt32LE(n * 2, 40)
+  for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin(2 * Math.PI * hz * i / rate) * 0.8 * 32767), 44 + i * 2)
+  writeFileSync(path, buf)
+}
+const TONE = `${process.env.TMPDIR ?? tmpdir()}/cowork-tone-${process.pid}.wav`
+toneWav(TONE)
+const browser = await launch(['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${TONE}`])
 const perm = { permissions: ['microphone'] }
 const A = await person(browser, perm), R = await person(browser, perm)
 const a = A.page, r = R.page
@@ -51,15 +64,27 @@ try {
   await a.waitForSelector('[data-testid=voice-tile][data-member=rosa][data-hearing=true]', { timeout: 30000 })
   await r.waitForSelector('[data-testid=voice-tile][data-member=alex][data-hearing=true]', { timeout: 30000 })
   ok("each browser is subscribed to the other's audio track")
-  // the fake microphone beeps on and off, so record the moment a tile lights instead of polling for it
+  // 1. our side: the audio that reaches this tab is a real signal (RMS of the subscribed track, measured with Web Audio),
+  //    which doesn't depend on LiveKit's speaker-detection threshold
+  const level = (p) => p.evaluate(async () => {
+    const el = document.querySelector('body > audio'); if (!el?.srcObject) return 0
+    const ac = new AudioContext(); await ac.resume()
+    const an = ac.createAnalyser(); an.fftSize = 2048; ac.createMediaStreamSource(el.srcObject).connect(an)
+    const data = new Float32Array(an.fftSize); let best = 0
+    for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 100)); an.getFloatTimeDomainData(data); best = Math.max(best, Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length)) }
+    await ac.close(); return best
+  })
+  const [la, lr] = [await level(a), await level(r)]
+  expect(la > 0.01 && lr > 0.01, `each tab receives the other's audio as a real signal (RMS ${la.toFixed(3)} and ${lr.toFixed(3)})`)
+  // 2. the speaking ring on the tile (LiveKit's active-speaker detection, which the tone is loud and steady enough to trip)
   for (const p of [a, r]) await p.evaluate(() => {
     window.__spoke = {}
     const mark = () => document.querySelectorAll('[data-testid=voice-tile][data-speaking=true]').forEach(e => { window.__spoke[e.dataset.member] = true })
     new MutationObserver(mark).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-speaking'] }); mark()
   })
-  await a.waitForFunction(() => window.__spoke.rosa, null, { timeout: 45000 })
-  await r.waitForFunction(() => window.__spoke.alex, null, { timeout: 45000 })
-  ok("the speaking ring lights on the other person's tile (fake microphone)")
+  await a.waitForFunction(() => window.__spoke.rosa, null, { timeout: 30000 })
+  await r.waitForFunction(() => window.__spoke.alex, null, { timeout: 30000 })
+  ok("the speaking ring lights on the other person's tile (a steady tone as the microphone)")
   await shot(a, 'call-alex'); await shot(r, 'call-rosa')
 
   // --- mute ---
@@ -126,4 +151,4 @@ try {
   console.log('FAILED', e.message)
   await shot(a, 'FAIL-alex').catch(() => {}); await shot(r, 'FAIL-rosa').catch(() => {})
   process.exitCode = 1
-} finally { await browser.close() }
+} finally { await browser.close(); rmSync(TONE, { force: true }) }
