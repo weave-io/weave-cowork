@@ -18,6 +18,8 @@ namespace CoWork.Server.Tests;
 public sealed class TestApp : WebApplicationFactory<Program>
 {
     public string DbPath { get; }
+    /// <summary>Where this server keeps artifact files (beside its database, so a restart on the same database finds them).</summary>
+    public string ArtifactsDir { get; }
     public const string VoiceKey = "testkey", VoiceSecret = "test-secret-test-secret-test-secret-1234";
     private readonly bool _owns;
     /// <param name="existingDb">Start a second server on a database another one left behind (a restart); it isn't deleted on dispose.</param>
@@ -26,6 +28,8 @@ public sealed class TestApp : WebApplicationFactory<Program>
         _owns = existingDb is null;
         DbPath = existingDb ?? Path.Combine(Path.GetTempPath(), $"cowork-test-{Guid.NewGuid():N}.db");
         Environment.SetEnvironmentVariable("COWORK_DB", DbPath);
+        ArtifactsDir = Path.Combine(Path.GetDirectoryName(DbPath)!, Path.GetFileNameWithoutExtension(DbPath) + "-artifacts");
+        Environment.SetEnvironmentVariable("COWORK_ARTIFACTS", ArtifactsDir);
         Environment.SetEnvironmentVariable("LIVEKIT_API_KEY", voice ? VoiceKey : null);
         Environment.SetEnvironmentVariable("LIVEKIT_API_SECRET", voice ? VoiceSecret : null);
         Environment.SetEnvironmentVariable("LIVEKIT_URL", voice ? "ws://livekit.test:7880" : null);
@@ -58,6 +62,7 @@ public sealed class TestApp : WebApplicationFactory<Program>
     {
         base.Dispose(disposing);
         if (_owns) foreach (var f in new[] { DbPath, DbPath + "-wal", DbPath + "-shm" }) try { File.Delete(f); } catch { }
+        if (_owns) try { Directory.Delete(ArtifactsDir, recursive: true); } catch { }
     }
 }
 
@@ -114,6 +119,7 @@ public sealed class FakeRunner : IAsyncDisposable
     public HubConnection? Conn;
     public readonly System.Threading.Channels.Channel<DeliverMessage> Delivered = System.Threading.Channels.Channel.CreateUnbounded<DeliverMessage>();
     public readonly System.Threading.Channels.Channel<PermissionAnswerMsg> Answers = System.Threading.Channels.Channel.CreateUnbounded<PermissionAnswerMsg>();
+    public readonly System.Threading.Channels.Channel<CollectArtifact> Collects = System.Threading.Channels.Channel.CreateUnbounded<CollectArtifact>();
     private readonly TestApp _app;
     public FakeRunner(TestApp app) { _app = app; }
 
@@ -140,6 +146,7 @@ public sealed class FakeRunner : IAsyncDisposable
         }).Build();
         Conn.On<DeliverMessage>("Deliver", m => Delivered.Writer.TryWrite(m));
         Conn.On<PermissionAnswerMsg>("PermissionAnswer", m => Answers.Writer.TryWrite(m));
+        Conn.On<CollectArtifact>("CollectArtifact", m => Collects.Writer.TryWrite(m));
         await Conn.StartAsync();
     }
 
@@ -209,6 +216,7 @@ public sealed class FakeSandbox : IAsyncDisposable
     public SandboxSpec Spec = null!;
     public readonly System.Threading.Channels.Channel<DeliverMessage> Delivered = System.Threading.Channels.Channel.CreateUnbounded<DeliverMessage>();
     public readonly System.Threading.Channels.Channel<PermissionAnswerMsg> Answers = System.Threading.Channels.Channel.CreateUnbounded<PermissionAnswerMsg>();
+    public readonly System.Threading.Channels.Channel<CollectArtifact> Collects = System.Threading.Channels.Channel.CreateUnbounded<CollectArtifact>();
     public readonly TaskCompletionSource Revoked = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public readonly TaskCompletionSource Closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -218,6 +226,7 @@ public sealed class FakeSandbox : IAsyncDisposable
         s.Conn.On<DeliverMessage>("Deliver", m => s.Delivered.Writer.TryWrite(m));
         s.Conn.On<PermissionAnswerMsg>("PermissionAnswer", m => s.Answers.Writer.TryWrite(m));
         s.Conn.On("Revoked", () => s.Revoked.TrySetResult());
+        s.Conn.On<CollectArtifact>("CollectArtifact", m => s.Collects.Writer.TryWrite(m));
         s.Conn.Closed += _ => { s.Closed.TrySetResult(); return Task.CompletedTask; };
         await s.Conn.StartAsync();
         return s;

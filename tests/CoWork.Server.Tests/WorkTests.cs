@@ -59,7 +59,7 @@ public class WorkTests
         var (st, init) = await Mcp(w.App, token, "initialize", new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "t", version = "0" } });
         Assert.Equal(("cowork", true), ((string)init!["result"]!["serverInfo"]!["name"]!, init["result"]!["capabilities"]!["tools"] is not null));
         var tools = (await Mcp(w.App, token, "tools/list")).Body!["result"]!["tools"]!.AsArray().Select(t => (string)t!["name"]!).ToArray();
-        Assert.Equal(new[] { "cowork_read_channel", "cowork_search", "cowork_resolve_thread" }, tools);
+        Assert.Equal(new[] { "cowork_read_channel", "cowork_search", "cowork_resolve_thread", "cowork_show" }, tools);
         var note = await w.App.CreateClient().PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", method = "notifications/initialized" });
         Assert.Equal(HttpStatusCode.Unauthorized, note.StatusCode);
 

@@ -6,7 +6,7 @@ public static class Projections
 {
     public static readonly string[] Tables =
     {
-        "open_turns", "runner_positions", "thread_agents", "threads", "posts", "channel_members", "channels",
+        "artifact_files", "artifact_versions", "artifacts", "open_turns", "runner_positions", "thread_agents", "threads", "posts", "channel_members", "channels",
         "invites", "agents", "people", "members", "settings", "projects", "project_members", "project_agents", "workspaces",
         "pools", "sandboxes", "model_usage", "project_network", "thread_egress", "budgets", "thread_budgets", "project_usage",
     };

@@ -79,6 +79,14 @@ public static class Effects
                     Post(EffectKind.PostUpdated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
                 case "ThreadResolved":
                     Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
+                // an artifact's card appears; its earlier cards show the new version
+                case "ArtifactPublished":
+                    Post(EffectKind.PostCreated, e.Long("postId"), e.Position);
+                    foreach (var older in ArtifactProjection.CardsOf(c, e.Long("artifactId")).Where(id => id != e.Long("postId"))) Post(EffectKind.PostUpdated, older, e.Position);
+                    Thread(t, e.Position); break;
+                case "ArtifactRedacted":
+                    foreach (var redacted in ArtifactProjection.CardsOf(c, e.Long("artifactId"))) Post(EffectKind.PostUpdated, redacted, e.Position);
+                    break;
                 case "ThreadReopened": case "SandboxKept": case "SandboxDeleteRequested":
                     foreach (var o in c.Query<long>("SELECT id FROM posts WHERE thread_id=@t AND kind='outcome'", new { t })) Post(EffectKind.PostUpdated, o, e.Position);
                     Thread(t, e.Position); break;

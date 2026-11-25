@@ -18,8 +18,10 @@ public sealed class ThreadProjection : IInlineProjection
             case "MessagePosted":
             {
                 var thread = e.LongOrNull("threadId");
-                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, created_at, position) VALUES (@id,@ch,@t,@by,@body,'text',@at,@pos)",
-                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = thread, by = e.ActorId, body = e.Str("body"), at = e.OccurredAt, pos = e.Position });
+                // a reply about an artifact (written under the canvas) quotes it and its version
+                var meta = e.Data.TryGetProperty("quote", out var q) && q.ValueKind == JsonValueKind.Object ? new JsonObject { ["quote"] = JsonNode.Parse(q.GetRawText()) }.ToJsonString() : null;
+                x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@by,@body,'text',@meta,@at,@pos)",
+                    new { id = e.Long("postId"), ch = e.Long("channelId"), t = thread, by = e.ActorId, body = e.Str("body"), meta, at = e.OccurredAt, pos = e.Position });
                 if (thread is not null) x.Execute("UPDATE threads SET agent_chain=@chain WHERE root_id=@thread", new { thread, chain = e.LongOrNull("agentChain") ?? 0 });      // a person spoke: the agent-to-agent count starts again (an imported thread says where it stood)
                 break;
             }
@@ -158,7 +160,7 @@ public sealed class ThreadProjection : IInlineProjection
             case "AgentReplied": return e.Long("segment") == 0 ? ThreadOf(e) : null;
             case "TurnInterrupted": return e.LongOrNull("postId") is null ? null : ThreadOf(e);
             case "WorkRefused": case "MentionUnreachable": case "ToolCallStarted": case "PermissionRequested": case "TurnFailed": case "ThreadResolved": case "ThreadReopened":
-            case "SandboxRequested": case "EgressRefused": case "BudgetReached": case "ThreadBudgetRaised":
+            case "SandboxRequested": case "EgressRefused": case "BudgetReached": case "ThreadBudgetRaised": case "ArtifactPublished":
                 return ThreadOf(e) is var t and > 0 ? t : null;
             default: return null;
         }

@@ -235,6 +235,22 @@ public sealed class AuditProjection : IAsyncProjection
                 Add(x, e, "event", $"{who} asked {Agent(x, ag)} for work in {Channel(x, ch)}. It didn't take it: {why}.", ch, thread, ag, owner);
                 break;
             }
+            case "ArtifactPublished":
+            {
+                // every version and who published it, for whom (the title, never the content)
+                var ag = e.Long("agentId"); var ch = e.Long("channelId");
+                var owner = x.Scalar<long?>("SELECT owner_id FROM audit_names WHERE kind='agent' AND id=@a", new { a = ag });
+                var forWhom = e.OnBehalfOf is null ? "" : $", for {Person(x, e.OnBehalfOf)}";
+                Add(x, e, "event", $"{Agent(x, ag)} showed “{e.Str("title")}” v{e.Long("version")} ({e.Str("kind")}, {Artifacts.Size(e.Long("size"))}) in {Channel(x, ch)}{forWhom}.", ch, thread, ag, owner);
+                break;
+            }
+            case "ArtifactRedacted":
+            {
+                var ch = e.Long("channelId");
+                var which = e.LongOrNull("version") is { } rv ? $"v{rv} of “{e.Str("title")}”" : $"every version of “{e.Str("title")}”";
+                Add(x, e, "event", $"{Actor(x, e)} redacted {which} in {Channel(x, ch)}. Its files are gone; that it was shown stays.", ch, thread);
+                break;
+            }
             case "ThreadRenamed":
             {
                 var ch = e.LongOrNull("channelId");

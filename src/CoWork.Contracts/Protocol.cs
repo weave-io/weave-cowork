@@ -100,3 +100,15 @@ public static class SandboxStates
 {
     public const string Suspended = "suspended", Resuming = "resuming", Running = "running", Suspending = "suspending", Failed = "failed", Deleted = "deleted", Kept = "kept";
 }
+
+// ---- artifacts (brief 9) ----------------------------------------------------------------------------------------------
+/// <summary>Server → runner: the agent called <c>cowork_show</c>. Read <see cref="Path"/> in the thread's workspace (and, for a page, the folder it's
+/// in) and upload it to <c>/api/runner/artifacts/{RequestId}</c> with the runner's token (a sandbox's: its thread token).</summary>
+public record CollectArtifact(string RequestId, long ThreadId, string Path);
+
+public static class ArtifactLimits
+{
+    /// <summary>At most this much per artifact version: the file and the files beside it.</summary>
+    public const long MaxBytes = 25L * 1024 * 1024;
+    public const int MaxFiles = 500;
+}

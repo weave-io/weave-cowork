@@ -20,7 +20,8 @@ public sealed class Mcp
     private readonly IEventStore _store;
     private readonly ProjectionRunner _views;
     private readonly ILogger<Mcp> _log;
-    public Mcp(Db db, IEventStore store, ProjectionRunner views, ILogger<Mcp> log) { _db = db; _store = store; _views = views; _log = log; }
+    private readonly Artifacts _artifacts;
+    public Mcp(Db db, IEventStore store, ProjectionRunner views, Artifacts artifacts, ILogger<Mcp> log) { _db = db; _store = store; _views = views; _artifacts = artifacts; _log = log; }
 
     public sealed record Caller(long AgentId, long ThreadId, string Handle);
 
@@ -74,7 +75,7 @@ public sealed class Mcp
                     ["protocolVersion"] = (string?)m["params"]?["protocolVersion"] ?? Protocol,
                     ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } },
                     ["serverInfo"] = new JsonObject { ["name"] = "cowork", ["version"] = "0.7" },
-                    ["instructions"] = "CoWork's tools for this thread: read a channel or a thread you take part in, search what you may see, and resolve this thread with an outcome when the work is done.",
+                    ["instructions"] = "CoWork's tools for this thread: read a channel or a thread you take part in, search what you may see, show people a page, document, image or table you made (cowork_show), and resolve this thread with an outcome when the work is done.",
                 })!;
             case "ping": return (JsonObject)Result(new JsonObject())!;
             case "tools/list": return (JsonObject)Result(new JsonObject { ["tools"] = Tools() })!;
@@ -97,7 +98,8 @@ public sealed class Mcp
         Tool("cowork_search", "Search the conversations you may see: outcomes of resolved threads first, then threads and messages. Words, \"a phrase\", in:#channel, from:@someone.",
             new JsonObject { ["query"] = Prop("string", "What to look for."), ["limit"] = Prop("integer", "At most this many of each kind (default 8).") }, "query"),
         Tool("cowork_resolve_thread", "Mark this thread done, with an outcome people see on the post, in the thread and in search: a short title and a summary of what was found or done. Use it when the work is finished.",
-            new JsonObject { ["summary"] = Prop("string", "What was found or done, in a few sentences or bullet lines."), ["title"] = Prop("string", "A short title for the outcome (default: the summary's first line).") }, "summary"));
+            new JsonObject { ["summary"] = Prop("string", "What was found or done, in a few sentences or bullet lines."), ["title"] = Prop("string", "A short title for the outcome (default: the summary's first line).") }, "summary"),
+        Artifacts.ToolDefinition());
 
     static JsonObject Tool(string name, string description, JsonObject props, params string[] required) => new()
     {
@@ -117,6 +119,7 @@ public sealed class Mcp
                 case "cowork_read_channel": r = Read(who, args); break;
                 case "cowork_search": await _views.CatchUpAsync(); r = SearchFor(who, args); break;
                 case "cowork_resolve_thread": r = Resolve(who, args); break;
+                case "cowork_show": r = await _artifacts.Show(who, args); break;
                 default: return ($"There's no tool called {name}.", true);
             }
         }

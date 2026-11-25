@@ -63,6 +63,9 @@ public sealed class AcpAdapter : IAsyncDisposable
         });
     }
     private void Emit(StreamEvent e) => _outbox.Writer.TryWrite((e, null));
+
+    /// <summary>The folder a thread works in (a sandbox's one workspace), or null if this runner has no session for it.</summary>
+    public string? WorkspaceOf(long threadId) => _workspaces.GetValueOrDefault(threadId) ?? _places.Fixed;
     /// <summary>Completes once everything emitted so far has gone to the server (so an ask never overtakes the tool calls before it).</summary>
     private Task Sent() { var t = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); _outbox.Writer.TryWrite((null, t)); return t.Task; }
 

@@ -21,6 +21,7 @@ builder.Services.AddSingleton<IInlineProjection, DirectoryProjection>();        
 builder.Services.AddSingleton<IInlineProjection, ProjectProjection>();
 builder.Services.AddSingleton<IInlineProjection, ThreadProjection>();
 builder.Services.AddSingleton<IInlineProjection, SandboxProjection>();
+builder.Services.AddSingleton<IInlineProjection, ArtifactProjection>();
 builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
 builder.Services.AddSingleton<IAsyncProjection, AuditProjection>();          // async projections: after the commit, from a checkpoint, rebuildable from zero
 builder.Services.AddSingleton<IAsyncProjection, UnreadProjection>();
@@ -38,6 +39,12 @@ builder.Services.AddSingleton<Sandboxes>();
 builder.Services.AddHostedService<SandboxReaper>();
 builder.Services.AddSingleton<Gateway>();
 builder.Services.AddSingleton<Mcp>();
+// artifacts: the bytes under the data directory (beside the database when only COWORK_DB is given)
+builder.Services.AddSingleton(ArtifactOptions.From(builder.Configuration,
+    builder.Configuration["COWORK_DATA"] ?? (builder.Configuration["COWORK_DB"] is not null ? Path.GetDirectoryName(Path.GetFullPath(dbPath))! : dataDir)));
+builder.Services.AddSingleton<ArtifactStore>();
+builder.Services.AddSingleton<ArtifactSigner>();
+builder.Services.AddSingleton<Artifacts>();
 builder.Services.AddSingleton<Dispatcher>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();
 builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
@@ -131,6 +138,7 @@ app.MapHub<RunnerHub>("/hubs/runner");
 app.MapHub<PoolHub>("/hubs/pool");
 Gateway.Map(app);
 Mcp.Map(app);
+Artifacts.Map(app);
 Api.Map(app);
 app.MapFallback(async ctx =>
 {

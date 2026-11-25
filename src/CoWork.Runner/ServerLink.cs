@@ -12,6 +12,7 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
     private readonly AcpAdapter _adapter;
     private readonly HubConnection _hub;
     private readonly Dictionary<string, TaskCompletionSource<string?>> _asks = new();
+    private readonly HttpClient _http;
     public event Action? Revoked;
     public Action<string> Log = Console.WriteLine;
 
@@ -36,6 +37,9 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
             lock (_asks) if (_asks.Remove(a.RequestId, out var t)) t.TrySetResult(a.OptionId);
         });
         _hub.On("Revoked", () => Revoked?.Invoke());
+        _http = new HttpClient(handler?.Invoke() ?? new SocketsHttpHandler()) { Timeout = TimeSpan.FromMinutes(5) };
+        // cowork_show: read the file (and a page's folder) in the thread's workspace and upload it with this runner's token
+        _hub.On<CollectArtifact>("CollectArtifact", r => { _ = Task.Run(() => Collect(r)); });
         _hub.Reconnecting += e => { Log($"[{agent.Handle}] connection lost, reconnecting…"); return Task.CompletedTask; };
         _hub.Reconnected += _ => { Log($"[{agent.Handle}] reconnected"); return Task.CompletedTask; };
     }
@@ -61,6 +65,15 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
 
     public Task Stream(StreamEvent e) => _hub.InvokeAsync("Stream", e);
 
+    private async Task Collect(CollectArtifact r)
+    {
+        var ws = _adapter.WorkspaceOf(r.ThreadId);
+        var (picked, error) = ws is null ? (null, "This runner has no workspace for the thread yet.") : ArtifactFiles.Pick(ws, r.Path);
+        Log($"[{_agent.Handle}] thread {r.ThreadId}: cowork_show {r.Path}: {(picked is null ? error : $"{picked.Files.Count} file(s), {picked.Files.Sum(f => f.Size)} bytes")}");
+        try { await ArtifactFiles.Upload(_http, _agent.Server, _agent.Token, r.ThreadId, r.RequestId, picked, error); }
+        catch (Exception e) { Log($"[{_agent.Handle}] thread {r.ThreadId}: couldn't upload {r.Path}: {e.Message}"); }
+    }
+
     public async Task<string?> AskPermission(PermissionRequestMsg r)
     {
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -73,6 +86,7 @@ public sealed class ServerLink : IRunnerSink, IAsyncDisposable
     {
         await _adapter.DisposeAsync();
         await _hub.DisposeAsync();
+        _http.Dispose();
     }
 
     private sealed class Backoff : IRetryPolicy

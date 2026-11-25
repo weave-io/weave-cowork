@@ -14,7 +14,9 @@ public record LoginBody(string Username, string Password);
 public record SignupBody(string Username, string DisplayName, string Password);
 public record InviteBody(int? MaxUses, int? ExpiresInDays);
 public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? Kind = null, long? ProjectId = null);
-public record PostBody(string Body, long? ThreadId);
+public record PostBody(string Body, long? ThreadId, QuoteBody? Quote = null);
+/// <summary>A reply written under the canvas quotes the artifact and the version the person was looking at.</summary>
+public record QuoteBody(long ArtifactId, int Version);
 public record AnswerBody(string? OptionId);
 public record RoleBody(string Role);
 public record AgentEditBody(string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string? Workspace, bool? RecordToolOutput = null, string? Image = null, string? Model = null);

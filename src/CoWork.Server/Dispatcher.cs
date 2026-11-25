@@ -61,9 +61,14 @@ public sealed class Dispatcher
 
     public static IEnumerable<string> Mentions(string body) => MentionRx.Matches(body).Select(m => m.Groups[1].Value.ToLowerInvariant()).Distinct();
 
-    /// <summary>AGENTS.md rule 4: say who's speaking.</summary>
-    public static string Wrap(string handle, string name, bool owner, string channel, long threadId, string text) =>
-        $"<cowork-message from=\"@{Esc(handle)}\" name=\"{Esc(name)}\" owner=\"{(owner ? "true" : "false")}\" channel=\"#{Esc(channel)}\" thread=\"{threadId}\">{text.Replace("</cowork-message", "&lt;/cowork-message")}</cowork-message>";
+    /// <summary>A reply about an artifact: the artifact, the version the person was looking at, and the path it came from in the agent's workspace.</summary>
+    public sealed record Quote(long ArtifactId, int Version, string Title, string Path);
+
+    /// <summary>AGENTS.md rule 4: say who's speaking (and, for a reply written under the canvas, what about).</summary>
+    public static string Wrap(string handle, string name, bool owner, string channel, long threadId, string text, Quote? quote = null) =>
+        $"<cowork-message from=\"@{Esc(handle)}\" name=\"{Esc(name)}\" owner=\"{(owner ? "true" : "false")}\" channel=\"#{Esc(channel)}\" thread=\"{threadId}\"" +
+        (quote is null ? "" : $" artifact=\"{Esc(quote.Title)}\" version=\"{quote.Version}\" path=\"{Esc(quote.Path)}\"") +
+        $">{text.Replace("</cowork-message", "&lt;/cowork-message")}</cowork-message>";
     private static string Esc(string s) => s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 
     /// <summary>Why an agent won't take work from this person in this channel, or null if it will. Only a channel in a project has a grant:
@@ -107,7 +112,7 @@ public sealed class Dispatcher
 
     /// <summary>A person posts. One transaction records the post and, if agents should hear it, the thread, who joined and what was delivered to each.
     /// Returns the post's id (a thread's id is its root post's id).</summary>
-    public async Task<long> Post(long authorId, long channelId, long? threadId, string body)
+    public async Task<long> Post(long authorId, long channelId, long? threadId, string body, Quote? quote = null)
     {
         long postId = 0; var toPump = new List<long>();
         await _lock.WaitAsync();
@@ -124,7 +129,8 @@ public sealed class Dispatcher
                 var mentioned = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND " + Q.CanWork + @"
                     AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != author.Id && mentions.Contains(a.Handle.ToLowerInvariant())).ToList();
-                var posted = new { postId, channelId, threadId, body = body, mentions };
+                object posted = quote is null ? new { postId, channelId, threadId, body = body, mentions }
+                    : new { postId, channelId, threadId, body = body, mentions, quote = new { artifactId = quote.ArtifactId, version = quote.Version, title = quote.Title, path = quote.Path } };
                 // the agent's grant in the channel's project says who may give it work; a mention from anyone else gets a short reply instead
                 var refused = mentioned.Where(a => Refusal(ctx, channel, a, authorId) is not null).ToList();
                 mentioned = mentioned.Except(refused).ToList();
@@ -184,7 +190,7 @@ public sealed class Dispatcher
                     evs.Add(new NewEvent($"thread-{root}", "MessageDelivered", new
                     {
                         agentId = a.Id, postId, chained = false,
-                        text = Wrap(author.Handle, author.DisplayName, a.OwnerId == author.Id, channel.Name, root, body),
+                        text = Wrap(author.Handle, author.DisplayName, a.OwnerId == author.Id, channel.Name, root, body, quote),
                     }, null, authorId, turn, CausedByIndex: causeIdx));
                     toPump.Add(a.Id);
                 }

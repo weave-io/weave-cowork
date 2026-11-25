@@ -183,7 +183,7 @@ public class RoundTwoTests
                 c.Execute("INSERT INTO events SELECT * FROM old.events");
                 c.Execute("DETACH DATABASE old");
             }
-            new SqliteEventStore(fresh, new IInlineProjection[] { new DirectoryProjection(), new ProjectProjection(), new ThreadProjection(), new SandboxProjection() }).RebuildProjections();
+            new SqliteEventStore(fresh, new IInlineProjection[] { new DirectoryProjection(), new ProjectProjection(), new ThreadProjection(), new SandboxProjection(), new ArtifactProjection() }).RebuildProjections();
             Assert.Equal(tablesBefore, Dump(path));
         }
         finally { foreach (var f in new[] { path, path + "-wal", path + "-shm" }) try { File.Delete(f); } catch { } }

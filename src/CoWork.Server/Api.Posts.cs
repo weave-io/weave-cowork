@@ -18,6 +18,7 @@ public static partial class Api
         authed.MapPost("/channels/{id:long}/posts", async (long id, PostBody b, HttpContext ctx, Db db, Dispatcher d) =>
         {
             var me = Me(ctx);                          // the author is the caller, never the body
+            Dispatcher.Quote? quote = null;
             using (var c = db.Open())
             {
                 if (!Access.CanSee(c, id, me)) return Err(404, "No such channel.");
@@ -30,8 +31,13 @@ public static partial class Api
                     var root = Q.Post(c, b.ThreadId.Value);
                     if (root is null || root.ChannelId != id || root.ThreadId is not null) return Err(400, "That thread doesn't exist.");
                 }
+                if (b.Quote is { } q)
+                {
+                    if (b.ThreadId is null || Artifacts.Quotable(c, b.ThreadId.Value, q.ArtifactId, q.Version) is not { } a) return Err(400, "That artifact isn't in this thread.");
+                    quote = new Dispatcher.Quote(q.ArtifactId, q.Version, a.Title, a.Path);
+                }
             }
-            var postId = await d.Post(me, id, b.ThreadId, (b.Body ?? "").Trim());
+            var postId = await d.Post(me, id, b.ThreadId, (b.Body ?? "").Trim(), quote);
             using var c2 = db.Open();
             return Results.Ok(Q.FullPostDto(c2, postId));
         });
