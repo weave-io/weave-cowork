@@ -151,10 +151,10 @@ try {
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-audit]')
   await a.waitForSelector('[data-testid=projections] [data-projection]')
   const before = await texts()
-  expect((await a.locator('[data-testid=projections] [data-testid=checkpoint]').allTextContents()).length === 3, 'the Audit lists the three views with their place in the log')
+  expect((await a.locator('[data-testid=projections] [data-testid=checkpoint]').allTextContents()).length === 4, 'the Audit lists the four views (search too) with their place in the log')
   await shot(a, '5-audit-rebuild')
   const headNow = sql('select max(position) from events')[0][0]
-  for (const name of ['audit', 'unread', 'agent-activity']) {
+  for (const name of ['audit', 'unread', 'agent-activity', 'search']) {
     await a.click(`[data-rebuild=${name}]`)
     await a.waitForSelector('[data-testid=rebuilt]')
     await until(`${name} to be back at the head`, () => sql(`select position from projection_checkpoints where name='${name}'`)[0]?.[0] >= headNow)

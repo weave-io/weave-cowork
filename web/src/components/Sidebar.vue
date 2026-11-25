@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText } from 'lucide-vue-next'
+import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
+import { searchShortcut } from '../search'
+import { navOpen } from '../layout'
 import { store, me, openModal, signOut, memberById } from '../store'
 import { voice, leaveVoice, toggleMute } from '../voice'
 import { selection, setTheme, themes, type ThemeSelection } from '../theme'
@@ -17,6 +20,9 @@ const emit = defineEmits<{ go: [id: number] }>()
 const text = computed(() => store.channels.filter(c => c.kind !== 'voice'))
 const voices = computed(() => store.channels.filter(c => c.kind === 'voice'))
 const unreadIn = (id: number) => store.unread.channels[String(id)] ?? 0
+const route = useRoute(), router = useRouter()
+const searching = computed(() => route.path === '/search')
+function openSearch() { navOpen.value = false; if (!searching.value) router.push('/search') }
 const themeLabel = computed(() => selection.value === 'system' ? 'System' : themes.find(t => t.id === selection.value)?.label)
 </script>
 <template>
@@ -39,6 +45,10 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
       <button type="button" class="chan mt-1" :class="{ unread: store.unread.mentions > 0 }" data-testid="mentions" @click="openModal('mentions')">
         <AtSign :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">Mentions</span>
         <span v-if="store.unread.mentions > 0" class="count" data-testid="mentions-badge" :aria-label="`${store.unread.mentions} unread mentions`">{{ store.unread.mentions }}</span>
+      </button>
+      <button type="button" class="chan" :class="{ active: searching }" :aria-current="searching ? 'page' : undefined" data-testid="search-nav" @click="openSearch">
+        <Search :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">Search</span>
+        <kbd class="ml-auto font-sans text-[11px] text-muted">{{ searchShortcut }}</kbd>
       </button>
       <div class="flex items-center justify-between px-2.5 pt-3 pb-1">
         <span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Channels</span>

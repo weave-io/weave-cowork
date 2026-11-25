@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { store, currentChannel, openChannel, openThread, openModal, closeModal, markRead } from '../store'
 import { post } from '../api'
@@ -26,6 +26,8 @@ import People from '../components/modals/People.vue'
 import Audit from '../components/modals/Audit.vue'
 import Mentions from '../components/modals/Mentions.vue'
 import AgentActivity from '../components/modals/AgentActivity.vue'
+import SearchView from './SearchView.vue'
+import { searchFocus } from '../search'
 
 const route = useRoute(), router = useRouter()
 const ids = computed(() => {
@@ -33,9 +35,41 @@ const ids = computed(() => {
   return { channel: m ? Number(m[1]) : null, thread: m?.[2] ? Number(m[2]) : null }
 })
 const scroller = ref<HTMLElement | null>(null)
+const searching = computed(() => route.path === '/search')
+
+// Ctrl+K / ⌘K: search, from anywhere
+function onKey(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k' || e.altKey || e.shiftKey) return
+  e.preventDefault(); navOpen.value = false
+  if (searching.value) searchFocus.value++; else router.push('/search')
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+// a result opened from search: once its channel (or thread) is showing, scroll the post into view and light it for a moment
+let focusRun = 0
+async function focusPost(postId: number, channel: number, thread: number | null) {
+  const mine = ++focusRun, until = Date.now() + 4000
+  while (Date.now() < until && mine === focusRun) {
+    const ready = store.feed.channelId === channel && !store.loadingFeed && (thread == null || store.feed.thread?.rootId === thread)
+    const el = ready ? document.querySelector<HTMLElement>(`${thread != null ? '[data-testid=thread-panel] ' : '[data-testid=feed] '}[data-post="${postId}"]`) : null
+    if (el) {
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))     // after the panels' own scroll-to-bottom
+      document.querySelectorAll('[data-focused]').forEach(x => { x.removeAttribute('data-focused'); x.classList.remove('post-flash') })
+      el.scrollIntoView({ block: 'center' }); el.setAttribute('data-focused', 'true'); el.classList.add('post-flash')
+      setTimeout(() => el.classList.remove('post-flash'), 2500)
+      return
+    }
+    await new Promise(r => setTimeout(r, 50))
+  }
+}
+watch(() => [route.query.post, ids.value.channel, ids.value.thread] as const, ([p, ch, t]) => {
+  if (typeof p === 'string' && ch != null) focusPost(Number(p), ch, t)
+}, { immediate: true })
 
 // the URL is the source of truth for what's open; the channel list decides what you may open
 watch([ids, () => store.channels.length], async () => {
+  if (searching.value) return
   const want = ids.value.channel
   const ok = want != null && store.channels.some(c => c.id === want)
   if (!ok) {
@@ -49,12 +83,15 @@ watch([ids, () => store.channels.length], async () => {
 }, { immediate: true })
 
 // a channel that is open is a channel that is read: when it has unread messages (it was just opened, or something arrived), say so
-watch(() => [store.feed.channelId, store.unread.channels[String(store.feed.channelId)] ?? 0] as const, ([id, n]) => { if (id != null && n > 0) markRead(id) }, { immediate: true })
+watch(() => [searching.value ? null : store.feed.channelId, store.unread.channels[String(store.feed.channelId)] ?? 0] as const, ([id, n]) => { if (id != null && n > 0) markRead(id) }, { immediate: true })
 
 const posts = computed(() => store.feed.posts)
 watch(() => [posts.value.length, store.feed.channelId], async () => {
   await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
 }, { flush: 'post' })
+
+// back from search to the channel that was open: its feed is drawn again, at the bottom
+watch(searching, async s => { if (!s) { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight } }, { flush: 'post' })
 
 const goChannel = (id: number) => { navOpen.value = false; router.push(`/c/${id}`) }
 const openT = (rootId: number) => router.push(`/c/${store.feed.channelId}/t/${rootId}`)
@@ -72,16 +109,18 @@ async function send(text: string) {
       <!-- desktop: the rail and the channel list sit on the window; the phone moves them behind the menu button -->
       <template v-if="!isPhone">
         <Rail />
-        <div class="flex w-[244px] min-w-0 shrink-0 flex-col"><Sidebar :channel-id="store.feed.channelId" @go="goChannel" /></div>
+        <div class="flex w-[244px] min-w-0 shrink-0 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" @go="goChannel" /></div>
       </template>
       <template v-else-if="navOpen">
         <div class="fixed inset-0 z-40 bg-black/60" @click="navOpen = false" />
         <div class="fixed inset-y-0 left-0 z-50 flex w-[min(340px,calc(100%-56px))] border-r border-border bg-main-bg" data-testid="phone-nav">
-          <Rail /><div class="flex min-w-0 flex-1 flex-col"><Sidebar :channel-id="store.feed.channelId" @go="goChannel" /></div>
+          <Rail /><div class="flex min-w-0 flex-1 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" @go="goChannel" /></div>
         </div>
       </template>
 
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-panel-bg" :class="isPhone ? '' : 'rounded-panel border border-border shadow-(--sheet-shadow)'">
+        <SearchView v-if="searching" />
+        <template v-else>
         <main class="flex min-h-0 min-w-0 flex-1 flex-col" :class="isPhone && store.feed.thread && 'hidden'">
           <template v-if="currentChannel">
             <header class="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3 sm:px-4">
@@ -108,6 +147,7 @@ async function send(text: string) {
 
         <ThreadPanel v-if="store.feed.thread" class="border-l border-border" :class="isPhone ? 'w-full' : 'w-[400px] shrink-0'" @close="closeT" />
         <MemberList v-if="!isPhone && (!store.feed.thread || isWide)" class="shrink-0 border-l border-border" :class="store.feed.thread ? 'w-[220px]' : 'w-[244px]'" />
+        </template>
       </div>
 
       <template v-if="isPhone && membersOpen">
