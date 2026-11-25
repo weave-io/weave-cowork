@@ -58,7 +58,10 @@ static class Cli
         {
             var stateDir = Path.GetDirectoryName(config.Path)!;
             var key = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(a.Server.TrimEnd('/')));
-            var link = new ServerLink(a, host, sessions: new SessionStore(Path.Combine(stateDir, $"sessions-{Convert.ToHexString(key)[..8].ToLowerInvariant()}-{a.AgentId}.json")));
+            var serverKey = Convert.ToHexString(key)[..8].ToLowerInvariant();
+            var agentRoot = Path.Combine(RunnerConfig.DataRoot(), $"{serverKey}-{a.AgentId}");     // its clones, worktrees and per-project harness data
+            var link = new ServerLink(a, host, sessions: new SessionStore(Path.Combine(stateDir, $"sessions-{serverKey}-{a.AgentId}.json")), agentRoot: agentRoot);
+            Console.WriteLine($"[{a.Handle}] workspaces and harness data in {agentRoot}");
             var agent = a;
             link.Revoked += () => { Console.WriteLine($"[{agent.Handle}] the server removed this agent's access; forgetting it."); config.Remove(agent); _ = link.DisposeAsync(); };
             links.Add(link);

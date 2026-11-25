@@ -16,6 +16,16 @@ public sealed class RunnerConfig
         Path = path ?? System.IO.Path.Combine(dir, "cowork-runner", "agents.json");
     }
 
+    /// <summary>Where the runner keeps agents' clones, worktrees and per-project harness data: COWORK_RUNNER_DATA, else XDG_DATA_HOME/cowork-runner,
+    /// else ~/.local/share/cowork-runner.</summary>
+    public static string DataRoot()
+    {
+        var own = Environment.GetEnvironmentVariable("COWORK_RUNNER_DATA");
+        if (!string.IsNullOrEmpty(own)) return own;
+        var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+        return System.IO.Path.Combine(string.IsNullOrEmpty(xdg) ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share") : xdg, "cowork-runner");
+    }
+
     public List<SavedAgent> Load()
     {
         if (!File.Exists(Path)) return new();

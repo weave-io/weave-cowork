@@ -12,14 +12,17 @@ public interface IRunnerSink
 }
 
 /// <summary>
-/// The ACP adapter (AGENTS.md rule 1: harness specifics stop here). One harness process per agent, spawned on first use;
-/// one ACP session per thread; one session/prompt per delivered message. Maps session/update to <see cref="StreamEvent"/>s.
+/// The ACP adapter (AGENTS.md rule 1: harness specifics stop here). One harness process per agent and project (threads outside any project
+/// share the agent's own), spawned on first use, each with its own data folder (<see cref="HarnessHome"/>); one ACP session per thread, in the
+/// thread's own workspace (<see cref="Workspaces"/>); one session/prompt per delivered message. Maps session/update to <see cref="StreamEvent"/>s.
 /// </summary>
 public sealed class AcpAdapter : IAsyncDisposable
 {
     private readonly IRunnerSink _sink;
     private readonly SemaphoreSlim _spawn = new(1, 1);
-    private AcpAgentProcess? _proc;
+    private readonly Dictionary<string, AcpAgentProcess> _procs = new();           // "agent" or "project-<id>" → its harness process
+    private readonly ConcurrentDictionary<long, string> _procOf = new();            // thread → the key of the process its session is in
+    private readonly Workspaces _places;
     private readonly ConcurrentDictionary<long, string> _sessions = new();           // thread → ACP session id
     private readonly ConcurrentDictionary<string, long> _threads = new();            // ACP session id → thread
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _threadLocks = new();
@@ -31,11 +34,14 @@ public sealed class AcpAdapter : IAsyncDisposable
     private readonly Task _pump;
 
     private readonly SessionStore? _store;
-    private bool _canLoad;
+    private readonly ConcurrentDictionary<string, bool> _canLoad = new();
 
-    public AcpAdapter(IRunnerSink sink, SessionStore? store = null)
+    /// <param name="agentRoot">This agent's own folder on the runner: clones, worktrees and per-project harness data live under it.</param>
+    public AcpAdapter(IRunnerSink sink, SessionStore? store = null, string? agentRoot = null)
     {
         _sink = sink; _store = store;
+        _places = new Workspaces(agentRoot ?? Path.Combine(Path.GetTempPath(), "cowork-runner", "agent"));
+        _places.Log = m => Log?.Invoke(m);
         _pump = Task.Run(async () =>
         {
             await foreach (var (e, mark) in _outbox.Reader.ReadAllAsync())
@@ -56,8 +62,9 @@ public sealed class AcpAdapter : IAsyncDisposable
         await gate.WaitAsync();
         try
         {
-            var proc = await EnsureProcess(m);
-            var (sessionId, first) = await EnsureSession(proc, m);
+            var key = m.ProjectId is { } project ? $"project-{project}" : "agent";
+            var proc = await EnsureProcess(key, m);
+            var (sessionId, first) = await EnsureSession(proc, key, m);
             // the agent's instructions go in the first prompt of each session, before the first message
             var text = first && !string.IsNullOrWhiteSpace(m.Instructions) ? $"{m.Instructions.Trim()}\n\n{m.Text}" : m.Text;
             var result = await proc.Client.Request("session/prompt", new JsonObject
@@ -70,7 +77,7 @@ public sealed class AcpAdapter : IAsyncDisposable
         catch (Exception e)
         {
             var why = e.Message;
-            var err = _proc?.Stderr;
+            var err = _procOf.TryGetValue(m.ThreadId, out var k) && _procs.TryGetValue(k, out var pr) ? pr.Stderr : null;
             if (!string.IsNullOrEmpty(err)) why += " " + err[^Math.Min(err.Length, 300)..];
             Emit(new StreamEvent(m.ThreadId, StreamKinds.Error, why));
         }
@@ -81,22 +88,29 @@ public sealed class AcpAdapter : IAsyncDisposable
         }
     }
 
-    private async Task<AcpAgentProcess> EnsureProcess(DeliverMessage m)
+    private async Task<AcpAgentProcess> EnsureProcess(string key, DeliverMessage m)
     {
         await _spawn.WaitAsync();
         try
         {
-            if (_proc is { IsRunning: true }) return _proc;
+            if (_procs.TryGetValue(key, out var running) && running.IsRunning) return running;
             // a new process knows none of the old sessions
-            _sessions.Clear(); _threads.Clear();
-            Directory.CreateDirectory(m.Workspace);
-            var p = AcpAgentProcess.Start(m.HarnessCommand, m.Workspace);
-            Log?.Invoke($"started {string.Join(' ', m.HarnessCommand)} (pid {p.ProcessId})");
+            foreach (var (thread, k) in _procOf.ToList())
+                if (k == key && _sessions.TryRemove(thread, out var sid)) { _threads.TryRemove(sid, out _); _procOf.TryRemove(thread, out _); }
+            string cwd; Dictionary<string, string>? env = null;
+            if (m.ProjectId is { } project)
+            {
+                cwd = _places.ProjectFolder(project);
+                env = HarnessHome.For(_places.Root, project, l => Log?.Invoke(l));
+            }
+            else { cwd = m.Workspace; Directory.CreateDirectory(cwd); }
+            var p = AcpAgentProcess.Start(m.HarnessCommand, cwd, env);
+            Log?.Invoke($"started {string.Join(' ', m.HarnessCommand)} (pid {p.ProcessId}){(env is null ? "" : $" for project {m.ProjectId}, its data in {env["XDG_DATA_HOME"]}")}");
             p.Client.OnNotification = OnNotification;
             p.Client.OnRequest = OnRequest;
             var init = await p.Client.Request("initialize", new JsonObject { ["protocolVersion"] = 1, ["clientCapabilities"] = new JsonObject(), ["clientInfo"] = new JsonObject { ["name"] = "cowork-runner", ["version"] = "0.1" } });
-            _canLoad = (bool?)init?["agentCapabilities"]?["loadSession"] == true;
-            _proc = p;
+            _canLoad[key] = (bool?)init?["agentCapabilities"]?["loadSession"] == true;
+            _procs[key] = p;
             return p;
         }
         finally { _spawn.Release(); }
@@ -104,13 +118,18 @@ public sealed class AcpAdapter : IAsyncDisposable
 
     /// <summary>The thread's ACP session: the one in memory, else the one saved before a restart (session/load, when the harness
     /// supports it), else a new one. Returns whether the session is new (so the agent's instructions still need to go in).</summary>
-    private async Task<(string Id, bool IsNew)> EnsureSession(AcpAgentProcess proc, DeliverMessage m)
+    private async Task<(string Id, bool IsNew)> EnsureSession(AcpAgentProcess proc, string key, DeliverMessage m)
     {
-        if (_sessions.TryGetValue(m.ThreadId, out var existing)) return (existing, false);
-        var cwd = Path.GetFullPath(m.Workspace);
+        if (_sessions.TryGetValue(m.ThreadId, out var existing) && _procOf.GetValueOrDefault(m.ThreadId) == key) return (existing, false);
+        // the thread's own place: a worktree on its branch, a folder, or the agent's own folder. The same thread finds the same place again.
+        var place = await _places.Prepare(m);
+        var cwd = place.Cwd;
         _workspaces[m.ThreadId] = cwd;
+        _procOf[m.ThreadId] = key;
+        if (m.ThreadWorkspace is not null)
+            Emit(new StreamEvent(m.ThreadId, StreamKinds.Workspace, place.Location, null, place.Branch, null, place.Place, WorkspaceId: place.WorkspaceId));
         var saved = _store?.Get(m.ThreadId);
-        if (saved is not null && _canLoad)
+        if (saved is not null && _canLoad.GetValueOrDefault(key))
         {
             try
             {
@@ -237,5 +256,5 @@ public sealed class AcpAdapter : IAsyncDisposable
     }
     private static JsonNode Cancelled() => new JsonObject { ["outcome"] = new JsonObject { ["outcome"] = "cancelled" } };
 
-    public async ValueTask DisposeAsync() { _outbox.Writer.TryComplete(); if (_proc is not null) await _proc.DisposeAsync(); }
+    public async ValueTask DisposeAsync() { _outbox.Writer.TryComplete(); foreach (var p in _procs.Values.ToList()) await p.DisposeAsync(); }
 }

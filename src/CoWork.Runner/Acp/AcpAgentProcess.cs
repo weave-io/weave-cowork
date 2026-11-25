@@ -21,7 +21,7 @@ public sealed class AcpAgentProcess : IAsyncDisposable
 
     private AcpAgentProcess(Process p, bool ownGroup, AcpClient client) { _process = p; _ownGroup = ownGroup; Client = client; }
 
-    public static AcpAgentProcess Start(string[] command, string workingDirectory)
+    public static AcpAgentProcess Start(string[] command, string workingDirectory, IReadOnlyDictionary<string, string>? env = null)
     {
         var args = command.ToList();
         // `setsid` makes the harness a process group leader (pgid == pid) on Linux, so we can stop it and its children together.
@@ -34,6 +34,7 @@ public sealed class AcpAgentProcess : IAsyncDisposable
             StandardOutputEncoding = new UTF8Encoding(false), StandardInputEncoding = new UTF8Encoding(false),
         };
         foreach (var a in args.Skip(1)) psi.ArgumentList.Add(a);
+        if (env is not null) foreach (var (k, v) in env) psi.Environment[k] = v;
         var p = Process.Start(psi) ?? throw new InvalidOperationException("Couldn't start " + command[0]);
         var client = new AcpClient(p.StandardOutput, p.StandardInput);
         var agent = new AcpAgentProcess(p, useSetsid, client);
