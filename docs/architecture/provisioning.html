@@ -129,6 +129,8 @@ svg.seq .arrowhead { fill: var(--muted); }
     <button role="tab" aria-selected="false" data-tab="setup">Set up once</button>
     <button role="tab" aria-selected="false" data-tab="compare">Pinned and pool</button>
     <button role="tab" aria-selected="false" data-tab="wrong">When things go wrong</button>
+    <button role="tab" aria-selected="false" data-tab="images">Images</button>
+    <button role="tab" aria-selected="false" data-tab="substrate">Agent Substrate</button>
     <button role="tab" aria-selected="false" data-tab="build">What we'd build</button>
   </nav>
 
@@ -153,7 +155,7 @@ svg.seq .arrowhead { fill: var(--muted); }
       <div class="card"><h3><b class="n">1</b>Connect a pool</h3><p>On any Linux box with podman, the admin runs the runner in pool mode with a one-time code from <b>Where agents run → Add a pool</b>:</p><pre>cowork-runner pool connect https://cowork.lumen.example \
   --code K7QF-2M9X --slots 4 --memory 2500M</pre><p>It enrols like a runner today, but its token may only start and stop sandboxes. It serves no agent itself and holds no agent's identity. It shows as <b>pool-01 · 4 slots · online</b>.</p></div>
       <div class="card"><h3><b class="n">2</b>Add model access</h3><p><b>Server settings → Models</b>: a provider and its API key (Anthropic, OpenAI, OpenRouter, a local model). The key stays in the server. Sandboxes reach models only through the gateway with their thread token.</p><p class="muted">Subscriptions (a Claude or ChatGPT plan) can't be shared this way: they stay with pinned agents on their owner's machine.</p></div>
-      <div class="card"><h3><b class="n">3</b>Make a template</h3><p><b>Agents → New team template</b>: researcher. Instructions, the harness (<code>opencode acp</code> 2.4.1), its model through the gateway, and an image. CoWork ships one image per harness, with the runner and the harness in it (<code>cowork-sandbox-opencode:2.4.1</code>). A template can name its own image later, for extra tools.</p></div>
+      <div class="card"><h3><b class="n">3</b>Make a template</h3><p><b>Agents → New team template</b>: researcher. Instructions, the harness (<code>opencode acp</code> 2.4.1), its model through the gateway, and the sandbox image it starts from (see the Images tab).</p></div>
       <div class="card"><h3><b class="n">4</b>Enable it in a project</h3><p>In <b>New project</b> or the project's settings, Alex switches researcher on for Checkout app, with a budget. Checkout app's workspaces, sources, rules and network list then apply to every researcher thread there.</p><p class="muted">That's all. Nobody connects anything per thread.</p></div>
     </div>
   </section>
@@ -193,6 +195,60 @@ svg.seq .arrowhead { fill: var(--muted); }
     </table></div>
   </section>
 
+  <section id="images" hidden>
+    <p class="lead">A sandbox is a container, and a container starts from an <b>image</b>: a packaged copy of a Linux filesystem with programs already installed. It's what <code>podman run</code> takes, the same thing a Dockerfile builds. Everything the agent can run in its sandbox has to be in that image, or be installed after it starts.</p>
+    <h2>What's in the image CoWork would ship</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Part</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>A small Linux (Debian slim)</td><td>Something to run on</td></tr>
+        <tr><td><code>cowork-runner</code></td><td>Connects to the server and drives the harness, as on a laptop</td></tr>
+        <tr><td>OpenCode 2.4.1</td><td>The harness, at a pinned version (rule 7: harness updates break things)</td></tr>
+        <tr><td>git, curl, ripgrep, a non-root user</td><td>What every agent uses to read code and history</td></tr>
+      </tbody>
+    </table></div>
+    <h2>The real question: the project's own tools</h2>
+    <p class="lead">reviewer working on a .NET repository wants the .NET SDK to build and run the tests. A web project wants bun. The stock image has neither. Three ways to get them there:</p>
+    <div class="grid3">
+      <div class="card hl"><h3>A · Stock image plus a setup command <span class="rec">Recommended</span></h3><p>The project's settings hold a setup command, such as <code>scripts/agent-setup.sh</code>, that installs what the repository needs. It runs once when a thread's sandbox is first made, and its result is kept in the thread's volume, so later starts skip it. The package registries must be on the project's network list.</p><p class="muted">Simple and per project. The first start of a thread is slower.</p></div>
+      <div class="card"><h3>B · The repository's devcontainer</h3><p>If the repository has <code>.devcontainer/devcontainer.json</code>, the pool builds an image from it, adds the runner and the harness, and caches it per commit.</p><p class="muted">Reuses what many teams already keep. Building images on the pool is slow and heavy on a small box.</p></div>
+      <div class="card"><h3>C · A Dockerfile per template</h3><p>The template's author writes the image.</p><p class="muted">Most control, but tools belong to the project, not the agent: researcher on two repositories would need two templates.</p></div>
+    </div>
+    <p>Agent Substrate works the same way: an <code>ActorTemplate</code> is an image too. Whichever we pick carries over.</p>
+  </section>
+
+  <section id="substrate" hidden>
+    <p class="lead"><a href="https://ate.dev">Agent Substrate</a> is Google's runtime for stateful agents on Kubernetes (a CNCF sandbox project, 1.0 on 5 November 2026). It does at cluster scale what CoWork's pool does on one box: one sandbox per piece of work, suspended when idle and resumed on the next request, with egress rules and secrets that never enter the sandbox. Facts below are from its docs (<a href="https://ate.dev/docs/concepts/architecture/">architecture</a>, <a href="https://ate.dev/docs/guides/egress-credential-injection/">credential injection</a>).</p>
+    <h2>How its parts map to ours</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Substrate</th><th>What it is there</th><th>CoWork</th></tr></thead>
+      <tbody>
+        <tr><td><code>Atespace</code></td><td>A tenant; authorization is per atespace (OpenFGA)</td><td>A project, or the whole server</td></tr>
+        <tr><td><code>ActorTemplate</code></td><td>An image and its settings</td><td>An agent template</td></tr>
+        <tr><td><code>Actor</code> <code>&lt;atespace&gt;/&lt;actor&gt;</code></td><td>One stateful sandbox, gVisor or a Kata microVM</td><td>The sandbox for one thread: <code>checkout-app/thread-42</code></td></tr>
+        <tr><td><code>WorkerPool</code></td><td>Warm workers that suspended actors are restored onto</td><td>A pool's slots</td></tr>
+        <tr><td>Suspend and resume</td><td>Snapshots at <code>VOLUMES</code>, <code>ROOTFS</code> or <code>MEMORY</code> level to GCS or S3; resume in under 500 ms by its own figure. Suspend is an explicit <code>SuspendActor</code> call from the system above</td><td>Our stop-and-keep-the-volume is the <code>VOLUMES</code> level. CoWork would be "the system above" that decides a thread is idle</td></tr>
+        <tr><td><code>EgressPolicy</code></td><td>Host rules on a default-deny network, enforced by its egress gateway</td><td>The project's network list</td></tr>
+        <tr><td>Credential injection</td><td>The sandbox sends a placeholder header; the gateway swaps in the real secret (<code>credentialUri: ate-secret://…</code>) or a short-lived actor JWT. HTTPS needs the sandbox to trust the gateway's CA</td><td>Our model gateway does this for model keys only. The same idea covers GitHub tokens and the project's sources</td></tr>
+        <tr><td>Actor JWT</td><td><code>sub: actor/&lt;atespace&gt;/&lt;actor&gt;</code>, with audiences and a 5 to 60 minute lifetime</td><td>Our thread token, as a signed token the gateway and proxy can check without asking the server</td></tr>
+      </tbody>
+    </table></div>
+    <h2>The one real difference</h2>
+    <div class="grid2">
+      <div class="card"><h3>CoWork: the runner calls out</h3><p>The runner inside a sandbox connects out to the server and keeps that connection open. Messages come down it. No inbound port anywhere.</p></div>
+      <div class="card"><h3>Substrate: requests come in</h3><p>A request with header <code>ate-target-actor</code> reaches the actor through its router, which wakes it first. A long-held outbound connection and snapshots don't mix well: a resumed sandbox would find its connection dead.</p></div>
+    </div>
+    <p>So the runner needs a second way to receive work: a small HTTP endpoint that takes a message and streams the agent's events back. The messages stay exactly the ones in <code>CoWork.Contracts</code>; only the transport differs. The podman pool can keep using the outbound connection.</p>
+    <h2>What we take now</h2>
+    <div class="grid3">
+      <div class="card"><h3>Its shape for our contract</h3><p>Create, resume, suspend and delete a sandbox; states suspended, resuming, running. Network rules and credential references as data in the same shape as its <code>EgressPolicy</code> (hostnames, then <code>replaceHeaders</code> with <code>header</code>, <code>prefix</code> and a reference). A Substrate provider is then a translation, not a redesign.</p></div>
+      <div class="card"><h3>Credentials by placeholder</h3><p>Grow the model gateway into the proxy's job: for a listed host, replace a placeholder header with the real secret. Model keys first (no TLS interception needed: OpenCode is pointed at the gateway), GitHub and sources in a later slice with a CoWork CA in the image.</p></div>
+      <div class="card"><h3>Signed thread tokens</h3><p>Make the thread token a signed JWT with audiences (server, gateway, proxy), so a pool's proxy can check it without a call home.</p></div>
+    </div>
+    <h2>Verdict</h2>
+    <div class="callout"><p><b>Build the podman pool first, shaped like Substrate. Add a Substrate provider when a team running CoWork has a Kubernetes cluster.</b> Substrate needs Kubernetes, Postgres, GCS or S3 and gVisor or Kata: far from CoWork's one-box <code>docker compose up</code>. Its memory snapshots and density are real gains at scale, and the provider would be about one to two weeks once our contract has its shape. Google's Agent Executor (<a href="https://github.com/google/ax">AX</a>), built on Substrate, overlaps with our templates and workspaces and says it expects breaking changes: watch it.</p></div>
+  </section>
+
   <section id="build" hidden>
     <p class="lead">The runner already runs whatever the server sends it (<code>DeliverMessage</code> carries the instructions, harness command and workspace), so the runner inside a sandbox is today's runner. What's new is around it.</p>
     <div class="tablewrap"><table>
@@ -205,19 +261,21 @@ svg.seq .arrowhead { fill: var(--muted); }
         <tr><td><b>Gateway</b></td><td>An OpenAI- and Anthropic-compatible endpoint in the server that swaps the token for the real key and counts cost per thread</td></tr>
         <tr><td><b>Egress proxy</b></td><td>A small proxy per pool; each sandbox's network only reaches it; it applies the project's list and reports refusals</td></tr>
         <tr><td><b>CoWork tools</b></td><td>The <code>cowork</code> MCP server passed in <code>session/new</code> (today the list is empty): read a channel, search, save to the library, resolve the thread</td></tr>
-        <tr><td><b>The image</b></td><td><code>cowork-sandbox-opencode</code>: the runner and OpenCode at a pinned version, git, a non-root user</td></tr>
+        <tr><td><b>The image</b></td><td><code>cowork-sandbox-opencode</code>: the runner and OpenCode at a pinned version, git, a non-root user. Plus the project's setup command, if question 3 goes that way</td></tr>
+        <tr><td><b>Runner, inbound</b></td><td>Later, for a Substrate provider: the runner also takes messages on an HTTP endpoint and streams events back</td></tr>
       </tbody>
     </table></div>
-    <h2>Questions for you</h2>
-    <div class="q"><h3>1 · The first harness in sandboxes</h3>
-      <div class="opt"><b>A</b><span>OpenCode only, with the gateway as its provider. <span class="rec">Recommended</span></span></div>
-      <div class="opt"><b>B</b><span>OpenCode and Claude Code (with an API key through the gateway) from the start.</span></div></div>
-    <div class="q"><h3>2 · The network in the first version</h3>
-      <div class="opt"><b>A</b><span>The egress proxy with the project's list and asks, from day one. <span class="rec">Recommended</span></span></div>
-      <div class="opt"><b>B</b><span>Open network first; the proxy in a later slice.</span></div></div>
-    <div class="q"><h3>3 · Images</h3>
-      <div class="opt"><b>A</b><span>One stock image per harness, built by CoWork. <span class="rec">Recommended</span></span></div>
-      <div class="opt"><b>B</b><span>Templates bring their own Dockerfile from the start.</span></div></div>
+    <h2>Decided</h2>
+    <div class="q"><h3>1 · The first harness in sandboxes <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">OpenCode only, with the gateway as its model provider.</p></div>
+    <div class="q"><h3>2 · The network in the first version <span class="rec">Chosen 25 Nov 2026</span></h3><p style="margin:4px 0">The egress proxy with the project's list and asks, from day one.</p></div>
+    <h2>Still open</h2>
+    <div class="q"><h3>3 · Where the tools a project needs come from</h3><p class="muted" style="margin:4px 0">See the Images tab.</p>
+      <div class="opt"><b>A</b><span>A stock image per harness, plus the project's setup command, run once per thread and cached. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>The repository's <code>.devcontainer</code>, built into an image on the pool.</span></div>
+      <div class="opt"><b>C</b><span>Each template brings its own Dockerfile.</span></div></div>
+    <div class="q"><h3>4 · How CoWork's pool contract is shaped</h3><p class="muted" style="margin:4px 0">See the Agent Substrate tab.</p>
+      <div class="opt"><b>A</b><span>Substrate-shaped from the start (create, resume, suspend, delete; network rules and credential references as data), with podman as the first provider. <span class="rec">Recommended</span></span></div>
+      <div class="opt"><b>B</b><span>Our own start and stop now; reshape it if we add Substrate.</span></div></div>
   </section>
 </div>
 
