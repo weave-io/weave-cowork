@@ -144,12 +144,13 @@ public class ThreadListTests
         await reviewer.End(roots[1]);
         await Until(async () => (await Listed(rosa, ch))[0].GetProperty("status").GetProperty("state").GetString() == "done", "the thread to be done");
         Assert.Equal("Refunds round per line", Title((await Listed(rosa, ch))[0]));
-        using (var c = app.Sql()) c.Execute("UPDATE threads SET resolved_at = resolved_at - @day WHERE root_id=@t", new { day = ThreadList.DoneShownMs + 1000, t = roots[1] });
-        // a day later Rosa hasn't read reviewer's answer: it stays; once she has, it goes (and All threads still has it, under Done)
-        Assert.Equal(1, Unread((await Listed(rosa, ch)).First(t => t.GetProperty("rootId").GetInt64() == roots[1])));
+        // Rosa reads it: done and read, it stays for a day
         (await rosa.Http.PostAsync($"/api/threads/{roots[1]}/read", null)).EnsureSuccessStatusCode();
+        Assert.Equal((roots[1], 0), (await Listed(rosa, ch)).Select(t => (t.GetProperty("rootId").GetInt64(), Unread(t))).First());
+        using (var c = app.Sql()) c.Execute("UPDATE threads SET resolved_at = resolved_at - @day WHERE root_id=@t", new { day = ThreadList.DoneShownMs + 1000, t = roots[1] });
+        // a day later it has left Rosa's list; Alex hasn't read reviewer's answer, so it stays in his (and All threads still has it, under Done)
         Assert.DoesNotContain(roots[1], (await Listed(rosa, ch)).Select(t => t.GetProperty("rootId").GetInt64()));
-        Assert.Equal(1, Unread((await Listed(alex, ch)).First(t => t.GetProperty("rootId").GetInt64() == roots[1])));      // Alex hasn't read it
+        Assert.Equal(1, Unread((await Listed(alex, ch)).First(t => t.GetProperty("rootId").GetInt64() == roots[1])));
         var done = await Json(await rosa.Http.GetAsync($"/api/channels/{ch}/threads?filter=done"));
         Assert.Equal(new[] { roots[1] }, done.EnumerateArray().Select(t => t.GetProperty("rootId").GetInt64()));
         Assert.Equal(6, (await Json(await rosa.Http.GetAsync($"/api/channels/{ch}/threads?filter=open"))).GetArrayLength());

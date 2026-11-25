@@ -45,6 +45,7 @@ function key(e: KeyboardEvent) {
 async function send(text: string) {
   if (!t.value) return
   await post(`/channels/${store.feed.channelId}/posts`, { body: text, threadId: t.value.rootId })
+  if (t.value) t.value.canRename = true          // writing in a thread puts you in it, and anyone in it may rename it
 }
 </script>
 <template>

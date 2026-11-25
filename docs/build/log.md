@@ -680,3 +680,94 @@ and a code shape no parser reads (the model destructuring `tools`): both rows en
 Then the full regression on this build: `phase1` 24, `phase2` 30, `phase4` 19, `phase5` 22, `phase6` 27, `phase7` 31, `phase8` 31,
 `phase9` 37, `phase10` 27, `phase11` 19 (a fourth run in a row); `dotnet test` 37 runner and 86 server, `bun run test` 33. Nothing labelled
 left in podman. The round 3 screenshots are from that phase11 run.
+
+## Brief 8: threads you can find
+
+**Demo:** `tests/live/phase12.mjs` (32 checks; Alex and Rosa in browsers, a real pool with real containers and real OpenCode 2.4.1 for the
+researcher template, model calls through the gateway to this machine's Copilot sign-in). Rosa asks researcher what `roundTax` does: the thread
+appears under #checkout-app in her list and in Alex's (he is in #general), live, titled "What does roundTax in src/tax.ts do?" with researcher's
+avatar, and its dot goes starting → working → idle. Alex's row is bold with 2 unread; he clicks it and the thread fills the main area at
+`/c/2/threads/1` (header: title, status, "in #checkout-app", the session line; the post, the replies, the `read src/tax.ts` row, its own
+composer); the count goes, a reload opens the same view, and "in #checkout-app" goes back to the post, lit. Rosa's quick look has "Open full
+view"; from there she asks researcher to resolve it: the outcome card appears and the title becomes the outcome's in the header and both
+lists, the dot says done. She renames it ("roundTax rounds each line") and Alex's list follows. Alex starts five more threads: Rosa's list shows
+the five most recent, newest first, then "All threads · 1 more"; a reply moves the oldest to the top; she can't rename Alex's thread until she
+writes in it; the chevron folds #checkout-app's threads and a reload keeps them folded. Alex's private #leads thread is only in his list (404
+to Rosa). researcher asks to reach example.com for Rosa: her row says "waiting for you" (amber, pulsing), Alex's "waiting for Rosa". The
+Threads button opens All threads (7, each with title, agent, who started it, status, last activity); "Waiting for me" has Rosa's ask, "Done"
+the resolved one, "Open" the other six, and Alex's "Waiting for me" is empty. Rosa denies the ask in the full view. In #billing (project
+Billing, which researcher isn't in) her mention gets "researcher isn't in Billing. A lead can add it in the project's settings." in a new
+thread, and no sandbox. Alex adds researcher to Billing (no repository): Rosa's next mention's starting rows say "No repository: add one in the
+project's settings to give researcher something to work on." and it answers. On a phone the threads are in the drawer and a thread fills the
+screen.
+
+**What changed**
+- **Events.** `ThreadRenamed` (thread stream: `title`, null to go back to the automatic one), `ThreadRead` (on `person-{id}`: the thread and
+  the position read up to), `MentionUnreachable` (thread stream, by the agent for the person: `reason` project | channel | runner, the reply).
+- **Projections.** Migration `014`: `threads.title`, `titled_at`, `last_at`, `last_position` (inline, in `ThreadProjection`: anything new in a
+  thread moves it: a reply, an answer, a tool row, an ask, a notice, a card, an outcome); the `unread` view (async) gets `unread_replies`,
+  `unread_thread_markers` and `unread_joined`, and the migration resets its checkpoint so it replays and counts existing threads.
+- **`ThreadList.cs`**: a thread's summary (title and where it came from, agents, who started it, status, last activity, replies, unread), the
+  title rule, the list rule (open, or done less than a day ago, or unread; at most five per channel, by last activity), All threads' filters,
+  who may rename. Read at read time from the projection, like `ThreadStatus`.
+- **API.** `GET /api/thread-list` (each visible channel's listed threads and its total), `GET /api/channels/{id}/threads?filter=open|waiting|done`,
+  `PUT /api/threads/{id}/title`, `POST /api/threads/{id}/read`; `GET /api/threads/{id}` adds `thread` and `canRename`. `thread-updated` carries
+  the summary, so the list and the full view follow a thread live, and a reconnect catches up as before.
+- **Routing.** A person's mention of an agent that can't take it (not in the channel's project, or not in the channel, or with no runner) gets
+  a short reply by the agent: in a new thread from a channel post, in the thread from a reply. The audit says "Rosa mentioned researcher
+  (Alex's agent) in #billing. It couldn't take it: it isn't in Billing."
+- **Sandbox card**: for a project with no repository the workspace row says so, before and after it starts.
+- **Web.** `components/threads/`: `ChannelEntry` (a text channel and its threads in the list: avatar, title, unread count, status dot with its
+  words on hover, the fold chevron, All threads), `ThreadDot`, `ThreadView` (the full view, rename in its header), `ThreadsView` (All threads),
+  and `SessionLines` / `ThreadConversation`, taken out of `ThreadPanel` so the quick look and the full view share them. Routes: `/c/:id/threads`
+  (All threads) and `/c/:id/threads/:root` (full view) beside `/c/:id/t/:root` (the quick look). `threads.ts` holds the route parsing, status
+  words and the fold memory (localStorage, per channel). The channel header has Threads; the quick look has "Open full view" and the title.
+
+**Decisions**
+- **Title:** the outcome's while the thread is resolved, unless someone renamed it after it was resolved; else the name given; else the first
+  words of the opening post without mentions (at most 8 words, about 60 characters, "…" when cut, a capital first letter). Reopened, it is
+  not resolved, so the name or the first words again. An empty name goes back to the automatic title.
+- **Who may rename** ("anyone in the thread"): whoever started it, anyone who wrote in it, the owner of an agent in it, and admins; all must
+  see the channel. Someone who only reads the channel may not.
+- **Unread per thread** counts text replies by others after what the person read of that thread (opening it, beside the channel or in full,
+  or writing in it), and not before they joined, were added to the channel, or the view began. Reading the channel doesn't read its threads:
+  the feed shows only "N replies", not the replies. The channel's own unread count is unchanged (it still includes replies).
+- **The list rule is on the server** (`/api/thread-list`), so it is one rule with tests; the browser asks again (shortly, once per burst)
+  when a thread changes or a view moves, and patches a listed thread's title and status from `thread-updated` at once. "Five" counts the
+  threads shown (open, done within a day, or unread); "All threads · N more" says how many others the channel has.
+- **Status words:** starting, working, waiting for you (to whoever answers), waiting for Alex (to everyone else), done, and idle when nothing
+  is going on (an open thread between turns, or a people-only thread).
+- **Order** is by the position of the last thing that happened (positions are strictly ordered; times can tie within a millisecond).
+- **A thread's row shows the first agent's avatar,** or whoever started it when no agent is in it (a people-only thread, a refused mention).
+- **Refused mentions** come from people only: an agent naming another agent it can't reach stays silent, so an answer that says "@scribe"
+  doesn't fill threads with notices. A reply that isn't a mention is still not passed on silently (brief 5).
+- **Clicking a row opens the full view;** the post's "N replies" still opens the quick look, as the brief says.
+
+**Checked** (ports 5883–5888 only; containers and volumes only with my labels, removed by label; the trial server on 5889, its data, pool and
+containers, the `cowork` compose project and `~/.weave` untouched)
+- `dotnet test`: 97 server (11 new in `ThreadListTests`: five title cases; the title rules with every rename permission, the live
+  `thread-updated`, the outcome, a rename after it and back, reopen; five per channel newest first, a reply and an answer moving a thread up,
+  the total, done for a day and kept while unread, the filters; unread per person, read once, writing reads, waiting for me; a private
+  channel's threads, and joining it later with nothing unread; refused mentions for a project, a channel and no runner, in a thread too, the
+  audit line, plain text left alone; the no-repository card), and the rebuild test replays a rename, a refused mention and a thread read into
+  identical tables. 37 runner. `bun run test` 38 (5 new: the routes, the status words, a live update keeping the person's unread count,
+  folding remembered, the open thread's summary). I broke the done-a-day rule (dropped the time) to see its test fail, then restored it; the
+  first version of that test didn't fail (Rosa still had an unread reply at that point), so it now checks "done, read, under a day: listed".
+- Live: **`phase12` 32 checks** on the final build. Four runs in all: the first stopped at the phone step on the test's own mistake (the
+  thread it looked for had been pushed out of the five by then), then 31, 31 (in the regression below), and 32 once it also checks Rename. Screenshots in `docs/screens/brief8/` (dark and light), looked at; fixed from them: the fold chevron
+  covering the channel's unread count, and the sandbox card growing past a narrow column (the quick look, a phone's full view; its grid now
+  has a `minmax(0,1fr)` track, so long code chips truncate). Live-checked on a scratch server with a scripted harness too: Rename appears once
+  you write in someone else's thread, and saves.
+- The whole regression on this build, each on a fresh scratch server or its own: `phase1` 24, `phase2` 30 (real OpenCode 2.4.1 through
+  Copilot), `phase4` 19 (LiveKit 1.13.11 as container `cwb8-lk`, label `cwb8`, on 7980–7982, removed), `phase5` 22, `phase6` 27, `phase7` 31,
+  `phase8` 31, `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 31. The older scripts' own screenshots were restored.
+
+**Not done / next**
+- A post whose thread holds only a refused mention's reply says "0 replies" on its card (notices aren't counted as replies); the reply is in
+  the thread, which opens for whoever posted.
+- Search still titles threads by their first words; a renamed thread and its outcome title aren't in the search index's title yet. Renames
+  aren't in the audit.
+- The list rule is evaluated when the list is asked for (every thread change and view move asks); a done thread crossing its day while nothing
+  happens leaves at the next change. `/api/thread-list` and `views-changed` go to every browser: fine at this size, worth batching later.
+- An agent that mentions an agent it can't reach is silent (only people's mentions get the reply).
+- The mockup's board (every thread in a project by status) is still to come; All threads is per channel.
