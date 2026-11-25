@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weave CoWork: projects, agents and sandboxes (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from web/src/assets/main.css (the default dark theme and the light theme). */
+:root {
+  --rail-bg: #0d0d10; --panel-bg: #141418; --card-bg: #1b1b20; --main-bg: #0d0d10;
+  --border: rgba(255,255,255,.075); --text: #e8e8ec; --muted: #8e8e9a; --hover: rgba(255,255,255,.045);
+  --accent: #6365f1; --accent-text: #8284F4; --accent-dim: rgba(99,102,241,.15);
+  --running: #22c55e; --running-text: #22c55e; --idle: #f59e0b; --idle-text: #f59e0b;
+  --complete: #3b82f6; --complete-text: #4F8FF7; --error: #ef4444; --error-text: #EF5E5F;
+  --queued: #8b5cf6; --queued-text: #9F78F8; --coral-text: #DE6E52;
+  --radius-card: 10px; --radius-btn: 8px; --radius-panel: 12px; --t: 150ms ease-out;
+  --menu-shadow: 0 16px 40px -12px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.25);
+  --sheet-shadow: none; --scrim: rgba(0,0,0,.6);
+  --sans: "Inter", system-ui, -apple-system, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  --av-alex: #12876b; --av-rosa: #c2410c; --av-sam: #2563eb; --av-jo: #7c3aed;
+  --av-reviewer: #be185d; --av-researcher: #0e7490; --av-triage: #a16207; --av-claude: #9a3412;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --rail-bg: #FFFFFF; --panel-bg: #FFFFFF; --card-bg: #FFFFFF; --main-bg: #F3F2EF;
+  --border: rgba(26,25,24,.09); --text: #1A1918; --muted: #67645F; --hover: rgba(26,25,24,.05);
+  --accent: #5B6EC7; --accent-text: #4D5EA9; --accent-dim: rgba(91,110,199,.12);
+  --running: #16A149; --running-text: #107435; --idle: #D27306; --idle-text: #9A5304;
+  --complete: #2563eb; --complete-text: #1D4FC4; --error: #dc2626; --error-text: #B92323;
+  --queued: #7c3aed; --queued-text: #6427CF; --coral-text: #A7452D;
+  --menu-shadow: 0 16px 40px -12px rgba(26,25,24,.22), 0 2px 6px rgba(26,25,24,.06);
+  --sheet-shadow: 0 1px 2px rgba(26,25,24,.04), 0 12px 32px -18px rgba(26,25,24,.18); --scrim: rgba(26,25,24,.35);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--main-bg); color: var(--text); font: 14px/1.5 var(--sans); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: 12px; }
+code { background: var(--hover); border: 1px solid var(--border); padding: 0 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+
+/* ---- walkthrough bar (not part of the app) ---- */
+.walk { border-bottom: 1px solid var(--border); background: var(--panel-bg); }
+.walk .in { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; max-width: 1440px; margin: 0 auto; }
+.walk .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.walk .brand img { width: 26px; height: auto; }
+.steps { display: flex; flex-wrap: wrap; gap: 2px; }
+.steps button { background: none; border: 0; padding: 6px 10px; border-radius: var(--radius-btn); color: var(--muted); cursor: pointer; font-weight: 500; }
+.steps button b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--hover); font-size: 11px; margin-right: 6px; }
+.steps button:hover { color: var(--text); background: var(--hover); }
+.steps button[aria-current="true"] { color: var(--text); background: var(--accent-dim); }
+.steps button[aria-current="true"] b { background: var(--accent); color: #fff; }
+.walk .right { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 2px; gap: 2px; background: var(--main-bg); }
+.seg button { border: 0; background: none; padding: 3px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--card-bg); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+.note { max-width: 1440px; margin: 0 auto; padding: 10px 16px 0; color: var(--muted); font-size: 13px; }
+.note b { color: var(--text); font-weight: 600; }
+
+/* ---- the app frame ---- */
+.stage { max-width: 1440px; margin: 0 auto; padding: 10px 16px 24px; }
+.app { position: relative; display: grid; grid-template-columns: 56px 236px minmax(0,1fr); height: 760px; background: var(--rail-bg); border: 1px solid var(--border); border-radius: var(--radius-panel); overflow: hidden; }
+.app.with-panel { grid-template-columns: 56px 236px minmax(0,1fr) 400px; }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; }
+.rail img { width: 30px; margin-bottom: 8px; }
+.rail button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; background: none; border-radius: var(--radius-btn); color: var(--muted); cursor: pointer; }
+.rail button.on { background: var(--hover); color: var(--text); }
+.rail .grow { flex: 1; }
+.side { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 10px 8px; }
+.side .head { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px 12px; font-weight: 600; font-size: 15px; }
+.side .scroll { overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+.nav { display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 10px; border: 0; background: none; border-radius: var(--radius-btn); color: var(--muted); cursor: pointer; text-align: left; font-weight: 500; }
+.nav:hover { background: var(--hover); color: var(--text); }
+.nav.on { background: var(--accent-dim); color: var(--text); }
+.nav .n { margin-left: auto; font-size: 11px; font-weight: 600; background: var(--idle); color: #1a1205; border-radius: 999px; padding: 0 6px; }
+.nav .n.q { background: var(--hover); color: var(--muted); }
+.cat > span:first-child { white-space: nowrap; }
+.cat { display: flex; align-items: center; justify-content: space-between; padding: 14px 10px 4px; font-size: 11.5px; letter-spacing: .05em; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+.cat .acts { display: flex; gap: 2px; }
+.cat .acts button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px; border-radius: 5px; display: grid; }
+.cat .acts button:hover { color: var(--text); background: var(--hover); }
+.cat .tag { font-size: 10px; letter-spacing: .04em; color: var(--accent-text); background: var(--accent-dim); padding: 0 6px; border-radius: 999px; margin-left: 6px; }
+.side .foot { display: flex; align-items: center; gap: 9px; padding: 10px; border-top: 1px solid var(--border); font-weight: 500; }
+.main { background: var(--panel-bg); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; min-height: 0; box-shadow: var(--sheet-shadow); }
+.app.with-panel .main { border-right: 1px solid var(--border); }
+.topbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); min-height: 56px; }
+.topbar h2 { font-size: 15px; margin: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.topbar .desc { color: var(--muted); font-size: 13px; border-left: 1px solid var(--border); padding-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.topbar .sp { margin-left: auto; }
+.body { flex: 1; overflow: auto; padding: 14px 16px; min-height: 0; }
+.composer { margin: 0 16px 14px; border: 1px solid var(--border); border-radius: var(--radius-card); padding: 11px 14px; color: var(--muted); background: var(--card-bg); }
+
+.av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; font-size: 13px; flex: none; }
+.av.sm { width: 20px; height: 20px; font-size: 10px; }
+.av.xs { width: 18px; height: 18px; font-size: 9.5px; }
+.av.agent { border-radius: 8px; }
+.av.sm.agent, .av.xs.agent { border-radius: 5px; }
+.avs { display: inline-flex; } .avs .av { box-shadow: 0 0 0 2px var(--card-bg); } .avs .av + .av { margin-left: -5px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .03em; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.badge.agent { background: var(--accent-dim); color: var(--accent-text); text-transform: uppercase; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.plain::before { display: none; }
+.pill.working { color: var(--running-text); background: color-mix(in srgb, var(--running) 13%, transparent); }
+.pill.waiting { color: var(--idle-text); background: color-mix(in srgb, var(--idle) 14%, transparent); }
+.pill.blocked { color: var(--error-text); background: color-mix(in srgb, var(--error) 12%, transparent); }
+.pill.done { color: var(--complete-text); background: color-mix(in srgb, var(--complete) 13%, transparent); }
+.pill.starting { color: var(--queued-text); background: color-mix(in srgb, var(--queued) 14%, transparent); }
+.pill.info { color: var(--accent-text); background: var(--accent-dim); }
+.pill.quiet { color: var(--muted); background: var(--hover); }
+
+.post { display: flex; gap: 12px; padding: 8px 0; }
+.post .who { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.post .who b { font-weight: 600; }
+.post .who .t { color: var(--muted); font-size: 12px; }
+.post p { margin: 2px 0 0; }
+.mention { color: var(--accent-text); background: var(--accent-dim); border-radius: 4px; padding: 0 3px; }
+.tchip { margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--border); border-radius: var(--radius-card); padding: 7px 11px; background: var(--card-bg); font-size: 13px; cursor: pointer; }
+.tchip .lnk { color: var(--accent-text); font-weight: 500; display: inline-flex; gap: 6px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--card-bg); padding: 6px 12px; border-radius: var(--radius-btn); cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { color: var(--error-text); }
+.btn.sm { padding: 3px 9px; font-size: 12.5px; }
+
+/* ---- thread panel ---- */
+.panel { background: var(--panel-bg); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.session { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.session .tag { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); border-radius: 5px; padding: 0 6px; }
+.session b { color: var(--text); font-weight: 600; }
+.states { display: flex; gap: 6px; align-items: center; padding: 8px 16px; border-bottom: 1px dashed var(--border); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.tool { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 5px 10px; font-family: var(--mono); font-size: 12px; margin-top: 6px; min-width: 0; background: var(--card-bg); }
+.tool .k { color: var(--muted); }
+.tool .d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.tool .ok { color: var(--running); }
+.spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 1s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.boot { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 10px 12px; display: grid; gap: 7px; font-size: 13px; background: var(--card-bg); }
+.boot div { display: flex; gap: 9px; align-items: center; }
+.boot .ok { color: var(--running); }
+.boot .t { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ask { border: 1px solid color-mix(in srgb, var(--idle) 45%, var(--border)); background: color-mix(in srgb, var(--idle) 7%, var(--card-bg)); border-radius: var(--radius-card); padding: 11px 13px; margin-top: 8px; display: grid; gap: 8px; }
+.ask .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ask .why { font-size: 12.5px; color: var(--muted); }
+.outcome { border: 1px solid color-mix(in srgb, var(--complete) 40%, var(--border)); border-radius: var(--radius-card); padding: 12px 14px; display: grid; gap: 8px; margin-top: 8px; background: var(--card-bg); }
+.outcome ul { margin: 0; padding-left: 18px; } .outcome li { margin: 3px 0; }
+.outcome .meta { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.artefact { display: flex; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 6px 10px; font-size: 13px; }
+.artefact .sub { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+
+/* ---- dialogs ---- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: start center; padding: 28px 16px; overflow: auto; z-index: 5; }
+.dialog { width: min(640px, 100%); background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--radius-panel); box-shadow: var(--menu-shadow); }
+.dialog .dh { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.dialog .dh h3 { margin: 0; font-size: 15px; }
+.dialog .db { padding: 6px 18px 4px; }
+.dialog .df { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
+.dialog .df .left { margin-right: auto; color: var(--muted); font-size: 12.5px; }
+.fs { padding: 12px 0; border-top: 1px solid var(--border); display: grid; gap: 9px; }
+.fs:first-child { border-top: 0; }
+.fs > .lbl { font-size: 12px; font-weight: 600; color: var(--muted); }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.input { width: 100%; border: 1px solid var(--border); background: var(--main-bg); color: var(--text); border-radius: var(--radius-btn); padding: 7px 10px; font: inherit; min-width: 0; }
+.input.mono { font-family: var(--mono); font-size: 12.5px; }
+.row2 { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.choice { text-align: left; border: 1px solid var(--border); background: var(--card-bg); border-radius: var(--radius-card); padding: 9px 11px; cursor: pointer; display: grid; gap: 2px; }
+.choice b { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.choice span { font-size: 12px; color: var(--muted); }
+.choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-dim); }
+.hint { font-size: 12.5px; color: var(--muted); display: flex; gap: 7px; align-items: flex-start; }
+.hint svg { margin-top: 2px; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.check { display: inline-flex; align-items: center; gap: 7px; }
+.box { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--muted); display: inline-grid; place-items: center; }
+.box.on { background: var(--accent); border-color: var(--accent); }
+.box.on::after { content: ""; width: 7px; height: 4px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: translateY(-1px) rotate(-45deg); }
+.box.locked { opacity: .55; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px 2px 3px; font-size: 13px; background: var(--card-bg); }
+.chip.add { padding: 2px 10px; color: var(--muted); cursor: pointer; }
+.chip .r { color: var(--muted); font-size: 11.5px; }
+.arow { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.arow + .arow { border-top: 1px solid var(--border); }
+.arow .txt { flex: 1; min-width: 0; }
+.arow .txt b { font-weight: 600; }
+.arow .txt div { font-size: 12.5px; color: var(--muted); }
+.sw { width: 32px; height: 18px; border-radius: 999px; background: var(--hover); border: 1px solid var(--border); position: relative; flex: none; cursor: pointer; padding: 0; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: left var(--t); }
+.sw[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.sw[aria-checked="true"]::after { left: 16px; background: #fff; }
+.money { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.money .input { width: 90px; font-variant-numeric: tabular-nums; }
+
+/* ---- boundary ---- */
+.bound { display: grid; grid-template-columns: 128px 1fr; gap: 8px 14px; margin: 4px 0 8px; font-size: 13.5px; }
+.bound dt { color: var(--muted); font-size: 12px; font-weight: 600; padding-top: 2px; display: flex; gap: 6px; align-items: flex-start; }
+.bound dd { margin: 0; }
+.warnline { display: flex; gap: 8px; align-items: flex-start; border-radius: var(--radius-btn); padding: 8px 10px; font-size: 13px; background: color-mix(in srgb, var(--idle) 10%, transparent); }
+.warnline svg { color: var(--idle-text); margin-top: 2px; }
+.okline { display: flex; gap: 8px; align-items: flex-start; border-radius: var(--radius-btn); padding: 8px 10px; font-size: 13px; background: color-mix(in srgb, var(--running) 9%, transparent); }
+.okline svg { color: var(--running-text); margin-top: 2px; }
+.ahead { display: flex; gap: 12px; align-items: center; padding: 12px 0 6px; }
+.ahead .av { width: 40px; height: 40px; font-size: 16px; border-radius: 10px; }
+
+/* ---- settings ---- */
+.settings { max-width: 860px; display: grid; grid-template-columns: minmax(0,1fr); gap: 14px; }
+.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.card .ch { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.card .ch h3 { margin: 0; font-size: 14px; }
+.card .ch .sub { color: var(--muted); font-size: 12.5px; }
+.card .ch .sp { margin-left: auto; }
+.card .cb { padding: 4px 14px; }
+.line { display: flex; gap: 10px; align-items: center; padding: 9px 0; flex-wrap: wrap; }
+.line + .line { border-top: 1px solid var(--border); }
+.line .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--hover); display: grid; place-items: center; color: var(--muted); flex: none; }
+.line .txt { flex: 1; min-width: 200px; }
+.line .txt b { font-weight: 600; }
+.line .txt div { font-size: 12.5px; color: var(--muted); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
+.tbl th, .tbl td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tbl th { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.tbl tr:last-child td { border-bottom: 0; }
+.scrollx { overflow-x: auto; }
+.meter { height: 8px; border-radius: 999px; background: var(--hover); overflow: hidden; display: flex; }
+.meter i { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.allow { display: flex; flex-wrap: wrap; gap: 6px; }
+.allow code { font-size: 11.5px; }
+
+/* ---- board ---- */
+.board { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 12px; align-items: start; }
+.col { background: var(--main-bg); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 8px; display: grid; gap: 8px; }
+.col h4 { margin: 2px 4px 2px; font-size: 12px; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.col h4 .c { font-variant-numeric: tabular-nums; }
+.task { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 9px 10px; display: grid; gap: 6px; cursor: pointer; }
+.task:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.task .tt { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
+.task .mt { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.task .oc { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--complete); padding-left: 8px; }
+.task.foryou { border-color: color-mix(in srgb, var(--idle) 55%, var(--border)); }
+.task .mt.by { display: block; }
+.task .mt.by .av { display: inline-grid; vertical-align: -4px; margin-right: 5px; }
+.task .nest { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+
+/* ---- search ---- */
+.sgrid { display: grid; grid-template-columns: minmax(0,1fr) 280px; gap: 18px; align-items: start; }
+.sbox { display: flex; gap: 8px; align-items: center; border: 1px solid var(--accent); border-radius: var(--radius-card); padding: 8px 12px; background: var(--main-bg); }
+.sbox .q { flex: 1; font-size: 15px; min-width: 0; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.filters .f { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; color: var(--muted); }
+.filters .f.on { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); background: var(--accent-dim); }
+.group { margin-top: 16px; }
+.group h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.hit { border: 1px solid var(--border); background: var(--card-bg); border-radius: var(--radius-card); padding: 10px 12px; display: grid; gap: 5px; }
+.hit + .hit { margin-top: 8px; }
+.hit .tt { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hit .mt { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+mark { background: color-mix(in srgb, var(--idle) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.aside { border: 1px solid var(--border); background: var(--card-bg); border-radius: var(--radius-card); padding: 12px 14px; display: grid; gap: 8px; font-size: 13px; }
+.aside h4 { margin: 0; font-size: 13.5px; }
+
+[hidden] { display: none !important; }
+
+@media (max-width: 1100px) {
+  .app.with-panel { grid-template-columns: 56px minmax(0,1fr) 380px; }
+  .app.with-panel .side { display: none; }
+  .board { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .sgrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .app, .app.with-panel { grid-template-columns: minmax(0,1fr); height: auto; min-height: 640px; }
+  .rail, .side { display: none; }
+  .app.with-panel .main { display: none; }
+  .main { border-left: 0; }
+  .body { max-height: none; }
+  .choices, .row2 { grid-template-columns: 1fr; }
+  .bound { grid-template-columns: 1fr; gap: 2px; } .bound dd { margin-bottom: 8px; }
+  .board { grid-template-columns: 1fr; }
+  .topbar .desc { display: none; }
+  .scrim { position: fixed; padding: 12px; }
+  .walk .right { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="walk"><div class="in">
+  <span class="brand"><img src="weave_logo.png" alt="">Weave CoWork · projects</span>
+  <nav class="steps" aria-label="Walkthrough">
+    <button data-go="new" aria-current="true"><b>1</b>New project</button>
+    <button data-go="settings"><b>2</b>Project settings</button>
+    <button data-go="add"><b>3</b>An agent's boundary</button>
+    <button data-go="thread"><b>4</b>A provisioned agent</button>
+    <button data-go="board"><b>5</b>Board</button>
+    <button data-go="search"><b>6</b>Search</button>
+  </nav>
+  <span class="right">
+    <span>Viewing as <span class="seg"><button data-viewer="alex" aria-pressed="true">Alex</button><button data-viewer="rosa" aria-pressed="false">Rosa</button></span></span>
+    <span class="seg"><button data-theme-set="dark" aria-pressed="true">Dark</button><button data-theme-set="light" aria-pressed="false">Light</button></span>
+    <a href="index.html" style="color:var(--accent-text)">The first click-through</a>
+  </span>
+</div></div>
+<p class="note" id="note"></p>
+
+<div class="stage">
+<div class="app" id="app">
+  <!-- rail -->
+  <nav class="rail" aria-label="Lumen Labs">
+    <img src="weave_logo.png" alt="Weave">
+    <button class="on" title="Channels"><i data-i="channels"></i></button>
+    <button title="People and agents"><i data-i="users"></i></button>
+    <button title="Where agents run"><i data-i="server"></i></button>
+    <span class="grow"></span>
+    <button title="Settings"><i data-i="gear"></i></button>
+  </nav>
+
+  <!-- channel list -->
+  <aside class="side">
+    <div class="head"><span>Lumen Labs</span><i data-i="down" class="muted"></i></div>
+    <div class="scroll">
+      <button class="nav"><i data-i="at"></i>Mentions<span class="n viewer-only" data-for="rosa">1</span></button>
+      <button class="nav" data-go="search" data-nav="search"><i data-i="search"></i>Search</button>
+
+      <div class="cat"><span>Checkout app<span class="tag">project</span></span><span class="acts"><button title="Project settings" data-go="settings"><i data-i="gear"></i></button><button title="New channel"><i data-i="plus"></i></button></span></div>
+      <button class="nav" data-go="board" data-nav="board"><i data-i="board"></i>Board<span class="n" title="Waiting for you" id="nav-wait">1</span></button>
+      <button class="nav" data-go="thread" data-nav="thread"><i data-i="hash"></i>checkout-app</button>
+      <button class="nav"><i data-i="hash"></i>checkout-alerts<span class="n q">2</span></button>
+      <button class="nav"><i data-i="volume"></i>checkout-standup</button>
+      <button class="nav"><i data-i="book"></i>Library</button>
+
+      <div class="cat"><span>Research<span class="tag">project</span></span><span class="acts"><button title="Project settings"><i data-i="gear"></i></button></span></div>
+      <button class="nav"><i data-i="board"></i>Board</button>
+      <button class="nav"><i data-i="hash"></i>research</button>
+
+      <div class="cat"><span>Channels</span><span class="acts"><button title="New channel"><i data-i="plus"></i></button></span></div>
+      <button class="nav" data-nav="general"><i data-i="hash"></i>general</button>
+      <button class="nav"><i data-i="volume"></i>lounge</button>
+
+      <button class="nav" data-go="new" style="margin-top:10px;color:var(--accent-text)"><i data-i="plus"></i>New project</button>
+    </div>
+    <div class="foot"><span class="av sm" id="me-av" style="background:var(--av-alex)">A</span><span id="me-name">Alex</span><i data-i="down" class="muted" style="margin-left:auto"></i></div>
+  </aside>
+
+  <!-- ================= MAIN VIEWS ================= -->
+
+  <!-- #general (behind the new-project dialog) -->
+  <main class="main" data-view="general">
+    <div class="topbar"><h2><i data-i="hash" class="muted"></i>general</h2><span class="desc">Everything that isn't a project</span></div>
+    <div class="body">
+      <div class="post"><span class="av" style="background:var(--av-sam)">S</span><div><div class="who"><b>Sam</b><span class="t">9:02 AM</span></div><p>Can we give the checkout work its own space? It's taking over #general.</p></div></div>
+      <div class="post"><span class="av" style="background:var(--av-alex)">A</span><div><div class="who"><b>Alex</b><span class="t">9:04 AM</span></div><p>Making a project for it now, from the repository.</p></div></div>
+    </div>
+    <div class="composer">Message #general</div>
+  </main>
+
+  <!-- project settings -->
+  <main class="main" data-view="settings" hidden>
+    <div class="topbar"><h2><i data-i="gear" class="muted"></i>Checkout app</h2><span class="desc">Project settings · you lead it</span><span class="sp"></span><button class="btn sm danger"><i data-i="pause"></i>Pause all agents</button></div>
+    <div class="body">
+      <div class="settings">
+        <div class="card">
+          <div class="ch"><h3>Workspaces</h3><span class="sub">What agents work on. A thread gets its own worktree and branch.</span><span class="sp"></span><button class="btn sm"><i data-i="plus"></i>Add</button></div>
+          <div class="cb">
+            <div class="line"><span class="ic"><i data-i="branch"></i></span><div class="txt"><b>app</b> <code>lumen/checkout-app</code> · <code>main</code><div>Repository · agents write to <code>cowork/&lt;thread&gt;</code> branches, never to main · deploy key added by Alex</div></div><span class="pill quiet plain">cloned on build-01, pool-01</span></div>
+            <div class="line"><span class="ic"><i data-i="folder"></i></span><div class="txt"><b>specs</b> <code>~/shared/checkout-specs</code> on build-01<div>Folder on a machine · read-only · only agents whose runner is on build-01 can use it</div></div><span class="pill waiting">1 agent can't reach it</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><h3>Sources</h3><span class="sub">Given to every session as tools.</span><span class="sp"></span><button class="btn sm"><i data-i="plus"></i>Connect</button></div>
+          <div class="cb">
+            <div class="line"><span class="ic"><i data-i="chat"></i></span><div class="txt"><b>CoWork</b><div>Read this project's channels, search, start and resolve threads, save to the library. Always on.</div></div><span class="pill quiet plain">built in</span></div>
+            <div class="line"><span class="ic"><i data-i="circle-dot"></i></span><div class="txt"><b>GitHub issues</b> · lumen/checkout-app<div>The project's key · read and comment</div></div><span class="pill quiet plain">project's</span></div>
+            <div class="line"><span class="ic"><i data-i="file"></i></span><div class="txt"><b>Notion</b> · Checkout specs<div>Rosa's account, shared read-only. Through an agent, members reach what Rosa can in these pages. Not used for guests' requests.</div></div><span class="pill waiting">Rosa's</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><h3>People</h3><span class="sub">4</span><span class="sp"></span><button class="btn sm"><i data-i="link"></i>Invite to this project</button></div>
+          <div class="cb">
+            <div class="chips" style="padding:10px 0">
+              <span class="chip"><span class="av xs" style="background:var(--av-alex)">A</span>Alex <span class="r">lead</span></span>
+              <span class="chip"><span class="av xs" style="background:var(--av-rosa)">R</span>Rosa <span class="r">member</span></span>
+              <span class="chip"><span class="av xs" style="background:var(--av-sam)">S</span>Sam <span class="r">member</span></span>
+              <span class="chip"><span class="av xs" style="background:var(--av-jo)">J</span>Jo <span class="r">guest · this project only</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><h3>Agents</h3><span class="sub">Who works here, where, and who answers for them</span><span class="sp"></span><button class="btn sm" data-go="add"><i data-i="plus"></i>Add an agent</button></div>
+          <div class="scrollx"><table class="tbl">
+            <thead><tr><th>Agent</th><th>Runs</th><th>Takes work from</th><th>Asks</th><th>Sandbox</th></tr></thead>
+            <tbody>
+              <tr><td><span style="display:inline-flex;gap:7px;align-items:center"><span class="av xs agent" style="background:var(--av-researcher)">R</span><b>researcher</b></span><div class="muted" style="font-size:12px">team template</div></td><td>pool-01, a sandbox per thread</td><td>Members</td><td>Whoever started the thread, then Alex</td><td><span class="pill working">sandboxed</span></td></tr>
+              <tr><td><span style="display:inline-flex;gap:7px;align-items:center"><span class="av xs agent" style="background:var(--av-triage)">T</span><b>triage</b></span><div class="muted" style="font-size:12px">team template</div></td><td>pool-01, a sandbox per thread</td><td>Members, #checkout-alerts webhooks</td><td>Alex</td><td><span class="pill working">sandboxed</span></td></tr>
+              <tr><td><span style="display:inline-flex;gap:7px;align-items:center"><span class="av xs agent" style="background:var(--av-reviewer)">R</span><b>reviewer</b></span><div class="muted" style="font-size:12px">Alex's own</div></td><td>build-01, pinned</td><td>Members</td><td>Alex</td><td><span class="pill waiting">unsandboxed</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><h3>Rules</h3><span class="sub">The same on every runner and in every sandbox</span></div>
+          <div class="cb">
+            <div class="line"><div class="txt"><b>Allowed without asking</b><div>Reading and editing files in the thread's worktree, running the tests, commits on the thread's branch</div></div></div>
+            <div class="line"><div class="txt"><b>Ask first</b><div>Other shell commands, <code>git push</code>, opening a pull request, any address not on the list below</div></div></div>
+            <div class="line"><div class="txt"><b>Never</b><div>Push to <code>main</code>, read other projects, see direct messages</div></div></div>
+            <div class="line"><div class="txt"><b>Network for sandboxes</b><div class="allow" style="margin-top:4px"><code>github.com</code><code>registry.npmjs.org</code><code>web search</code><code>model gateway</code><span class="chip add">+ Add</span></div></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><h3>Budget</h3><span class="sub">November</span><span class="sp"></span><span class="mono" style="font-variant-numeric:tabular-nums">$126.40 of $200</span></div>
+          <div class="cb" style="padding:12px 14px">
+            <div class="meter" role="img" aria-label="$126.40 spent of $200"><i style="width:44%;background:var(--av-researcher)"></i><i style="width:19.2%;background:var(--av-triage)"></i></div>
+            <div class="legend"><span><i style="background:var(--av-researcher)"></i>researcher $88.10</span><span><i style="background:var(--av-triage)"></i>triage $38.30</span><span><i style="background:var(--hover);border:1px solid var(--border)"></i>reviewer, on Alex's own subscription: not counted</span></div>
+            <div class="money" style="margin-top:12px"><label class="field"><span>A month</span><input class="input" value="$200"></label><label class="field"><span>A thread, at most</span><input class="input" value="$5"></label><span class="hint" style="align-self:end">Leads are told at 80%. At the limit, new threads wait for a lead.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- #checkout-app with the research thread -->
+  <main class="main" data-view="thread" hidden>
+    <div class="topbar"><h2><i data-i="hash" class="muted"></i>checkout-app</h2><span class="desc">Checkout app · cart, payment and order confirmation</span></div>
+    <div class="body">
+      <div class="post"><span class="av" style="background:var(--av-sam)">S</span><div><div class="who"><b>Sam</b><span class="t">2:01 PM</span></div><p>Finance wants partial refunds by January. Our tax step rounds per line, which is why we're a cent out.</p></div></div>
+      <div class="post"><span class="av" style="background:var(--av-rosa)">R</span><div style="min-width:0"><div class="who"><b>Rosa</b><span class="t">2:04 PM</span></div>
+        <p><span class="mention">@researcher</span> compare three tax-calculation APIs for EU refunds: how they round, what they cost, and how they handle partial refunds. Save what you find.</p>
+        <div class="tchip" data-go="thread"><span class="lnk"><i data-i="chat"></i><span id="chip-replies">1 reply</span></span><span class="pill" id="chip-state"></span><span class="muted" id="chip-extra" style="font-size:12px"></span></div>
+      </div></div>
+    </div>
+    <div class="composer">Message #checkout-app</div>
+  </main>
+
+  <!-- board -->
+  <main class="main" data-view="board" hidden>
+    <div class="topbar"><h2><i data-i="board" class="muted"></i>Board</h2><span class="desc">Checkout app · every thread, by status</span><span class="sp"></span><span class="seg"><button aria-pressed="true">Everyone's</button><button aria-pressed="false">Mine</button></span><button class="btn sm primary"><i data-i="plus"></i>New task</button></div>
+    <div class="body">
+      <div class="board">
+        <div class="col"><h4><span class="pill waiting plain" style="padding:0 6px">Waiting</span><span class="c">2</span></h4>
+          <div class="task" data-go="thread" id="task-levy"><div class="tt">Compare tax APIs for EU refunds</div><div class="mt by"><span class="av xs agent" style="background:var(--av-researcher)">R</span>researcher · asked by Rosa</div><div class="mt"><span class="pill waiting" id="levy-who">waiting for Rosa</span><span>reach api.levy.example?</span></div></div>
+          <div class="task"><div class="tt">Push the coupon fix and open a pull request</div><div class="mt by"><span class="av xs agent" style="background:var(--av-reviewer)">R</span>reviewer · asked by Sam</div><div class="mt"><span class="pill waiting">waiting for Alex</span><span>git push</span></div></div>
+        </div>
+        <div class="col"><h4><span class="pill working plain" style="padding:0 6px">Working</span><span class="c">3</span></h4>
+          <div class="task"><div class="tt">Fix rounding in refunds</div><div class="mt by"><span class="av xs agent" style="background:var(--av-reviewer)">R</span>reviewer · Sam · 12 min</div><div class="mt"><i data-i="branch"></i><code>cowork/fix-rounding</code></div></div>
+          <div class="task"><div class="tt">Spike: Tallyrate's refund API</div><div class="mt by"><span class="av xs agent" style="background:var(--av-researcher)">R</span>researcher · started by researcher · $0.40</div><div class="nest"><i data-i="corner"></i>part of "Spike the three providers"</div></div>
+          <div class="task"><div class="tt">Spike: Vatbook's refund API</div><div class="mt by"><span class="av xs agent" style="background:var(--av-researcher)">R</span>researcher · started by researcher · $0.31</div><div class="nest"><i data-i="corner"></i>part of "Spike the three providers"</div></div>
+        </div>
+        <div class="col"><h4><span class="pill blocked plain" style="padding:0 6px">Blocked</span><span class="c">1</span></h4>
+          <div class="task"><div class="tt">CI red on main: test_partial_refund</div><div class="mt by"><span class="av xs agent" style="background:var(--av-triage)">T</span>triage · from a webhook in #checkout-alerts</div><div class="mt"><span class="pill blocked">reached $5 for this thread</span></div><div><button class="btn sm">Allow up to $10</button></div></div>
+        </div>
+        <div class="col"><h4><span class="pill done plain" style="padding:0 6px">Done this week</span><span class="c">3</span></h4>
+          <div class="task"><div class="tt">Why is the cart total off by a cent?</div><div class="mt by"><span class="av xs agent" style="background:var(--av-reviewer)">R</span>reviewer · Alex · Mon</div><div class="oc"><code>roundTax</code> rounds each line before summing. PR #212 rounds once per invoice.</div></div>
+          <div class="task"><div class="tt">Weekly decisions digest</div><div class="mt by"><span class="av xs agent" style="background:var(--av-triage)">T</span>triage · every Friday · $0.22</div><div class="oc">4 decisions, saved to the library.</div></div>
+          <div class="task"><div class="tt">Which payment methods do we need at launch?</div><div class="mt by"><span class="av xs agent" style="background:var(--av-researcher)">R</span>researcher · Sam · $0.86</div><div class="oc">Cards and two wallets for launch; saved as "Payment methods".</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- search -->
+  <main class="main" data-view="search" hidden>
+    <div class="topbar"><h2><i data-i="search" class="muted"></i>Search</h2><span class="desc">Everything you can see in Lumen Labs</span></div>
+    <div class="body">
+      <div class="sgrid">
+        <div>
+          <div class="sbox"><i data-i="search" class="muted"></i><span class="q">refund rounding</span><span class="muted" style="font-size:12px">6 results</span></div>
+          <div class="filters"><span class="f on">project:checkout</span><span class="f">in:#checkout-app</span><span class="f">from:@reviewer</span><span class="f">is:done</span><span class="f">has:branch</span></div>
+
+          <div class="group"><h4>Outcomes · 2</h4>
+            <div class="hit"><div class="tt">Why is the cart total off by a cent? <span class="pill done">done</span></div><div><code>roundTax</code> <mark>rounds</mark> each line before summing, so a three-line order with a <mark>refund</mark> drifts by a cent. PR #212 <mark>rounds</mark> once per invoice.</div><div class="mt"><span class="av xs agent" style="background:var(--av-reviewer)">R</span>reviewer · asked by Alex · #checkout-app · 18 Nov</div></div>
+            <div class="hit"><div class="tt">Compare tax APIs for EU refunds <span class="pill done">done</span></div><div>Tallyrate handles partial <mark>refunds</mark> per line and <mark>rounds</mark> half-even, as we now do.</div><div class="mt"><span class="av xs agent" style="background:var(--av-researcher)">R</span>researcher · asked by Rosa · #checkout-app · today</div></div>
+          </div>
+          <div class="group"><h4>Library · 1</h4>
+            <div class="hit"><div class="tt"><i data-i="file" class="muted"></i>Tax APIs compared</div><div>… Levy.io <mark>rounds</mark> per invoice; partial <mark>refunds</mark> are recalculated, which reintroduces the one-cent drift …</div><div class="mt">Saved by researcher from a thread Rosa started · today</div></div>
+          </div>
+          <div class="group"><h4>Messages · 3</h4>
+            <div class="hit"><div><mark>Rounding</mark> in the tax step, I think.</div><div class="mt"><span class="av xs" style="background:var(--av-rosa)">R</span>Rosa · #checkout-app · 18 Nov</div></div>
+            <div class="hit"><div>Finance wants partial <mark>refunds</mark> by January. Our tax step <mark>rounds</mark> per line, which is why we're a cent out.</div><div class="mt"><span class="av xs" style="background:var(--av-sam)">S</span>Sam · #checkout-app · today</div></div>
+            <div class="hit"><div>Do we <mark>round</mark> half-up or half-even on <mark>refunds</mark>?</div><div class="mt"><span class="av xs" style="background:var(--av-sam)">S</span>Sam · thread "Fix rounding in refunds" · today</div></div>
+          </div>
+        </div>
+        <div class="aside">
+          <h4>Ask an agent instead</h4>
+          <div class="input" style="color:var(--muted)"><span class="mention">@researcher</span> what did we decide about refund rounding?</div>
+          <div class="muted">It searches the same index with <code>cowork_search</code>, reads the threads it finds and answers with links, in a new thread.</div>
+          <div class="hint"><i data-i="shield"></i><span>Results only include what you may see. An agent searches only inside its own boundary: researcher here sees Checkout app, not Research.</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= THREAD PANEL ================= -->
+  <section class="panel" id="panel" hidden aria-label="Thread">
+    <div class="topbar"><h2>Thread <span class="muted" style="font-weight:400;font-size:13px">in #checkout-app</span></h2><span class="sp"></span><span class="pill" id="th-state"></span></div>
+    <div class="session"><span class="tag">session</span><b>@researcher</b><span>team template</span><span>· sandbox on pool-01</span><span>· <code>cowork/compare-tax-apis</code></span><span>· started by Rosa</span></div>
+    <div class="states">Show the thread <span class="seg" id="tstates"><button data-ts="starting" aria-pressed="false">Starting</button><button data-ts="working" aria-pressed="true">Working</button><button data-ts="asking" aria-pressed="false">Asking</button><button data-ts="done" aria-pressed="false">Done</button></span></div>
+    <div class="body" id="tbody">
+      <div class="post"><span class="av" style="background:var(--av-rosa)">R</span><div style="min-width:0"><div class="who"><b>Rosa</b><span class="t">2:04 PM</span></div><p><span class="mention">@researcher</span> compare three tax-calculation APIs for EU refunds: how they round, what they cost, and how they handle partial refunds. Save what you find.</p></div></div>
+
+      <div data-when="starting">
+        <div class="boot" aria-label="Starting the sandbox">
+          <div><i data-i="check" class="ok"></i>pool-01 has room (2 of 4 sandboxes free)<span class="t">0.2 s</span></div>
+          <div><i data-i="check" class="ok"></i>Started a sandbox from <code>researcher:1.3</code>, 2 GB, network by the project's list<span class="t">2.1 s</span></div>
+          <div><i data-i="check" class="ok"></i>Made a worktree of <code>lumen/checkout-app</code> on <code>cowork/compare-tax-apis</code><span class="t">1.4 s</span></div>
+          <div><span class="spin"></span>Starting <code>opencode acp</code> 2.4.1<span class="t">2.3 s</span></div>
+        </div>
+        <p class="muted" style="font-size:12.5px;margin:8px 0 0">Rosa's message goes in as soon as the harness is ready. Replies sent now wait in order.</p>
+      </div>
+
+      <div data-when="working asking done">
+        <div class="post"><span class="av agent" style="background:var(--av-researcher)">R</span><div style="min-width:0;flex:1"><div class="who"><b>researcher</b><span class="badge agent">agent</span><span class="t">2:04 PM</span></div>
+          <p>I'll read how the repository rounds tax first, then look at three providers against that.</p>
+          <div class="tool"><i data-i="file" class="muted"></i><span class="k">read</span><span class="d">src/tax.ts</span><i data-i="check" class="ok"></i></div>
+          <div class="tool"><i data-i="search" class="muted"></i><span class="k">search</span><span class="d">grep roundTax|refund src/</span><i data-i="check" class="ok"></i></div>
+          <div class="tool"><i data-i="globe" class="muted"></i><span class="k">web</span><span class="d">search "EU VAT API partial refund rounding"</span><i data-i="check" class="ok"></i></div>
+          <div class="tool"><i data-i="globe" class="muted"></i><span class="k">fetch</span><span class="d">docs.tallyrate.example/refunds</span><i data-i="check" class="ok"></i></div>
+          <div class="tool"><i data-i="globe" class="muted"></i><span class="k">fetch</span><span class="d">vatbook.example/pricing</span><span data-when="working" class="spin"></span><i data-when="asking done" data-i="check" class="ok"></i></div>
+        </div></div>
+      </div>
+
+      <div data-when="asking">
+        <div class="post"><span class="av agent" style="background:var(--av-researcher)">R</span><div style="min-width:0;flex:1"><div class="who"><b>researcher</b><span class="badge agent">agent</span><span class="t">2:11 PM</span></div>
+          <p>Levy.io's rounding rules are in their API reference, which is on a different address.</p>
+          <div class="ask">
+            <div><b>researcher wants to reach <code>api.levy.example</code></b></div>
+            <div class="why">It isn't on Checkout app's network list. Asked by researcher, for Rosa's thread.</div>
+            <div class="row viewer-only" data-for="rosa"><button class="btn sm primary">Allow once</button><button class="btn sm">Allow for this thread</button><button class="btn sm">Deny</button></div>
+            <div class="viewer-only muted" data-for="alex" style="font-size:13px">researcher is waiting for Rosa. If she hasn't answered by 2:41 PM, you'll be asked: you lead Checkout app.</div>
+          </div>
+        </div></div>
+      </div>
+
+      <div data-when="done">
+        <div class="post"><span class="av agent" style="background:var(--av-researcher)">R</span><div style="min-width:0;flex:1"><div class="who"><b>researcher</b><span class="badge agent">agent</span><span class="t">2:18 PM</span></div>
+          <p>Rosa allowed <code>api.levy.example</code> once. Here's what I found.</p>
+          <div class="outcome">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="pill done">done</span><b>Compare tax APIs for EU refunds</b></div>
+            <ul>
+              <li><b>Tallyrate</b> refunds per line and rounds half-even, as PR #212 now does. Best fit.</li>
+              <li><b>Levy.io</b> recalculates a partial refund for the whole invoice: the one-cent drift comes back.</li>
+              <li><b>Vatbook</b> has no partial refunds; we'd refund and re-charge.</li>
+            </ul>
+            <div class="artefact"><i data-i="book" class="muted"></i>Tax APIs compared<span class="sub">saved to the library</span></div>
+            <div class="artefact"><i data-i="branch" class="muted"></i><code>cowork/compare-tax-apis</code><span class="sub">no changes, deleted</span></div>
+            <div class="meta"><span>14 min</span><span>$1.40 of $5</span><span>9 tool calls · 1 ask</span><span>sandbox stopped, kept 7 days</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm">Reopen</button><button class="btn sm">Open in the library</button></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="composer">Reply in thread… use @ to mention an agent</div>
+  </section>
+
+  <!-- ================= DIALOGS ================= -->
+  <div class="scrim" data-dialog="new" hidden>
+    <div class="dialog" role="dialog" aria-labelledby="np-h">
+      <div class="dh"><h3 id="np-h">New project</h3><i data-i="x" class="muted"></i></div>
+      <div class="db">
+        <div class="fs">
+          <div class="row2"><label class="field"><span>Name</span><input class="input" value="Checkout app"></label><label class="field"><span>Lead</span><input class="input" value="Alex (you)"></label></div>
+          <label class="field"><span>What it's about</span><input class="input" value="Cart, payment and order confirmation for the web shop"></label>
+        </div>
+        <div class="fs">
+          <div class="lbl">Start from</div>
+          <div class="choices" id="src-choices">
+            <button class="choice" data-src="repo" aria-pressed="true"><b><i data-i="branch"></i>A repository</b><span>Any agent can work on it, anywhere</span></button>
+            <button class="choice" data-src="folder" aria-pressed="false"><b><i data-i="folder"></i>A folder</b><span>On one machine with a runner</span></button>
+            <button class="choice" data-src="empty" aria-pressed="false"><b><i data-i="book"></i>Nothing yet</b><span>Channels and a library</span></button>
+          </div>
+          <div data-src-show="repo" class="fs" style="border:0;padding:0">
+            <div class="row2"><label class="field"><span>Repository</span><input class="input mono" value="git@github.com:lumen/checkout-app.git"></label><label class="field"><span>Branch</span><input class="input mono" value="main"></label></div>
+            <div class="hint"><i data-i="key"></i><span>Access: a deploy key that may write branches. <a href="#" style="color:var(--accent-text)">Add the key to GitHub</a></span></div>
+            <div class="hint"><i data-i="branch"></i><span>Each thread works in its own worktree on <code>cowork/&lt;thread&gt;</code>. Agents never push to <code>main</code>.</span></div>
+          </div>
+          <div data-src-show="folder" class="fs" style="border:0;padding:0" hidden>
+            <div class="row2"><label class="field"><span>Folder</span><input class="input mono" value="~/source/checkout-app"></label><label class="field"><span>On</span><input class="input" value="build-01 (Alex's runner)"></label></div>
+            <div class="hint"><i data-i="alert"></i><span>Only agents whose runner is on build-01 can work here, so researcher and triage (pool-01) can't. It's a git folder, so threads still get worktrees.</span></div>
+          </div>
+          <div data-src-show="empty" class="fs" style="border:0;padding:0" hidden>
+            <div class="hint"><i data-i="book"></i><span>Agents can talk, search the web and save to the library. Add a repository or a folder in the project's settings later.</span></div>
+          </div>
+        </div>
+        <div class="fs">
+          <div class="lbl">Channels</div>
+          <div class="checks"><span class="check"><span class="box on locked"></span><i data-i="hash" class="muted"></i>checkout-app</span><span class="check"><span class="box on"></span><i data-i="volume" class="muted"></i>checkout-standup</span><span class="check"><span class="box"></span><i data-i="hash" class="muted"></i>checkout-alerts</span></div>
+        </div>
+        <div class="fs">
+          <div class="lbl">People</div>
+          <div class="chips"><span class="chip"><span class="av xs" style="background:var(--av-rosa)">R</span>Rosa</span><span class="chip"><span class="av xs" style="background:var(--av-sam)">S</span>Sam</span><span class="chip add">+ Add people</span></div>
+        </div>
+        <div class="fs">
+          <div class="lbl">Agents</div>
+          <div>
+            <div class="arow"><span class="av sm agent" style="background:var(--av-researcher)">R</span><div class="txt"><b>researcher</b> <span class="pill info plain">team template</span><div>Starts in a sandbox on pool-01 when someone asks</div></div><button class="sw" role="switch" aria-checked="true" aria-label="researcher"></button></div>
+            <div class="arow"><span class="av sm agent" style="background:var(--av-reviewer)">R</span><div class="txt"><b>reviewer</b> <span class="pill quiet plain">Alex's own</span><div>Runs on build-01; it'll clone the repository there</div></div><button class="sw" role="switch" aria-checked="true" aria-label="reviewer"></button></div>
+            <div class="arow"><span class="av sm agent" style="background:var(--av-triage)">T</span><div class="txt"><b>triage</b> <span class="pill info plain">team template</span><div>Watches #checkout-alerts and starts threads</div></div><button class="sw" role="switch" aria-checked="false" aria-label="triage"></button></div>
+          </div>
+        </div>
+        <div class="fs">
+          <div class="lbl">Budget for team agents</div>
+          <div class="money"><label class="field"><span>A month</span><input class="input" value="$200"></label><label class="field"><span>A thread, at most</span><input class="input" value="$5"></label><span class="hint" style="align-self:end">Agents on someone's own subscription don't count.</span></div>
+        </div>
+      </div>
+      <div class="df"><span class="left">You can change all of this later.</span><button class="btn">Cancel</button><button class="btn primary" data-go="settings">Create project</button></div>
+    </div>
+  </div>
+
+  <div class="scrim" data-dialog="add" hidden>
+    <div class="dialog" role="dialog" aria-labelledby="add-h">
+      <div class="dh"><h3 id="add-h">Add an agent to Checkout app</h3><i data-i="x" class="muted"></i></div>
+      <div class="db">
+        <div style="padding-top:12px"><span class="seg" id="agent-pick"><button data-agent="researcher" aria-pressed="true">researcher · team template</button><button data-agent="claude" aria-pressed="false">claude · Alex's own</button></span></div>
+
+        <div data-agent-show="researcher">
+          <div class="ahead"><span class="av agent" style="background:var(--av-researcher)">R</span><div><b>researcher</b> <span class="pill info plain">team template</span><div class="muted" style="font-size:12.5px">Finds, reads and compares; writes up what it learnt. OpenCode 2.4.1 · image <code>researcher:1.3</code> · owned by Checkout app</div></div></div>
+          <dl class="bound">
+            <dt><i data-i="eye"></i>Sees</dt><dd>Checkout app's channels and library, and threads it's in. Not other projects, not direct messages.</dd>
+            <dt><i data-i="users"></i>Takes work from</dt><dd>Members of Checkout app. Jo is a guest: a lead confirms before it acts for her.</dd>
+            <dt><i data-i="branch"></i>Works on</dt><dd><code>app</code>, in a worktree per thread. Can't reach <code>specs</code>: that folder is on build-01.</dd>
+            <dt><i data-i="globe"></i>Reaches</dt><dd>The project's network list: <code>github.com</code>, <code>registry.npmjs.org</code>, web search and the model gateway. Asks for anything else.</dd>
+            <dt><i data-i="hand"></i>Asks</dt><dd>Whoever started the thread; you, if they don't answer in 30 minutes.</dd>
+            <dt><i data-i="coins"></i>Spends</dt><dd>Up to $5 a thread, from the project's $200 a month.</dd>
+            <dt><i data-i="brain"></i>Remembers</dt><dd>Notes for Checkout app only. Nothing goes to other projects.</dd>
+            <dt><i data-i="pause"></i>Stops</dt><dd>When the thread is done, after 15 idle minutes, or when a lead presses Pause.</dd>
+          </dl>
+          <div class="okline"><i data-i="shield"></i><span>Each thread gets its own sandbox on pool-01. Model keys stay in CoWork's gateway; the sandbox never holds them.</span></div>
+        </div>
+
+        <div data-agent-show="claude" hidden>
+          <div class="ahead"><span class="av agent" style="background:var(--av-claude)">C</span><div><b>claude</b> <span class="pill quiet plain">Alex's own</span><div class="muted" style="font-size:12.5px">Claude Code through Zed's ACP adapter · runs on alex-laptop · Alex's subscription</div></div></div>
+          <dl class="bound">
+            <dt><i data-i="eye"></i>Sees</dt><dd>Checkout app's channels and library, threads it's in, and Alex's direct messages with it.</dd>
+            <dt><i data-i="users"></i>Takes work from</dt><dd>Only Alex. <button class="btn sm" style="margin-left:4px">Let members ask it</button></dd>
+            <dt><i data-i="branch"></i>Works on</dt><dd><code>app</code>, cloned on alex-laptop, a worktree per thread. Can't reach <code>specs</code> (on build-01).</dd>
+            <dt><i data-i="globe"></i>Reaches</dt><dd>Anything alex-laptop can.</dd>
+            <dt><i data-i="hand"></i>Asks</dt><dd>Alex.</dd>
+            <dt><i data-i="coins"></i>Spends</dt><dd>Alex's subscription. Not counted in the project's budget.</dd>
+            <dt><i data-i="brain"></i>Remembers</dt><dd>A home of its own for Checkout app: Alex's other work doesn't come in, and this project's notes don't go out.</dd>
+            <dt><i data-i="pause"></i>Stops</dt><dd>When alex-laptop sleeps. Requests wait for it.</dd>
+          </dl>
+          <div class="warnline"><i data-i="alert"></i><span><b>Runs unsandboxed on alex-laptop.</b> It can read and change anything Alex's account can. Threads show this to everyone. Start the runner with <code>--sandbox</code> to limit it to the worktree.</span></div>
+        </div>
+      </div>
+      <div class="df"><button class="btn">Cancel</button><button class="btn primary" id="add-btn">Add researcher</button></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const ICONS = {
+  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  board: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  at: '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  channels: '<rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
+  server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  branch: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M6 8.5v7M18 9.5a8 8 0 0 1-9.5 7.8"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  file: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M17 6l3 3M15 8l2 2"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.3 18"/><path d="M7 6h1v4M16.7 13.9l.7.7-2.8 2.8"/>',
+  brain: '<path d="M12 5a3 3 0 0 0-5.8-1A3 3 0 0 0 4 9a3 3 0 0 0 0 6 3 3 0 0 0 2.2 5A3 3 0 0 0 12 19z"/><path d="M12 5a3 3 0 0 1 5.8-1A3 3 0 0 1 20 9a3 3 0 0 1 0 6 3 3 0 0 1-2.2 5A3 3 0 0 1 12 19z"/>',
+  corner: '<path d="M4 4v7a4 4 0 0 0 4 4h12"/><path d="m15 10 5 5-5 5"/>',
+  'circle-dot': '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5"/>',
+};
+document.querySelectorAll('i[data-i]').forEach(el => {
+  const cls = el.className;
+  el.outerHTML = `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true"${el.hasAttribute('data-when') ? ` data-when="${el.dataset.when}"` : ''}>${ICONS[el.dataset.i] || ''}</svg>`;
+});
+
+const NOTES = {
+  new: '<b>New project.</b> A project holds channels and owns the workspace, people, agents and budget (decisions 1 and 2). Pick <b>A folder</b> or <b>Nothing yet</b> to see the other starts. <b>Create project</b> goes to its settings.',
+  settings: '<b>Project settings.</b> Everything that isn\'t conversation lives here: workspaces, sources (and whose they are), who works here and who answers for them, rules that apply on every runner, and the budget for team agents (decision 6).',
+  add: '<b>An agent\'s boundary.</b> Adding an agent to a project shows what it may do, in sentences. Compare a team template (sandboxed, pool) with Alex\'s own agent (pinned, unsandboxed): decision 3.',
+  thread: '<b>A provisioned agent.</b> Rosa mentions researcher, which no runner serves: pool-01 starts a sandbox for the thread (decision 5). Step through <b>Starting</b> to <b>Done</b>, and switch <b>Viewing as</b> on <b>Asking</b>: the person who started the thread approves (decision 7).',
+  board: '<b>Board.</b> Every thread in the project by status, with outcomes on the done ones (decision 8). It\'s a view over threads, not a second task list. Threads an agent started show what they\'re part of.',
+  search: '<b>Search.</b> Outcomes come first: they hold the decision, where messages hold the argument about it. The library next, then messages. An agent searches the same index, inside its boundary.',
+};
+const app = document.getElementById('app');
+let screen = 'new', viewer = 'alex', tstate = 'working';
+
+function render() {
+  document.querySelectorAll('[data-go]').forEach(b => { if (b.closest('.steps')) b.setAttribute('aria-current', String(b.dataset.go === screen)); });
+  document.getElementById('note').innerHTML = NOTES[screen];
+  const mainView = { new: 'general', settings: 'settings', add: 'settings', thread: 'thread', board: 'board', search: 'search' }[screen];
+  document.querySelectorAll('main[data-view]').forEach(m => m.hidden = m.dataset.view !== mainView);
+  document.querySelectorAll('.side .nav').forEach(n => n.classList.toggle('on', n.dataset.nav === mainView));
+  document.querySelectorAll('[data-dialog]').forEach(d => d.hidden = d.dataset.dialog !== screen);
+  const panel = screen === 'thread';
+  document.getElementById('panel').hidden = !panel;
+  app.classList.toggle('with-panel', panel);
+  // viewer
+  document.querySelectorAll('.viewer-only').forEach(e => e.hidden = e.dataset.for !== viewer);
+  document.getElementById('me-name').textContent = viewer === 'alex' ? 'Alex' : 'Rosa';
+  const me = document.getElementById('me-av'); me.textContent = viewer === 'alex' ? 'A' : 'R'; me.style.background = `var(--av-${viewer})`;
+  const levy = document.getElementById('task-levy');
+  levy.classList.toggle('foryou', viewer === 'rosa');
+  document.getElementById('levy-who').textContent = viewer === 'rosa' ? 'waiting for you' : 'waiting for Rosa';
+  // thread state
+  document.querySelectorAll('#tstates button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ts === tstate)));
+  const tb = document.getElementById('tbody');
+  document.querySelectorAll('#tbody [data-when]').forEach(e => e.style.display = e.dataset.when.split(' ').includes(tstate) ? '' : 'none');
+  const st = { starting: ['starting', 'starting'], working: ['working', 'working · 4 min · $0.62'], asking: ['waiting', viewer === 'rosa' ? 'waiting for you' : 'waiting for Rosa'], done: ['done', 'done'] }[tstate];
+  for (const id of ['th-state', 'chip-state']) { const p = document.getElementById(id); p.className = 'pill ' + st[0]; p.textContent = st[1]; }
+  document.getElementById('chip-replies').textContent = { starting: 'Thread', working: '1 reply', asking: '2 replies', done: '3 replies' }[tstate];
+  if (panel) requestAnimationFrame(() => { tb.scrollTop = tb.scrollHeight; });
+  document.getElementById('chip-extra').textContent = tstate === 'done' ? 'Tallyrate fits best; saved "Tax APIs compared" to the library' : tstate === 'starting' ? 'researcher is starting on pool-01…' : '';
+}
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]'); if (go) { e.preventDefault(); screen = go.dataset.go; render(); if (go.closest('.steps')) window.scrollTo({ top: 0 }); return; }
+  const v = e.target.closest('[data-viewer]'); if (v) { viewer = v.dataset.viewer; document.querySelectorAll('[data-viewer]').forEach(b => b.setAttribute('aria-pressed', String(b === v))); render(); return; }
+  const th = e.target.closest('[data-theme-set]'); if (th) { document.documentElement.dataset.theme = th.dataset.themeSet; document.querySelectorAll('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', String(b === th))); return; }
+  const ts = e.target.closest('[data-ts]'); if (ts) { tstate = ts.dataset.ts; render(); return; }
+  const src = e.target.closest('[data-src]'); if (src) { document.querySelectorAll('[data-src]').forEach(b => b.setAttribute('aria-pressed', String(b === src))); document.querySelectorAll('[data-src-show]').forEach(s => s.hidden = s.dataset.srcShow !== src.dataset.src); return; }
+  const ag = e.target.closest('[data-agent]'); if (ag) { document.querySelectorAll('[data-agent]').forEach(b => b.setAttribute('aria-pressed', String(b === ag))); document.querySelectorAll('[data-agent-show]').forEach(s => s.hidden = s.dataset.agentShow !== ag.dataset.agent); document.getElementById('add-btn').textContent = 'Add ' + ag.dataset.agent; return; }
+  const sw = e.target.closest('.sw'); if (sw) { sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true')); return; }
+});
+if (window.matchMedia('(prefers-color-scheme: light)').matches) document.querySelector('[data-theme-set="light"]').click();
+const q = new URLSearchParams(location.search);
+if (q.get('screen')) screen = q.get('screen');
+if (q.get('state')) tstate = q.get('state');
+if (q.get('viewer')) viewer = q.get('viewer'), document.querySelectorAll('[data-viewer]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.viewer === viewer)));
+render();
+</script>
+</body>
+</html>
