@@ -51,16 +51,14 @@ public static class ThreadList
         return char.ToUpperInvariant(title[0]) + title[1..];
     }
 
-    /// <summary>The title: the outcome's when the thread is resolved (unless someone renamed it since), else the name someone gave it, else the
-    /// first words of its opening post. Returns the title and where it came from (outcome, renamed, words).</summary>
-    static (string Title, string From) TitleOf(SqliteConnection c, Row r)
-    {
-        if (r.ResolvedPost is { } post && (r.Title is null || (r.ResolvedAt ?? 0) >= (r.TitledAt ?? 0))
-            && c.ExecuteScalar<string?>("SELECT json_extract(meta,'$.title') FROM posts WHERE id=@post", new { post }) is { Length: > 0 } outcome)
-            return (outcome, "outcome");
-        if (r.Title is { Length: > 0 } named) return (named, "renamed");
-        return (AutoTitle(r.Body), "words");
-    }
+    /// <summary>The title: the name someone gave it; until anyone does, the title of the outcome an agent resolved it with; until then, the first
+    /// words of its opening post. Returns the title and where it came from (renamed, outcome, words).</summary>
+    static (string Title, string From) TitleOf(SqliteConnection c, Row r) =>
+        r.Title is { Length: > 0 } title ? (title, r.TitledAt is null ? "outcome" : "renamed") : (AutoTitle(r.Body), "words");
+
+    /// <summary>A thread's title, for where only the title is shown (the post's "N replies" chip, search), or null if there's no such thread.</summary>
+    public static string? TitleFor(SqliteConnection c, long rootId) =>
+        c.QueryFirstOrDefault<Row>(Select + " WHERE t.root_id=@rootId", new { rootId }) is { } r ? TitleOf(c, r).Title : null;
 
     static Summary Build(SqliteConnection c, Row r, int unread)
     {
@@ -131,15 +129,10 @@ public static class ThreadList
         }).ToList();
     }
 
-    /// <summary>Who may rename a thread: anyone in it. That's whoever started it or wrote in it, the owner of an agent in it, and admins (who look
-    /// after the server). They must see its channel.</summary>
+    /// <summary>Who may rename a thread: anyone who may post in it, that is, a person who sees its channel.</summary>
     public static bool CanRename(SqliteConnection c, long rootId, long me)
     {
         var channel = c.ExecuteScalar<long?>("SELECT channel_id FROM threads WHERE root_id=@rootId", new { rootId });
-        if (channel is null || !Access.CanSee(c, channel.Value, me)) return false;
-        return Access.IsAdmin(c, me) || c.ExecuteScalar<int>(@"SELECT
-              (SELECT COUNT(*) FROM threads WHERE root_id=@rootId AND started_by=@me)
-            + (SELECT COUNT(*) FROM posts WHERE (id=@rootId OR thread_id=@rootId) AND author_id=@me AND deleted=0)
-            + (SELECT COUNT(*) FROM thread_agents ta JOIN agents a ON a.member_id=ta.agent_id WHERE ta.thread_id=@rootId AND a.owner_id=@me)", new { rootId, me }) > 0;
+        return channel is not null && Access.IsActivePerson(c, me) && Access.CanSee(c, channel.Value, me);
     }
 }

@@ -235,6 +235,12 @@ public sealed class AuditProjection : IAsyncProjection
                 Add(x, e, "event", $"{who} asked {Agent(x, ag)} for work in {Channel(x, ch)}. It didn't take it: {why}.", ch, thread, ag, owner);
                 break;
             }
+            case "ThreadRenamed":
+            {
+                var ch = e.LongOrNull("channelId");
+                Add(x, e, "event", $"{Actor(x, e)} renamed a thread{(ch is null ? "" : " in " + Channel(x, ch))} to “{e.Str("title")}”.", ch, thread);
+                break;
+            }
             case "MentionUnreachable":
             {
                 var ag = e.Long("agentId"); var ch = e.Long("channelId");

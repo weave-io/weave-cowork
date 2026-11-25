@@ -28,8 +28,8 @@ public sealed class ThreadProjection : IInlineProjection
                     new { r = e.Long("rootId"), ch = e.Long("channelId"), by = e.Long("startedBy"), chain = e.LongOrNull("agentChain") ?? 0, slug = e.Str("slug"), at = e.OccurredAt, pos = e.Position });      // agentChain: only an imported thread starts with a count
                 break;
             case "ThreadRenamed":
-                // anyone in the thread may name it; an empty name goes back to the automatic one
-                x.Execute("UPDATE threads SET title=@title, titled_at=@at WHERE root_id=@t", new { title = string.IsNullOrWhiteSpace(e.Str("title")) ? null : e.Str("title"), at = e.OccurredAt, t = ThreadOf(e) });
+                // whoever may post in the thread may name it; from then on its name is that, whatever it is resolved with
+                x.Execute("UPDATE threads SET title=@title, titled_at=@at WHERE root_id=@t", new { title = e.Str("title"), at = e.OccurredAt, t = ThreadOf(e) });
                 break;
             case "AgentJoinedThread":
                 x.Execute("INSERT OR IGNORE INTO thread_agents(thread_id, agent_id) VALUES (@t,@a)", new { t = ThreadOf(e), a = e.Long("agentId") });

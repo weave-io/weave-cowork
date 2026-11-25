@@ -74,14 +74,13 @@ public class ThreadListTests
         Assert.Equal(title, ThreadList.AutoTitle(body));
 
     [Fact]
-    public async Task A_title_is_the_outcome_when_resolved_else_the_first_words_and_anyone_in_the_thread_can_rename_it()
+    public async Task A_title_is_the_first_words_until_someone_names_it_the_outcome_names_it_only_if_nobody_has_and_it_shows_everywhere()
     {
         var (app, alex, rosa, sam, jo, project, ch, reviewer) = await World();
         using var _a = app; await using var _r = reviewer;
         var root = Id(await rosa.Post(ch, "@reviewer why is the refund total a cent out on large orders?"));
         await reviewer.NextDelivery();
-        Assert.Equal("Why is the refund total a cent out…", Title(await Thread(rosa, ch, root)));
-        Assert.Equal("words", (await Thread(rosa, ch, root)).GetProperty("titleFrom").GetString());
+        Assert.Equal(("Why is the refund total a cent out…", "words"), (Title(await Thread(rosa, ch, root)), (await Thread(rosa, ch, root)).GetProperty("titleFrom").GetString()));
 
         // the browser hears the new title with the thread
         var heard = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -89,34 +88,52 @@ public class ThreadListTests
         hub.On<JsonElement>("thread-updated", p => { if (p.GetProperty("thread").GetProperty("titleFrom").GetString() == "renamed") heard.TrySetResult(p); });
         await hub.StartAsync();
 
-        // who may rename: whoever started it, wrote in it or owns an agent in it (and admins); not someone who only sees the channel; nobody outside it
+        // anyone who may post in the thread may rename it (Sam has never written in it); nobody outside its channel; never empty
         var rename = (Person p, string t) => p.Http.PutAsJsonAsync($"/api/threads/{root}/title", new { title = t });
-        Assert.Equal(HttpStatusCode.Forbidden, (await rename(sam, "Sam's name")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await rename(jo, "Jo's name")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await rename(rosa, "   ")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await rename(rosa, new string('x', 121))).StatusCode);
-        Assert.Equal("Refunds a cent out", Title(await Json(await rename(rosa, "  Refunds   a cent out "))));
+        Assert.True((await Json(await sam.Http.GetAsync($"/api/threads/{root}"))).GetProperty("canRename").GetBoolean());
+        var named = await Json(await rename(sam, "  Refunds   a cent out "));
+        Assert.Equal(("Refunds a cent out", "renamed"), (Title(named), named.GetProperty("titleFrom").GetString()));
         var live = await heard.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal("Refunds a cent out", live.GetProperty("thread").GetProperty("title").GetString());
-        await sam.Post(ch, "I see it on orders over 100 too.", root);
-        Assert.Equal(HttpStatusCode.OK, (await rename(sam, "Refunds a cent out on big orders")).StatusCode);       // he wrote in it now
-        var reviewerOwner = await Json(await rename(alex, "Refund rounding"));                                          // he owns reviewer
-        Assert.Equal(("Refund rounding", "renamed"), (Title(reviewerOwner), reviewerOwner.GetProperty("titleFrom").GetString()));
-        Assert.Equal(new[] { "ThreadRenamed", "ThreadRenamed", "ThreadRenamed" }, app.Sql().Query<string>("SELECT type FROM events WHERE type='ThreadRenamed' AND stream_id=@s", new { s = $"thread-{root}" }));
+        Assert.Equal("Refunds a cent out", live.GetProperty("post").GetProperty("threadTitle").GetString());          // the post's "N replies" chip
+        // the feed's post, the thread's answer and All threads say the same
+        Assert.Equal("Refunds a cent out", (await Json(await rosa.Http.GetAsync($"/api/channels/{ch}/posts"))).EnumerateArray().First(p => Id(p) == root).GetProperty("threadTitle").GetString());
+        Assert.Equal("Refunds a cent out", (await Json(await rosa.Http.GetAsync($"/api/threads/{root}"))).GetProperty("thread").GetProperty("title").GetString());
+        using (var c = app.Sql())
+        {
+            var e = c.QueryFirst<(long? Actor, string Data)>("SELECT actor_id, data FROM events WHERE type='ThreadRenamed' AND stream_id=@s", new { s = $"thread-{root}" });
+            Assert.Equal(sam.Id, e.Actor);
+            Assert.Contains("\"title\":\"Refunds a cent out\"", e.Data);
+        }
 
-        // resolved: the outcome's title; renamed after that: the new name; an empty name goes back to the outcome's
+        // resolved after it was named: the name stays (the outcome is the outcome card's)
         await Resolve(app, reviewer, root, "Tax rounds per line, not per order");
-        Assert.Equal(("Tax rounds per line, not per order", "outcome"), (Title(await Thread(rosa, ch, root)), (await Thread(rosa, ch, root)).GetProperty("titleFrom").GetString()));
-        await rename(rosa, "Per-line rounding");
-        Assert.Equal("Per-line rounding", Title(await Thread(rosa, ch, root)));
-        await rename(rosa, "");
-        Assert.Equal("Tax rounds per line, not per order", Title(await Thread(rosa, ch, root)));
-        // reopened: not resolved any more, so the first words again
-        (await rosa.Http.PostAsJsonAsync($"/api/threads/{root}/reopen", new { })).EnsureSuccessStatusCode();
-        Assert.Equal("Why is the refund total a cent out…", Title(await Thread(rosa, ch, root)));
-        // the thread's own answer carries it too, and whether the caller may rename
-        var t = await Json(await sam.Http.GetAsync($"/api/threads/{root}"));
-        Assert.True(t.GetProperty("canRename").GetBoolean());
-        Assert.Equal(root, t.GetProperty("thread").GetProperty("rootId").GetInt64());
+        Assert.Equal(("Refunds a cent out", "renamed"), (Title(await Thread(rosa, ch, root)), (await Thread(rosa, ch, root)).GetProperty("titleFrom").GetString()));
+        // a thread nobody named takes its outcome's title, and keeps it when it's reopened
+        await reviewer.End(root);
+        var other = Id(await rosa.Post(ch, "@reviewer what does roundTax do?"));
+        await reviewer.NextDelivery();
+        await Resolve(app, reviewer, other, "roundTax rounds to the cent");
+        Assert.Equal(("roundTax rounds to the cent", "outcome"), (Title(await Thread(rosa, ch, other)), (await Thread(rosa, ch, other)).GetProperty("titleFrom").GetString()));
+        (await rosa.Http.PostAsJsonAsync($"/api/threads/{other}/reopen", new { })).EnsureSuccessStatusCode();
+        Assert.Equal("roundTax rounds to the cent", Title(await Thread(rosa, ch, other)));
+        // and someone can still name it
+        (await rosa.Http.PutAsJsonAsync($"/api/threads/{other}/title", new { title = "Rounding to the cent" })).EnsureSuccessStatusCode();
+        Assert.Equal(("Rounding to the cent", "renamed"), (Title(await Thread(rosa, ch, other)), (await Thread(rosa, ch, other)).GetProperty("titleFrom").GetString()));
+
+        // search finds a thread by its title, and shows it as the title; the audit says who renamed it
+        await Until(async () =>
+        {
+            var hits = (await Json(await rosa.Http.GetAsync("/api/search?q=cent+out"))).GetProperty("threads").GetProperty("items").EnumerateArray().ToList();
+            return hits.Any(h => h.GetProperty("rootId").GetInt64() == root && h.GetProperty("title").GetString() == "Refunds a cent out");
+        }, "search to find the thread by its name");
+        var byName = (await Json(await rosa.Http.GetAsync("/api/search?q=rounding+cent"))).GetProperty("threads").GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(byName, h => h.GetProperty("rootId").GetInt64() == other && h.GetProperty("title").GetString() == "Rounding to the cent");
+        await Until(async () => (await Json(await alex.Http.GetAsync("/api/audit"))).GetProperty("entries").EnumerateArray()
+            .Any(i => i.GetProperty("sentence").GetString() == "Sam renamed a thread in #checkout-app to “Refunds a cent out”."), "the audit line");
     }
 
     [Fact]

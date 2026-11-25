@@ -43,8 +43,12 @@ public sealed class SearchProjection : IAsyncProjection
                 var post = e.Long("postId");
                 var id = Add(x, "outcome", post, e.Long("channelId"), ThreadProjection.ThreadOf(e), e.Long("agentId"), e);
                 if (id is not null) x.Execute("INSERT INTO search_fts(rowid, title, body) VALUES (@id,@title,@summary)", new { id, title = e.Str("title") ?? "", summary = e.Str("summary") ?? "" });
+                NameThread(x, ThreadProjection.ThreadOf(e), e.Str("title"), onlyIfUnnamed: true);         // the outcome names the thread, unless someone has
                 break;
             }
+            case "ThreadRenamed":
+                NameThread(x, ThreadProjection.ThreadOf(e), e.Str("title"), onlyIfUnnamed: false);
+                break;
             case "ThreadStarted":
                 // the opening post belongs to its thread from now on (a thread's id is its root post's id)
                 x.Execute("UPDATE search_docs SET thread_id=@r WHERE kind='message' AND ref_id=@r", new { r = e.Long("rootId") });
@@ -66,6 +70,15 @@ public sealed class SearchProjection : IAsyncProjection
                 break;
             }
         }
+    }
+
+    /// <summary>A thread's title goes on its opening post's document (titles rank 4x), so the thread is found by its name.</summary>
+    private static void NameThread(ProjectionContext x, long thread, string? title, bool onlyIfUnnamed)
+    {
+        if (thread == 0 || string.IsNullOrEmpty(title)) return;
+        if (onlyIfUnnamed && x.Scalar<int>("SELECT COUNT(*) FROM search_docs WHERE kind='message' AND ref_id=@thread AND named=1", new { thread }) > 0) return;
+        x.Execute("UPDATE search_fts SET title=@title WHERE rowid IN (SELECT id FROM search_docs WHERE kind='message' AND ref_id=@thread AND gone=0)", new { title, thread });
+        if (!onlyIfUnnamed) x.Execute("UPDATE search_docs SET named=1 WHERE kind='message' AND ref_id=@thread", new { thread });
     }
 
     /// <summary>A new document; null when it already exists (an event seen twice adds nothing).</summary>

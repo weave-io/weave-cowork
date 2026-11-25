@@ -724,11 +724,10 @@ screen.
   words and the fold memory (localStorage, per channel). The channel header has Threads; the quick look has "Open full view" and the title.
 
 **Decisions**
-- **Title:** the outcome's while the thread is resolved, unless someone renamed it after it was resolved; else the name given; else the first
-  words of the opening post without mentions (at most 8 words, about 60 characters, "…" when cut, a capital first letter). Reopened, it is
-  not resolved, so the name or the first words again. An empty name goes back to the automatic title.
-- **Who may rename** ("anyone in the thread"): whoever started it, anyone who wrote in it, the owner of an agent in it, and admins; all must
-  see the channel. Someone who only reads the channel may not.
+- **Title** (as the user put it in a follow-up, below): the name someone gave it; until anyone does, the outcome's title once an agent
+  resolves it (and it keeps it if the thread is reopened); until then the first words of the opening post without mentions (at most 8 words,
+  about 60 characters, "…" when cut, a capital first letter). A thread always has a title: an empty one is refused.
+- **Who may rename:** anyone who may post in the thread, that is, any person who sees its channel.
 - **Unread per thread** counts text replies by others after what the person read of that thread (opening it, beside the channel or in full,
   or writing in it), and not before they joined, were added to the channel, or the view began. Reading the channel doesn't read its threads:
   the feed shows only "N replies", not the replies. The channel's own unread count is unchanged (it still includes replies).
@@ -769,11 +768,28 @@ agent's avatar at three quarters size, the status dot, unread in bold with a cou
 channel. "All threads" sits under the last one, without a line. Only `ChannelEntry.vue` changed (the line is two pseudo-elements per row, in a
 token mixed from `--muted`, so it follows both themes). `phase12` again: 32 checks; its screenshots in `docs/screens/brief8/` are this look.
 
+**Follow-up: a thread you can focus on, with a title you can edit** (the user: "If I click on that, I can focus on it. Threads should also
+have a Title and that title should be editable."). Clicking a thread's row opens it in the main area with its row highlighted (as built). The
+title is now the heading of both the full view (19 px) and the side panel (16 px, with "Thread in #checkout-app" under it), edited in place
+(`ThreadTitle.vue`: click the heading or the pencil; Enter saves, Esc cancels, an empty title is refused with "A thread needs a title.")
+and saved as `ThreadRenamed` (now carrying `channelId`) by whoever edited it, anyone who may post in the thread. A rename always wins: the
+outcome names the thread only if nobody has (`threads.title` holds either, `titled_at` says it was a person's; migration 014 sets it from
+existing outcomes). The same title is on the channel-list row, in All threads, on the post's "N replies" chip (`threadTitle` on a root post,
+live through `thread-updated`; when it is the outcome's it keeps `data-testid=thread-outcome`, so phase11 reads it as before), in search
+(the opening post's document carries the thread's title in the 4x-weighted `title` column, so a thread is found by its name, and thread and
+message hits show the title; `search_docs.named` stops an outcome overwriting a person's name; the index replays once) and in the audit
+("Rosa renamed a thread in #checkout-app to “Coupon copy for checkout”."). `ThreadListTests`' title test was rewritten for these rules
+(Sam, who never wrote in the thread, renames it; empty and too long refused; a rename survives a later outcome; an unnamed thread takes its
+outcome's title and keeps it after Reopen; the chip, the feed, live; search by name; the audit line).
+Checked: `dotnet test` 97 server and 37 runner, `bun run test` 38; **`phase12` 35 checks** (new: clicking the heading edits in place and
+Esc saves nothing; an empty title is refused and stays in the editor; Enter saves as Rosa and Alex's list row and the post's chip follow
+live; Rosa renames Alex's thread from the side panel's heading; search finds it by that title and the audit says so; All threads shows the
+same titles), then the whole regression again on this build: `phase1` 24, `phase2` 30, `phase4` 19, `phase5` 22, `phase6` 27, `phase7` 31,
+`phase8` 31, `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 35. Screenshots in `docs/screens/brief8/` are from that run.
+
 **Not done / next**
 - A post whose thread holds only a refused mention's reply says "0 replies" on its card (notices aren't counted as replies); the reply is in
   the thread, which opens for whoever posted.
-- Search still titles threads by their first words; a renamed thread and its outcome title aren't in the search index's title yet. Renames
-  aren't in the audit.
 - The list rule is evaluated when the list is asked for (every thread change and view move asks); a done thread crossing its day while nothing
   happens leaves at the next change. `/api/thread-list` and `views-changed` go to every browser: fine at this size, worth batching later.
 - An agent that mentions an agent it can't reach is silent (only people's mentions get the reply).

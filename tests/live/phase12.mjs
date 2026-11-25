@@ -186,11 +186,22 @@ try {
   await until("researcher's turn to end", () => events('TurnEnded', T1) >= 2, LONG)
   await r.evaluate(() => { const el = document.querySelector('[data-testid=thread-view] .thin-scrollbar'); if (el) el.scrollTop = el.scrollHeight })
   await shots(r, '2-full-view')
-  await r.click('[data-testid=rename-thread]')
-  await r.fill('[data-testid=thread-view] [name=threadTitle]', 'roundTax rounds each line'); await r.click('[data-testid=save-title]')
-  await until("Alex's list to show the new name", async () => clean(await a.textContent(`${row(T1)} [data-testid=thread-row-title]`)) === 'roundTax rounds each line', 15000)
-  expect(clean(await r.textContent('[data-testid=thread-view] [data-testid=thread-title]')) === 'roundTax rounds each line' && events('ThreadRenamed', T1) === 1,
-    'Rosa renamed it (ThreadRenamed); Alex\'s list follows, live')
+  // the title is the full view's heading, edited in place: Esc cancels, an empty title is refused, Enter saves
+  const titleIn = async (p, where) => clean(await p.locator(`${where} [data-testid=thread-title]`).textContent())
+  await r.click('[data-testid=thread-view] [data-testid=thread-title]')
+  await r.fill('[data-testid=thread-view] [name=threadTitle]', 'Never mind'); await r.keyboard.press('Escape')
+  await r.waitForSelector('[data-testid=thread-view] [data-testid=thread-title]')
+  expect(await titleIn(r, '[data-testid=thread-view]') === outcome && events('ThreadRenamed', T1) === 0, 'clicking the heading edits the title in place; Esc cancels and nothing is saved')
+  await r.click('[data-testid=thread-view] [data-testid=rename-thread]')
+  await r.fill('[data-testid=thread-view] [name=threadTitle]', '   '); await r.keyboard.press('Enter')
+  await r.waitForSelector('[data-testid=title-error]')
+  expect(clean(await r.textContent('[data-testid=title-error]')) === 'A thread needs a title.' && await r.locator('[data-testid=thread-view] [name=threadTitle]').count() === 1 && events('ThreadRenamed', T1) === 0,
+    'an empty title is refused: "A thread needs a title.", and it stays in the editor')
+  await r.fill('[data-testid=thread-view] [name=threadTitle]', 'roundTax rounds each line'); await r.keyboard.press('Enter')
+  await until("Alex's list and the post's chip to show the new name", async () => clean(await a.textContent(`${row(T1)} [data-testid=thread-row-title]`)) === 'roundTax rounds each line'
+    && clean(await a.textContent(`[data-post="${T1}"] [data-card-title]`)) === 'roundTax rounds each line', 15000)
+  expect(await titleIn(r, '[data-testid=thread-view]') === 'roundTax rounds each line' && events('ThreadRenamed', T1) === 1 && sql(`select actor_id from events where type='ThreadRenamed'`)[0][0] === rosaId,
+    "Enter saves it (ThreadRenamed, by Rosa); Alex's list row and the post's \"N replies\" chip follow, live")
 
   // --- 1 (cont). five threads per channel, most recent activity first, then All threads; the chevron folds them, remembered ---
   const people = []
@@ -205,15 +216,21 @@ try {
   await api(a, 'POST', `/channels/${CH}/posts`, { body: 'One more note.', threadId: people[0] })
   await until('the oldest to move up', async () => (await rowsIn(r, 'checkout-app'))[0] === people[0], 15000)
   ok('a reply in the oldest moves it to the top (most recent activity first)')
-  await r.click(`[data-threads=checkout-app] [data-thread="${people[1]}"]`)
-  await r.waitForSelector('[data-testid=thread-view] [data-testid=thread-title]:has-text("Coupon codes at checkout")')
-  expect(await r.locator('[data-testid=rename-thread]').count() === 0, "Rosa can't rename Alex's thread she hasn't written in (no Rename)")
-  await r.fill('[data-testid=thread-view] [data-testid=composer]', 'I can write the coupon copy.'); await r.keyboard.press('Enter')
-  await r.waitForSelector('[data-testid=thread-view] [data-testid=rename-thread]', { timeout: 10000 })
-  ok('once she writes in it she is in it, and Rename appears')
+  // anyone who may post in a thread may rename it: Rosa, from the quick look of Alex's thread she never wrote in
+  await r.click('[data-channel=checkout-app]'); await r.click(`[data-post="${people[1]}"] [data-testid=thread-card]`)
+  await r.waitForSelector('[data-testid=thread-panel] [data-testid=thread-title]:has-text("Coupon codes at checkout")')
+  await r.click('[data-testid=thread-panel] [data-testid=thread-title]')
+  await r.fill('[data-testid=thread-panel] [name=threadTitle]', 'Coupon copy for checkout'); await r.keyboard.press('Enter')
+  await until('the panel heading and Alex\'s list', async () => await titleIn(r, '[data-testid=thread-panel]') === 'Coupon copy for checkout'
+    && clean(await a.textContent(`[data-threads=checkout-app] [data-thread="${people[1]}"] [data-testid=thread-row-title]`)) === 'Coupon copy for checkout', 15000)
+  ok("the quick look's heading is the title too: Rosa renamed Alex's thread there (she can post in it), and Alex's list follows")
+  const audit = await until('the audit line', async () => ((await api(a, 'GET', '/audit')).entries ?? []).map(e => e.sentence).find(t => t.includes('renamed a thread')))
+  const found = await until('search to find it by its title', async () => ((await api(r, 'GET', '/search?q=coupon+copy')).threads?.items ?? []).find(t => t.rootId === people[1]))
+  expect(found.title === 'Coupon copy for checkout' && (await api(a, 'GET', '/audit')).entries.some(e => e.sentence === 'Rosa renamed a thread in #checkout-app to “Coupon copy for checkout”.'),
+    `search finds the thread by its title and shows it ("${found.title}"); the audit says "${audit}"`)
   await r.click('[data-fold=checkout-app]')
   await until('the threads to fold', async () => await r.locator('[data-threads=checkout-app]').count() === 0, 5000)
-  await r.reload(); await r.waitForSelector('[data-testid=thread-view] [data-testid=thread-title]')
+  await r.reload(); await r.waitForSelector('[data-testid=thread-panel] [data-testid=thread-title]')
   await r.waitForTimeout(800)
   expect(await r.locator('[data-threads=checkout-app]').count() === 0 && await r.getAttribute('[data-fold=checkout-app]', 'aria-expanded') === 'false', "#checkout-app's chevron folds its threads away, and it's remembered after a reload")
   await r.click('[data-fold=checkout-app]'); await r.waitForSelector('[data-threads=checkout-app] [data-testid=thread-row]')
@@ -239,6 +256,8 @@ try {
   await r.waitForSelector('[data-testid=threads-view] [data-testid=threads-row]')
   const allRows = await r.$$eval('[data-testid=threads-row]', els => els.map(e => Number(e.dataset.thread)))
   expect(allRows.length === 7 && allRows.includes(T1) && allRows.includes(T2) && new URL(r.url()).pathname === `/c/${CH}/threads`, `the Threads button opens All threads: all ${allRows.length} of #checkout-app's threads`)
+  expect(clean(await r.textContent(`[data-testid=threads-row][data-thread="${people[1]}"] [data-testid=threads-row-title]`)) === 'Coupon copy for checkout'
+    && clean(await r.textContent(`[data-testid=threads-row][data-thread="${T1}"] [data-testid=threads-row-title]`)) === 'roundTax rounds each line', 'All threads shows the same titles')
   const firstRow = clean(await r.textContent(`[data-testid=threads-row][data-thread="${T2}"]`))
   expect(firstRow.includes('@researcher') && firstRow.includes('started by Rosa') && firstRow.includes('waiting for you') && firstRow.includes('last activity'), 'each with its title, agent, who started it, status and last activity: ' + firstRow)
   const filtered = async (p, f) => { await p.click(`[data-filter=${f}]`); await p.waitForTimeout(600); return p.$$eval('[data-testid=threads-row]', els => els.map(e => Number(e.dataset.thread))) }

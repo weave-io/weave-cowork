@@ -232,6 +232,8 @@ public sealed class SandboxProjection : IInlineProjection
             {
                 var t = ThreadProjection.ThreadOf(e);
                 x.Execute("UPDATE threads SET resolved_post=@post, resolved_at=@at, resolved_by=@a WHERE root_id=@t", new { post = e.Long("postId"), at = e.OccurredAt, a = e.Long("agentId"), t });
+                // the outcome names the thread, unless someone already has
+                x.Execute("UPDATE threads SET title=@title WHERE root_id=@t AND titled_at IS NULL", new { title = e.Str("title"), t });
                 var meta = JsonNode.Parse(e.Data.GetRawText())!.AsObject();
                 meta["state"] = "done"; meta["resolvedAt"] = e.OccurredAt;
                 x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@body,'outcome',@meta,@at,@pos)",

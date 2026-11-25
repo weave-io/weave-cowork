@@ -80,13 +80,14 @@ public static class Q
     /// <summary>The stream a post's events are in: a top-level post in its channel's, a reply in its thread's.</summary>
     public static string StreamOf(PostRow p) => p.ThreadId is { } t ? $"thread-{t}" : $"channel-{p.ChannelId}";
 
-    public static object PostDto(PostRow p, IReadOnlyList<string>? threadAgents = null, ThreadStatus.Status? threadStatus = null) => new
+    public static object PostDto(PostRow p, IReadOnlyList<string>? threadAgents = null, ThreadStatus.Status? threadStatus = null, string? threadTitle = null) => new
     {
         id = p.Id, channelId = p.ChannelId, threadId = p.ThreadId, authorId = p.AuthorId, body = p.Body, kind = p.Kind,
         meta = string.IsNullOrEmpty(p.Meta) ? null : JsonNode.Parse(p.Meta), streaming = p.Streaming, createdAt = p.CreatedAt, position = p.Position,
         replyCount = p.ReplyCount, hasThread = p.HasThread || p.ReplyCount > 0,
         threadAgents,
         threadStatus,           // a thread's root: where its work stands (starting, working, waiting, done)
+        threadTitle,            // a thread's root: the thread's title (brief 8)
     };
 
     public static List<string> ThreadAgentHandles(SqliteConnection c, long threadId) =>
@@ -96,7 +97,8 @@ public static class Q
     public static object FullPostDto(SqliteConnection c, long id)
     {
         var p = Post(c, id)!;
-        return PostDto(p, p.ThreadId is null ? ThreadAgentHandles(c, p.Id) : null, p.ThreadId is null && p.HasThread ? ThreadStatus.Of(c, p.Id) : null);
+        return PostDto(p, p.ThreadId is null ? ThreadAgentHandles(c, p.Id) : null, p.ThreadId is null && p.HasThread ? ThreadStatus.Of(c, p.Id) : null,
+            p.ThreadId is null && p.HasThread ? ThreadList.TitleFor(c, p.Id) : null);
     }
 
     public static object MemberDto(MemberRow m, bool online) => new

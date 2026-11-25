@@ -40,8 +40,8 @@ public class ImporterTests
         {
             // positions differ by design; what brief 5 added to the answers (projects, a channel's project, a thread agent's workspace, all
             // empty for a database from before projects), brief 7 added (an agent's placement, image and model, a thread's sandbox, who paused it and its usage)
-            // and brief 8 added (a thread's summary for the channel list, and whether the caller may rename it) wasn't in the old server's answers
-            case JsonObject o: foreach (var k in o.Where(kv => kv.Key is "position" or "at" or "projects" or "projectId" or "placement" or "image" or "model" or "sandbox" or "pausedBy" or "usage" or "threadStatus" or "thread" or "canRename" || kv.Key == "workspace" && kv.Value is null).Select(kv => kv.Key).ToList()) o.Remove(k); foreach (var kv in o.ToList()) Strip(kv.Value); break;
+            // and brief 8 added (a thread's summary for the channel list, its title on its post, and whether the caller may rename it) wasn't in the old server's answers
+            case JsonObject o: foreach (var k in o.Where(kv => kv.Key is "position" or "at" or "projects" or "projectId" or "placement" or "image" or "model" or "sandbox" or "pausedBy" or "usage" or "threadStatus" or "thread" or "threadTitle" or "canRename" || kv.Key == "workspace" && kv.Value is null).Select(kv => kv.Key).ToList()) o.Remove(k); foreach (var kv in o.ToList()) Strip(kv.Value); break;
             case JsonArray a: foreach (var x in a) Strip(x); break;
         }
         return n!;

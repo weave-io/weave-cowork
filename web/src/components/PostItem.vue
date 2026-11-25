@@ -96,10 +96,12 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
         class="mt-1.5 flex w-full max-w-[560px] cursor-pointer items-center gap-2 rounded-card border border-border bg-card-bg px-3 py-2 text-left transition-colors hover:border-accent" data-testid="thread-card"
         @click="emit('open-thread', post.id)">
         <MessageSquare :size="14" class="shrink-0 text-accent-text" aria-hidden="true" />
+        <!-- the thread's title; when it is the outcome's, it is also the outcome beside "done" -->
+        <span v-if="post.threadTitle" class="min-w-0 truncate text-[13px] font-semibold text-text" :data-card-title="post.threadTitle"
+          :data-testid="post.threadStatus?.state === 'done' && post.threadStatus.outcome === post.threadTitle ? 'thread-outcome' : 'thread-card-title'">{{ post.threadTitle }}</span>
         <span class="shrink-0 text-[13px] font-semibold whitespace-nowrap text-accent-text">{{ post.replyCount === 1 ? '1 reply' : `${post.replyCount} replies` }}</span>
-        <span v-for="h in post.threadAgents ?? []" :key="h" class="rounded-[5px] bg-accent-dim px-1.5 font-mono text-[11.5px] text-accent-text">@{{ h }}</span>
-        <ThreadStatusPill :status="post.threadStatus" />
-        <span v-if="post.threadStatus?.state === 'done' && post.threadStatus.outcome" class="min-w-0 truncate text-xs text-muted" data-testid="thread-outcome">{{ post.threadStatus.outcome }}</span>
+        <span v-for="h in post.threadAgents ?? []" :key="h" class="shrink-0 rounded-[5px] bg-accent-dim px-1.5 font-mono text-[11.5px] text-accent-text">@{{ h }}</span>
+        <ThreadStatusPill :status="post.threadStatus" class="shrink-0" />
       </button>
       <Button v-if="!inThread && !post.hasThread && post.replyCount === 0" variant="outline" size="sm" class="absolute top-1 right-2 hidden h-7 gap-1 px-2 text-[12px] group-hover:inline-flex focus-visible:inline-flex" @click="emit('open-thread', post.id)"><MessageSquare :size="12" aria-hidden="true" />Reply in thread</Button>
     </div>

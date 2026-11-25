@@ -29,7 +29,7 @@ public static partial class Api
             return Results.Ok(ThreadList.InChannel(c, id, me, filter));
         });
 
-        // anyone in the thread may rename it; an empty title goes back to the automatic one
+        // anyone who may post in the thread may rename it; a thread always has a title, so an empty one is refused
         authed.MapPut("/threads/{id:long}/title", (long id, ThreadTitleBody b, HttpContext ctx, Db db, IEventStore store) =>
         {
             var me = Me(ctx);
@@ -38,10 +38,12 @@ public static partial class Api
             {
                 var channel = c.ExecuteScalar<long?>("SELECT channel_id FROM threads WHERE root_id=@id", new { id });
                 if (channel is null || !Access.CanSee(c, channel.Value, me)) return Err(404, "No such thread.");
-                if (!ThreadList.CanRename(c, id, me)) return Err(403, "Only people in this thread can rename it.");
+                if (!ThreadList.CanRename(c, id, me)) return Err(403, "Only people who can post in this thread can rename it.");
+                if (title.Length == 0) return Err(400, "A thread needs a title.");
                 if (title.Length > 120) return Err(400, "That's too long (120 characters at most).");
             }
-            store.Append(new[] { new NewEvent($"thread-{id}", "ThreadRenamed", new { threadId = id, title = title.Length == 0 ? null : title }, me) });
+            using (var c = db.Open())
+                store.Append(new[] { new NewEvent($"thread-{id}", "ThreadRenamed", new { threadId = id, channelId = c.ExecuteScalar<long>("SELECT channel_id FROM threads WHERE root_id=@id", new { id }), title }, me) });
             using var c2 = db.Open();
             return Results.Ok(ThreadList.Of(c2, id));
         });

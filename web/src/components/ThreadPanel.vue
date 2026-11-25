@@ -10,6 +10,7 @@ import ThreadStatusPill from './ThreadStatusPill.vue'
 import SessionLines from './threads/SessionLines.vue'
 import ThreadConversation from './threads/ThreadConversation.vue'
 import { threadPath } from '../threads'
+import ThreadTitle from './threads/ThreadTitle.vue'
 
 // A thread's quick look beside the channel (from a post's "N replies"); "Open full view" gives it the main area.
 const emit = defineEmits<{ close: [] }>()
@@ -26,15 +27,14 @@ async function send(text: string) {
   <aside v-if="t" class="flex min-h-0 min-w-0 flex-col bg-panel-bg" aria-label="Thread" data-testid="thread-panel">
     <div class="border-b border-border px-3.5 py-2.5">
       <div class="flex items-center gap-2">
-        <h2 class="m-0 text-[15px] font-semibold">Thread</h2>
-        <span class="flex items-center gap-0.5 text-[13px] text-muted">in <Hash :size="12" aria-hidden="true" class="ml-0.5" />{{ channelName }}</span>
-        <ThreadStatusPill :status="t.root.threadStatus" class="ml-1" />
-        <span class="ml-auto flex items-center gap-0.5">
+        <ThreadTitle :thread="t" />
+        <ThreadStatusPill :status="t.root.threadStatus" class="shrink-0" />
+        <span class="flex shrink-0 items-center gap-0.5">
           <Button variant="toolbar-icon" size="toolbar" aria-label="Open full view" title="Open full view" data-testid="open-full-view" @click="full"><Maximize2 :size="14" /></Button>
           <Button variant="toolbar-icon" size="toolbar" aria-label="Close thread" @click="emit('close')"><X :size="16" /></Button>
         </span>
       </div>
-      <div v-if="t.summary" class="mt-0.5 truncate text-[13px] font-medium" data-testid="panel-thread-title">{{ t.summary.title }}</div>
+      <div class="mt-0.5 flex items-center gap-0.5 text-[12.5px] text-muted">Thread in <Hash :size="12" aria-hidden="true" class="ml-0.5" />{{ channelName }}</div>
       <SessionLines :agents="t.agents" :started-by="t.startedBy" />
     </div>
     <ThreadConversation :thread="t" />

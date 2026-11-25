@@ -131,9 +131,10 @@ public static class Search
                 items = threads.Select(t => new
                 {
                     rootId = t.RootId, channelId = t.ChannelId, channelName = Channel(t.ChannelId), authorId = t.AuthorId, at = t.CreatedAt,
-                    title = t.BestPost == t.RootId ? t.BestSnippet : Excerpt(t.Body), replyCount = t.ReplyCount, matches = t.Matches,
+                    // the thread's title (its name, its outcome's, or the first words of its opening post); what matched under it
+                    title = ThreadList.TitleFor(c, t.RootId) ?? Excerpt(t.Body), replyCount = t.ReplyCount, matches = t.Matches,
                     agents = Q.ThreadAgentHandles(c, t.RootId),
-                    match = t.BestPost == t.RootId ? null : new { postId = t.BestPost, authorId = t.BestAuthor, snippet = t.BestSnippet },
+                    match = new { postId = t.BestPost, authorId = t.BestAuthor, snippet = t.BestSnippet },
                 }),
             },
             messages = new
@@ -142,7 +143,7 @@ public static class Search
                 items = messages.Select(m => new
                 {
                     postId = m.PostId, channelId = m.ChannelId, channelName = Channel(m.ChannelId), threadId = m.ThreadId, authorId = m.AuthorId, at = m.OccurredAt,
-                    snippet = m.Snippet, threadTitle = m.ThreadId is { } t ? Excerpt(Root(t) ?? "", 60) : null,
+                    snippet = m.Snippet, threadTitle = m.ThreadId is { } t ? ThreadList.TitleFor(c, t) ?? Excerpt(Root(t) ?? "", 60) : null,
                 }),
             },
         };

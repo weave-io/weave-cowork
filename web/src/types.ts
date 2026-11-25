@@ -27,6 +27,8 @@ export interface Post {
   replyCount: number; hasThread: boolean; threadAgents?: string[] | null
   /** a thread's root: where its work stands */
   threadStatus?: ThreadStatus | null
+  /** a thread's root: the thread's title (its name, its outcome's, or the first words of its opening post) */
+  threadTitle?: string | null
   /** the position of the last event that changed this post: of two copies, the higher one is newer */
   position?: number
 }
