@@ -2,7 +2,7 @@ import { reactive, computed } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { get, post, ApiError } from './api'
 import { applyEvent } from './reducer'
-import type { Channel, FeedState, Member, Post, ThreadState } from './types'
+import type { Channel, FeedState, Member, Post, Project, ThreadState } from './types'
 
 export const store = reactive({
   phase: 'loading' as 'loading' | 'setup' | 'signin' | 'app',
@@ -11,6 +11,7 @@ export const store = reactive({
   isAdmin: false,
   members: [] as Member[],
   channels: [] as Channel[],
+  projects: [] as Project[],
   feed: { channelId: null, posts: [], thread: null } as FeedState,
   loadingFeed: false,
   voice: { enabled: false, url: null as string | null },
@@ -60,6 +61,7 @@ export async function loadBootstrap() {
   store.isAdmin = b.isAdmin
   store.members = b.members
   store.channels = b.channels
+  store.projects = b.projects ?? []
   store.voice = b.voice ?? { enabled: false, url: null }
   store.voicePresence = b.voicePresence ?? {}
   return b
@@ -81,7 +83,7 @@ export async function signOut() {
   await hub?.stop(); hub = null
   store.phase = 'signin'
   store.feed = { channelId: null, posts: [], thread: null }
-  store.members = []; store.channels = []
+  store.members = []; store.channels = []; store.projects = []
 }
 
 export async function openChannel(id: number | null) {
@@ -172,8 +174,11 @@ function startHub() {
   hub.start().then(() => { store.live = true; loadUnread() }).catch(() => { store.live = false })
 }
 
-/** Who is in a channel: public channels include every person plus the agents added; private ones only those added. */
+/** Who is in a channel: a public channel outside any project includes every person plus the agents added; one inside a project, the project's
+ *  people and agents (the server sends them as its members); a private one only those added. */
 export function channelMembers(ch: Channel | null): Member[] {
   if (!ch) return []
-  return store.members.filter(m => !m.removed && (m.kind === 'person' ? (!ch.isPrivate || ch.memberIds.includes(m.id)) : ch.memberIds.includes(m.id)))
+  const open = !ch.isPrivate && ch.projectId == null
+  return store.members.filter(m => !m.removed && (m.kind === 'person' && open || ch.memberIds.includes(m.id)))
 }
+export const projectById = (id: number | null | undefined) => store.projects.find(p => p.id === id)

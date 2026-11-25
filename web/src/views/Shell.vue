@@ -28,12 +28,16 @@ import Mentions from '../components/modals/Mentions.vue'
 import AgentActivity from '../components/modals/AgentActivity.vue'
 import SearchView from './SearchView.vue'
 import { searchFocus } from '../search'
+import NewProject from '../components/modals/NewProject.vue'
+import AddAgentToProject from '../components/modals/AddAgentToProject.vue'
+import ProjectSettings from './ProjectSettings.vue'
 
 const route = useRoute(), router = useRouter()
 const ids = computed(() => {
   const m = /^\/c\/(\d+)(?:\/t\/(\d+))?/.exec(route.path)
   return { channel: m ? Number(m[1]) : null, thread: m?.[2] ? Number(m[2]) : null }
 })
+const projectPage = computed(() => { const m = /^\/p\/(\d+)/.exec(route.path); return m ? Number(m[1]) : null })
 const scroller = ref<HTMLElement | null>(null)
 const searching = computed(() => route.path === '/search')
 
@@ -74,6 +78,7 @@ watch([ids, () => store.channels.length], async () => {
   const ok = want != null && store.channels.some(c => c.id === want)
   if (!ok) {
     const first = store.channels.find(c => c.name === 'general') ?? store.channels[0]
+    if (projectPage.value != null) { await openChannel(null); return }          // a project's settings page: no channel open
     if (first && (want != null || route.path === '/' || route.path === '')) router.replace(`/c/${first.id}`)
     else if (!first) await openChannel(null)
     return
@@ -94,6 +99,7 @@ watch(() => [posts.value.length, store.feed.channelId], async () => {
 watch(searching, async s => { if (!s) { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight } }, { flush: 'post' })
 
 const goChannel = (id: number) => { navOpen.value = false; router.push(`/c/${id}`) }
+const goProject = (id: number) => { navOpen.value = false; router.push(`/p/${id}`) }
 const openT = (rootId: number) => router.push(`/c/${store.feed.channelId}/t/${rootId}`)
 const closeT = () => router.push(`/c/${store.feed.channelId}`)
 
@@ -109,17 +115,18 @@ async function send(text: string) {
       <!-- desktop: the rail and the channel list sit on the window; the phone moves them behind the menu button -->
       <template v-if="!isPhone">
         <Rail />
-        <div class="flex w-[244px] min-w-0 shrink-0 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" @go="goChannel" /></div>
+        <div class="flex w-[244px] min-w-0 shrink-0 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" :project-id="projectPage" @go="goChannel" @project="goProject" /></div>
       </template>
       <template v-else-if="navOpen">
         <div class="fixed inset-0 z-40 bg-black/60" @click="navOpen = false" />
         <div class="fixed inset-y-0 left-0 z-50 flex w-[min(340px,calc(100%-56px))] border-r border-border bg-main-bg" data-testid="phone-nav">
-          <Rail /><div class="flex min-w-0 flex-1 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" @go="goChannel" /></div>
+          <Rail /><div class="flex min-w-0 flex-1 flex-col"><Sidebar :channel-id="searching ? null : store.feed.channelId" :project-id="projectPage" @go="goChannel" @project="goProject" /></div>
         </div>
       </template>
 
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-panel-bg" :class="isPhone ? '' : 'rounded-panel border border-border shadow-(--sheet-shadow)'">
         <SearchView v-if="searching" />
+        <ProjectSettings v-else-if="projectPage != null" :key="projectPage" :project-id="projectPage" class="min-h-0 min-w-0 flex-1" />
         <template v-else>
         <main class="flex min-h-0 min-w-0 flex-1 flex-col" :class="isPhone && store.feed.thread && 'hidden'">
           <template v-if="currentChannel">
@@ -165,6 +172,8 @@ async function send(text: string) {
       <Mentions v-if="store.modal?.name === 'mentions'" />
       <AgentActivity v-if="store.modal?.name === 'agent-activity'" :agent-id="store.modal.props.id" />
       <SettingsDialog v-if="store.modal?.name === 'settings'" />
+      <AppDialog v-if="store.modal?.name === 'new-project'" title="New project" wide @close="closeModal"><NewProject /></AppDialog>
+      <AddAgentToProject v-if="store.modal?.name === 'add-agent-to-project'" :project-id="store.modal.props.projectId" />
     </div>
   </TooltipProvider>
 </template>

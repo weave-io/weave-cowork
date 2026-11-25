@@ -2,7 +2,7 @@
 import { computed, nextTick, watch, ref } from 'vue'
 import { store, memberById } from '../store'
 import { post } from '../api'
-import { X, Hash } from 'lucide-vue-next'
+import { X, Hash, GitBranch } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import StatusDot from './StatusDot.vue'
 import PostItem from './PostItem.vue'
@@ -50,7 +50,8 @@ async function send(text: string) {
         <span class="rounded-[5px] border border-border px-1.5 font-mono text-[11.5px]">session</span>
         <b class="text-text">@{{ a.handle }}</b>
         <span class="font-mono text-[11.5px]" :title="a.harnessCommand.join(' ')" data-testid="session-command">{{ shortCommand(a.harnessCommand) }}</span>
-        <span v-if="a.runnerHost">· on {{ a.runnerHost }}</span>
+        <span v-if="a.workspace?.branch" class="flex items-center gap-1" data-testid="session-branch">· <GitBranch :size="12" aria-hidden="true" /><code class="font-mono text-[11.5px]">{{ a.workspace.branch }}</code></span>
+        <span v-if="a.workspace?.host ?? a.runnerHost" :class="!(a.workspace?.sandboxed) && 'text-idle-text'" data-testid="session-where">· {{ a.workspace?.sandboxed ? 'sandboxed' : 'unsandboxed' }} on {{ a.workspace?.host ?? a.runnerHost }}</span>
         <span v-if="startedBy">· started by {{ startedBy.displayName }}</span>
         <span class="ml-auto flex items-center gap-1.5" data-testid="agent-status">
           <StatusDot :state="dot(a)" />

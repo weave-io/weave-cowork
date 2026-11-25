@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search } from 'lucide-vue-next'
+import { ChevronDown, Hash, Lock, Volume2, Plus, Mic, MicOff, LogOut, Palette, UserPlus, Bot, Users, Check, AtSign, ScrollText, Search, Settings2, FolderPlus } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { searchShortcut } from '../search'
 import { navOpen } from '../layout'
@@ -15,10 +15,15 @@ import {
 import MemberAvatar from './MemberAvatar.vue'
 import StatusDot from './StatusDot.vue'
 
-defineProps<{ channelId: number | null }>()
-const emit = defineEmits<{ go: [id: number] }>()
-const text = computed(() => store.channels.filter(c => c.kind !== 'voice'))
-const voices = computed(() => store.channels.filter(c => c.kind === 'voice'))
+defineProps<{ channelId: number | null; projectId?: number | null }>()
+const emit = defineEmits<{ go: [id: number]; project: [id: number] }>()
+// channels outside any project; each project is a group of its own (text first, then voice)
+const text = computed(() => store.channels.filter(c => c.kind !== 'voice' && c.projectId == null))
+const voices = computed(() => store.channels.filter(c => c.kind === 'voice' && c.projectId == null))
+const groups = computed(() => store.projects.map(p => ({
+  project: p,
+  channels: store.channels.filter(c => c.projectId === p.id).sort((a, b) => Number(a.kind === 'voice') - Number(b.kind === 'voice') || a.name.localeCompare(b.name)),
+})))
 const unreadIn = (id: number) => store.unread.channels[String(id)] ?? 0
 const route = useRoute(), router = useRouter()
 const searching = computed(() => route.path === '/search')
@@ -50,6 +55,29 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
         <Search :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">Search</span>
         <kbd class="ml-auto font-sans text-[11px] text-muted">{{ searchShortcut }}</kbd>
       </button>
+      <section v-for="g in groups" :key="g.project.id" :data-project="g.project.name" class="pt-3">
+        <div class="group flex items-center gap-1.5 px-2.5 pb-1">
+          <span class="truncate text-[11px] font-semibold tracking-[0.05em] text-muted uppercase" data-testid="project-name">{{ g.project.name }}</span>
+          <span class="rounded-[4px] bg-accent-dim px-1 text-[9.5px] font-semibold tracking-[0.06em] text-accent-text uppercase">project</span>
+          <span class="ml-auto flex">
+            <Button variant="toolbar-icon" size="toolbar" class="size-6" :class="projectId === g.project.id && 'text-accent-text'" :aria-label="`${g.project.name} settings`" title="Project settings" data-testid="project-settings" @click="emit('project', g.project.id)"><Settings2 :size="14" /></Button>
+            <Button variant="toolbar-icon" size="toolbar" class="size-6" :aria-label="`Create a channel in ${g.project.name}`" title="Create a channel" @click="openModal('create-channel', { projectId: g.project.id })"><Plus :size="14" /></Button>
+          </span>
+        </div>
+        <template v-for="c in g.channels" :key="c.id">
+          <button type="button" class="chan" :class="{ active: c.id === channelId, unread: unreadIn(c.id) > 0 }" :data-channel="c.name" :data-kind="c.kind" :aria-current="c.id === channelId ? 'true' : undefined" @click="emit('go', c.id)">
+            <Volume2 v-if="c.kind === 'voice'" :size="14" class="shrink-0" aria-hidden="true" /><Lock v-else-if="c.isPrivate" :size="14" class="shrink-0" aria-label="Private" /><Hash v-else :size="14" class="shrink-0" aria-hidden="true" />
+            <span class="truncate">{{ c.name }}</span>
+            <span v-if="unreadIn(c.id) > 0" class="count" data-testid="unread-badge" :aria-label="`${unreadIn(c.id)} unread`">{{ unreadIn(c.id) > 99 ? '99+' : unreadIn(c.id) }}</span>
+          </button>
+          <ul v-if="c.kind === 'voice' && store.voicePresence[c.id]?.length" class="m-0 mb-1 list-none py-0 pr-2 pl-[30px]" :data-voice-members="c.name">
+            <li v-for="id in store.voicePresence[c.id]" :key="id" class="flex items-center gap-2 py-[3px] text-[12.5px] text-muted" :data-voice-member="memberById(id)?.handle">
+              <MemberAvatar :member="memberById(id)" size="xs" /><span class="truncate">{{ memberById(id)?.displayName }}</span>
+            </li>
+          </ul>
+        </template>
+      </section>
+
       <div class="flex items-center justify-between px-2.5 pt-3 pb-1">
         <span class="text-[11px] font-semibold tracking-[0.05em] text-muted uppercase">Channels</span>
         <Button variant="toolbar-icon" size="toolbar" class="size-6" aria-label="Create channel" data-testid="create-channel" @click="openModal('create-channel')"><Plus :size="14" /></Button>
@@ -72,6 +100,7 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
           </li>
         </ul>
       </template>
+      <button type="button" class="chan mt-3 text-accent-text" data-testid="new-project" @click="openModal('new-project')"><FolderPlus :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">New project</span></button>
     </div>
 
     <div v-if="voice.status === 'connected' && voice.channelId != null" class="mx-1 mb-1 flex items-center gap-2 rounded-card border border-border bg-card-bg px-2.5 py-1.5 text-[12.5px]" data-testid="voice-bar">
@@ -115,4 +144,5 @@ const themeLabel = computed(() => selection.value === 'system' ? 'System' : them
 .chan.unread { color: var(--text); font-weight: 600; }
 .count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--accent-foreground, #fff); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .chan.active svg { color: var(--accent-text); }
+.chan.text-accent-text, .chan.text-accent-text svg { color: var(--accent-text); }
 </style>

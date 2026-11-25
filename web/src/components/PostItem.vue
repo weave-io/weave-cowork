@@ -56,7 +56,7 @@ const toolIcon = computed(() => toolIcons[meta.value.toolKind] ?? Wrench)
     <div v-else class="mt-1 text-[12.5px] text-muted">{{ meta.status === 'answered' ? `${owner?.displayName} chose “${answered ?? 'allow'}”` : `${owner?.displayName} denied this` }}</div>
   </div>
 
-  <div v-else-if="post.kind === 'notice'" class="my-1 ml-[44px] text-[12.5px] text-muted italic">{{ author?.displayName }}: {{ post.body }}</div>
+  <div v-else-if="post.kind === 'notice'" class="my-1 ml-[44px] text-[12.5px] text-muted italic" data-testid="notice">{{ author?.displayName }}: {{ post.body }}</div>
 
   <div v-else class="group relative grid grid-cols-[32px_minmax(0,1fr)] gap-3 rounded-btn px-2.5 py-1.5 transition-colors hover:bg-text/4" :data-post="post.id">
     <MemberAvatar :member="author" class="mt-0.5" />
