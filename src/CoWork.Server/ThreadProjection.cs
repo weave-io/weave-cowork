@@ -114,6 +114,10 @@ public sealed class ThreadProjection : IInlineProjection
                     ["requestId"] = e.Str("requestId"), ["agentId"] = e.Long("agentId"), ["ownerId"] = e.Long("ownerId"), ["title"] = e.Str("title"),
                     ["options"] = JsonNode.Parse(e.Data.GetProperty("options").GetRawText()), ["status"] = "pending",
                 };
+                // a template's asks: whoever started the thread answers, and the project's leads may after a while
+                if (e.Data.TryGetProperty("leadIds", out var leads) && leads.ValueKind == System.Text.Json.JsonValueKind.Array && leads.GetArrayLength() > 0)
+                { meta["leadIds"] = JsonNode.Parse(leads.GetRawText()); meta["leadAfter"] = e.LongOrNull("leadAfter"); }
+                if (e.LongOrNull("agentOwnerId") is { } agentOwner) meta["agentOwnerId"] = agentOwner;
                 x.Execute("INSERT INTO posts(id, channel_id, thread_id, author_id, body, kind, meta, created_at, position) VALUES (@id,@ch,@t,@a,@title,'ask',@meta,@at,@pos)",
                     new { id = e.Long("postId"), ch = e.Long("channelId"), t = ThreadOf(e), a = e.Long("agentId"), title = e.Str("title"), meta = meta.ToJsonString(), at = e.OccurredAt, pos = e.Position });
                 break;

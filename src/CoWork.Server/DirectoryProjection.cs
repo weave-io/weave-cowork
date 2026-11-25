@@ -79,19 +79,21 @@ public sealed class DirectoryProjection : IInlineProjection
             case "AgentCreated":
                 x.Execute("INSERT INTO members(id, kind, handle, display_name, created_at) VALUES (@id,'agent',@h,@n,@at)",
                     new { id = e.Long("agentId"), h = e.Str("handle"), n = e.Str("displayName"), at = e.OccurredAt });
-                x.Execute(@"INSERT INTO agents(member_id, owner_id, about, instructions, harness_command, workspace, record_tool_output)
-                            VALUES (@id,@owner,@about,@ins,@cmd,@ws,@rec)",
+                x.Execute(@"INSERT INTO agents(member_id, owner_id, about, instructions, harness_command, workspace, record_tool_output, placement, image, model)
+                            VALUES (@id,@owner,@about,@ins,@cmd,@ws,@rec,@placement,@image,@model)",
                     new { id = e.Long("agentId"), owner = e.Long("ownerId"), about = e.Str("about") ?? "", ins = e.Str("instructions") ?? "", cmd = e.Data.GetProperty("harnessCommand").GetRawText(),
-                          ws = e.Str("workspace"), rec = e.Bool("recordToolOutput") ? 1 : 0 });
+                          ws = e.Str("workspace") ?? "", rec = e.Bool("recordToolOutput") ? 1 : 0, placement = e.Str("placement") ?? "runner", image = e.Str("image"), model = e.Str("model") });
                 break;
             case "AgentEdited":
             {
                 var id = e.Long("agentId");
                 x.Execute("UPDATE agents SET about=@about, instructions=@ins, harness_command=@cmd, workspace=@ws WHERE member_id=@id",
-                    new { about = e.Str("about") ?? "", ins = e.Str("instructions") ?? "", cmd = e.Data.GetProperty("harnessCommand").GetRawText(), ws = e.Str("workspace"), id });
+                    new { about = e.Str("about") ?? "", ins = e.Str("instructions") ?? "", cmd = e.Data.GetProperty("harnessCommand").GetRawText(), ws = e.Str("workspace") ?? "", id });
                 if (e.Data.TryGetProperty("recordToolOutput", out var rec) && rec.ValueKind is JsonValueKind.True or JsonValueKind.False)
                     x.Execute("UPDATE agents SET record_tool_output=@rec WHERE member_id=@id", new { rec = rec.GetBoolean() ? 1 : 0, id });
                 if (!string.IsNullOrWhiteSpace(e.Str("displayName"))) x.Execute("UPDATE members SET display_name=@n WHERE id=@id", new { n = e.Str("displayName"), id });
+                if (e.Str("image") is { } image) x.Execute("UPDATE agents SET image=@image WHERE member_id=@id", new { image, id });       // a template's image and model
+                if (e.Str("model") is { } model) x.Execute("UPDATE agents SET model=@model WHERE member_id=@id", new { model, id });
                 break;
             }
             case "EnrolmentCodeIssued":

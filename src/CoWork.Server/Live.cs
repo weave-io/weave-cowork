@@ -62,6 +62,16 @@ public static class Effects
                     break;
                 case "TurnFailed":
                     Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
+                // a sandbox's starting card appears, then its rows change; the session line follows its state
+                case "SandboxRequested":
+                    Post(EffectKind.PostCreated, e.Long("postId"), e.Position); Thread(t, e.Position); break;
+                case "SandboxPlaced":
+                    if (e.LongOrNull("postId") is { } placed) Post(EffectKind.PostUpdated, placed, e.Position);
+                    foreach (var w in c.Query<long>("SELECT post_id FROM sandboxes WHERE state='waiting' AND post_id IS NOT NULL")) Post(EffectKind.PostUpdated, w, e.Position);     // the queue moved up
+                    Thread(t, e.Position); break;
+                case "SandboxStarted": case "SandboxResumed": case "SandboxConnected": case "SandboxSuspending": case "SandboxSuspended": case "SandboxFailed": case "SandboxDeleted":
+                    if (e.LongOrNull("postId") is { } card) Post(EffectKind.PostUpdated, card, e.Position);
+                    Thread(t, e.Position); break;
                 case "TurnInterrupted":
                     if (e.LongOrNull("postId") is { } notice) Post(EffectKind.PostCreated, notice, e.Position);
                     if (e.Data.TryGetProperty("finalizedPostIds", out var ids)) foreach (var id in ids.EnumerateArray()) Post(EffectKind.PostUpdated, id.GetInt64(), e.Position);
@@ -78,7 +88,8 @@ public sealed class ThreadViews
 {
     private readonly Db _db;
     private readonly RunnerRegistry _runners;
-    public ThreadViews(Db db, RunnerRegistry runners) { _db = db; _runners = runners; }
+    private readonly SandboxRegistry _sandboxes;
+    public ThreadViews(Db db, RunnerRegistry runners, SandboxRegistry sandboxes) { _db = db; _runners = runners; _sandboxes = sandboxes; }
 
     /// <summary>The post as the app shows it, or null if it is gone (deleted since).</summary>
     public static JsonObject? PostPayload(SqliteConnection c, long id, long? at)
@@ -102,7 +113,10 @@ public sealed class ThreadViews
         return c.Query<MemberRow>(Q.MemberSelect + " JOIN thread_agents ta ON ta.agent_id=m.id AND ta.thread_id=@rootId WHERE m.removed=0", new { rootId })
             .Select(a => (object)new
             {
-                id = a.Id, handle = a.Handle, displayName = a.DisplayName, online = _runners.IsOnline(a.Id),
+                id = a.Id, handle = a.Handle, displayName = a.DisplayName, online = a.IsTemplate ? _sandboxes.ConnectionOf(a.Id, rootId) is not null : _runners.IsOnline(a.Id),
+                placement = a.Placement,
+                // a template's sandbox for this thread: where it is and what state it's in
+                sandbox = a.IsTemplate ? c.QueryFirstOrDefault<ThreadSandbox>("SELECT s.state, p.name AS pool, s.starts FROM sandboxes s LEFT JOIN pools p ON p.id=s.pool_id WHERE s.thread_id=@rootId AND s.agent_id=@id", new { rootId, id = a.Id }) : null,
                 busy = c.ExecuteScalar<int>("SELECT COUNT(*) FROM open_turns WHERE thread_id=@rootId AND agent_id=@id", new { rootId, id = a.Id }) > 0,
                 queued = c.ExecuteScalar<int>(Deliveries.QueuedIn, new { agentId = a.Id, stream = $"thread-{rootId}" }),
                 harnessCommand = JsonSerializer.Deserialize<string[]>(a.HarnessCommand!), runnerHost = a.RunnerHost, ownerId = a.OwnerId,
@@ -111,6 +125,8 @@ public sealed class ThreadViews
             }).ToList();
     }
 }
+
+public sealed class ThreadSandbox { public string State { get; set; } = ""; public string? Pool { get; set; } public int Starts { get; set; } }
 
 public sealed class ThreadPlace { public string? Place { get; set; } public string? Branch { get; set; } public string? Host { get; set; } public bool Sandboxed { get; set; } }
 

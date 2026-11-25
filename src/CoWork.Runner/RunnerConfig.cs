@@ -9,11 +9,15 @@ public sealed class RunnerConfig
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     public string Path { get; }
+    /// <summary>COWORK_RUNNER_CONFIG names the folder outright. A pool needs it to keep its files apart without moving XDG_CONFIG_HOME or
+    /// XDG_DATA_HOME, because rootless podman keeps its images and settings under those.</summary>
     public RunnerConfig(string? path = null)
     {
+        var own = Environment.GetEnvironmentVariable("COWORK_RUNNER_CONFIG");
         var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
-        var dir = string.IsNullOrEmpty(xdg) ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config") : xdg;
-        Path = path ?? System.IO.Path.Combine(dir, "cowork-runner", "agents.json");
+        var dir = !string.IsNullOrEmpty(own) ? own
+            : System.IO.Path.Combine(string.IsNullOrEmpty(xdg) ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config") : xdg, "cowork-runner");
+        Path = path ?? System.IO.Path.Combine(dir, "agents.json");
     }
 
     /// <summary>Where the runner keeps agents' clones, worktrees and per-project harness data: COWORK_RUNNER_DATA, else XDG_DATA_HOME/cowork-runner,

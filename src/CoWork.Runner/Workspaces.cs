@@ -30,8 +30,18 @@ public sealed class Workspaces
     public Workspaces(string agentRoot) { _root = agentRoot; }
     public string Root => _root;
 
+    /// <summary>Inside a sandbox the pool already made the thread's workspace (a copy of the repository on the thread's branch, in its volume):
+    /// every message works there.</summary>
+    public string? Fixed { get; init; }
+
     public async Task<PreparedWorkspace> Prepare(DeliverMessage m)
     {
+        if (Fixed is { } fixedPlace)
+        {
+            Directory.CreateDirectory(fixedPlace);
+            var branch = (await TryGit(fixedPlace, "rev-parse", "--abbrev-ref", "HEAD"))?.Trim();
+            return new(fixedPlace, "sandbox", string.IsNullOrEmpty(branch) || branch == "HEAD" ? m.ThreadWorkspace?.Branch : branch, fixedPlace, m.ThreadWorkspace?.WorkspaceId);
+        }
         if (m.ThreadWorkspace is not { } w)
         {
             var own = Path.GetFullPath(m.Workspace);

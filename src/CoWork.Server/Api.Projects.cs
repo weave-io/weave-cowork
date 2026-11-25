@@ -70,12 +70,12 @@ public static partial class Api
         });
 
         // the settings page: workspace, people with roles, agents with where they run and their grants, the rules in force
-        authed.MapGet("/projects/{id:long}", (long id, HttpContext ctx, Db db, RunnerRegistry runners) =>
+        authed.MapGet("/projects/{id:long}", (long id, HttpContext ctx, Db db, RunnerRegistry runners, PoolRegistry pools) =>
         {
             var me = Me(ctx);
             using var c = db.Open();
             if (!Access.CanSeeProject(c, id, me)) return Err(404, "No such project.");
-            return Results.Ok(Settings(c, id, me, runners));
+            return Results.Ok(Settings(c, id, me, runners, pools));
         });
 
         authed.MapPatch("/projects/{id:long}", async (long id, ProjectPatchBody b, HttpContext ctx, Db db, Realtime rt, IEventStore store) =>
@@ -188,7 +188,7 @@ public static partial class Api
         });
 
         // an agent's boundary in a project, in sentences: for the add-agent dialog (with the grant it would get) and for its profile
-        authed.MapGet("/projects/{id:long}/agents/{agentId:long}/boundary", (long id, long agentId, string? takesWorkFrom, HttpContext ctx, Db db, RunnerRegistry runners) =>
+        authed.MapGet("/projects/{id:long}/agents/{agentId:long}/boundary", (long id, long agentId, string? takesWorkFrom, HttpContext ctx, Db db, RunnerRegistry runners, Sandboxes sandboxes) =>
         {
             var me = Me(ctx);
             using var c = db.Open();
@@ -197,7 +197,7 @@ public static partial class Api
             if (agent is null || agent.Kind != "agent" || agent.Removed) return Err(404, "No such agent.");
             var grant = c.QueryFirstOrDefault<string?>("SELECT takes_work_from FROM project_agents WHERE project_id=@id AND agent_id=@agentId", new { id, agentId });
             var from = takesWorkFrom is "owner" or "members" ? takesWorkFrom : grant ?? "members";
-            return Results.Ok(Boundary.For(c, Projects.Get(c, id)!, agent, from, runners.IsOnline(agentId)));
+            return Results.Ok(Boundary.For(c, Projects.Get(c, id)!, agent, from, runners.IsOnline(agentId), sandboxes.IdleSeconds()));
         });
 
         // add an agent to a project, or change its grant. Adding: a lead or admin who owns the agent (or an admin). The grant: also its owner.
@@ -223,7 +223,7 @@ public static partial class Api
             return Results.Ok(new { ok = true });
         });
 
-        authed.MapDelete("/projects/{id:long}/agents/{agentId:long}", async (long id, long agentId, HttpContext ctx, Db db, Realtime rt, IEventStore store) =>
+        authed.MapDelete("/projects/{id:long}/agents/{agentId:long}", async (long id, long agentId, HttpContext ctx, Db db, Realtime rt, IEventStore store, Sandboxes sandboxes) =>
         {
             var me = Me(ctx);
             using (var c = db.Open())
@@ -234,6 +234,7 @@ public static partial class Api
                 if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM project_agents WHERE project_id=@id AND agent_id=@agentId", new { id, agentId }) == 0) return Results.Ok(new { ok = true });
             }
             store.Append(new[] { new NewEvent($"project-{id}", "AgentRemovedFromProject", new { projectId = id, agentId }, me) });
+            await sandboxes.StopAll(agentId, id, "it left the project");        // a template's thread tokens for this project stop working
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(new { ok = true });
         });
@@ -290,7 +291,7 @@ public static partial class Api
     }
 
     /// <summary>What the project's settings page shows.</summary>
-    static object Settings(SqliteConnection c, long id, long me, RunnerRegistry runners)
+    static object Settings(SqliteConnection c, long id, long me, RunnerRegistry runners, PoolRegistry pools)
     {
         var p = Projects.Get(c, id)!;
         var workspaces = Projects.Workspaces(c, id);
@@ -314,7 +315,9 @@ public static partial class Api
             agents = agents.Select(a => new
             {
                 id = a.Agent.Id, handle = a.Agent.Handle, displayName = a.Agent.DisplayName, ownerId = a.Agent.OwnerId, ownerName = NameOf(a.Agent.OwnerId),
-                runnerHost = a.Agent.RunnerHost, online = runners.IsOnline(a.Agent.Id), takesWorkFrom = a.Grant.TakesWorkFrom, sandboxed = false,
+                runnerHost = a.Agent.RunnerHost, online = a.Agent.IsTemplate ? pools.Online.Count > 0 : runners.IsOnline(a.Agent.Id), takesWorkFrom = a.Grant.TakesWorkFrom,
+                sandboxed = a.Agent.IsTemplate, placement = a.Agent.Placement,
+                pools = a.Agent.IsTemplate ? c.Query<string>("SELECT name FROM pools WHERE removed=0 AND enrolled_at IS NOT NULL ORDER BY id").ToList() : null,
                 canChange = Access.CanEditProject(c, id, me) || a.Agent.OwnerId == me,
             }).ToList(),
             channels = c.Query<ChannelRow>("SELECT * FROM channels WHERE project_id=@id ORDER BY kind='voice', name", new { id }).Where(ch => Access.CanSee(c, ch.Id, me))
@@ -332,7 +335,7 @@ public static partial class Api
         if (ws.Any(w => w.Kind == "folder"))
             rules.Add("A folder can only be used by agents whose runner is on its machine. A git folder gets a worktree per thread too; any other folder is shared.");
         if (ws.Count == 0) rules.Add("No workspace: each thread gets an empty folder on its agent's machine.");
-        rules.Add("An agent's permission requests go to its owner only; everyone else sees that it's waiting.");
+        rules.Add("A pinned agent's permission requests go to its owner; a team template's to whoever started the thread, then a lead. Everyone else sees that it's waiting.");
         rules.Add("An agent only takes work from who its grant says; anyone else gets a short reply in the thread.");
         rules.Add("Agent-to-agent turns stop after 3 without a person.");
         rules.Add("What an agent's harness keeps for this project stays in a data folder for this project.");

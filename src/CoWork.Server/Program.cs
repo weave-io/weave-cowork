@@ -20,6 +20,7 @@ builder.Services.AddSingleton(VoiceOptions.From(builder.Configuration));
 builder.Services.AddSingleton<IInlineProjection, DirectoryProjection>();        // projections run in this order, inside the transaction that appended the event
 builder.Services.AddSingleton<IInlineProjection, ProjectProjection>();
 builder.Services.AddSingleton<IInlineProjection, ThreadProjection>();
+builder.Services.AddSingleton<IInlineProjection, SandboxProjection>();
 builder.Services.AddSingleton<IEventStore, SqliteEventStore>();
 builder.Services.AddSingleton<IAsyncProjection, AuditProjection>();          // async projections: after the commit, from a checkpoint, rebuildable from zero
 builder.Services.AddSingleton<IAsyncProjection, UnreadProjection>();
@@ -31,6 +32,11 @@ builder.Services.AddSingleton<LiveQueue>();
 builder.Services.AddSingleton<ThreadViews>();
 builder.Services.AddHostedService<LivePublisher>();
 builder.Services.AddSingleton<RunnerRegistry>();
+builder.Services.AddSingleton<PoolRegistry>();
+builder.Services.AddSingleton<SandboxRegistry>();
+builder.Services.AddSingleton<Sandboxes>();
+builder.Services.AddHostedService<SandboxReaper>();
+builder.Services.AddSingleton<Gateway>();
 builder.Services.AddSingleton<Dispatcher>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();
 builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
@@ -39,6 +45,10 @@ builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
     o.KeepAliveInterval = TimeSpan.FromSeconds(3);
     o.ClientTimeoutInterval = TimeSpan.FromSeconds(10);
     o.MaximumReceiveMessageSize = 1024 * 1024;       // a tool's output (up to 64 kB) rides on one message
+}).AddHubOptions<PoolHub>(o =>
+{
+    o.KeepAliveInterval = TimeSpan.FromSeconds(3);
+    o.ClientTimeoutInterval = TimeSpan.FromSeconds(10);
 });
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 builder.Services.AddAuthorization();
@@ -73,21 +83,33 @@ if (migrated.Any(m => m.EndsWith("005_views.sql")) && db.Open().Using(c => c.Exe
 // a turn that started and never ended was cut off by a crash or a restart: the thread says so
 app.Services.GetRequiredService<Dispatcher>().RecoverInterruptedTurns();
 
-// runners authenticate with a token, stored only as a hash
+// runners, sandboxes and pools authenticate with a token, stored only as a hash. Each kind of token opens one door: a runner's token and a
+// sandbox's thread token the runner hub (the thread token for its own thread only), a pool's token the pool hub. The gateway checks thread
+// tokens itself.
 app.Use(async (ctx, next) =>
 {
-    if (ctx.Request.Path.StartsWithSegments("/hubs/runner"))
+    var runner = ctx.Request.Path.StartsWithSegments("/hubs/runner");
+    var pool = ctx.Request.Path.StartsWithSegments("/hubs/pool");
+    if (runner || pool)
     {
         var h = ctx.Request.Headers.Authorization.ToString();
         var token = h.StartsWith("Bearer ") ? h[7..] : ctx.Request.Query["access_token"].ToString();
-        long? agentId = null;
+        var ok = false;
         if (!string.IsNullOrEmpty(token))
         {
             using var c = ctx.RequestServices.GetRequiredService<Db>().Open();
-            agentId = c.QueryFirstOrDefault<long?>("SELECT rs.agent_id FROM runner_secrets rs JOIN members m ON m.id=rs.agent_id WHERE rs.token_hash=@h AND m.removed=0", new { h = Tokens.Hash(token) });
+            var hash = Tokens.Hash(token);
+            if (runner)
+            {
+                if (c.QueryFirstOrDefault<long?>("SELECT rs.agent_id FROM runner_secrets rs JOIN members m ON m.id=rs.agent_id WHERE rs.token_hash=@hash AND m.removed=0", new { hash }) is { } agentId)
+                { ctx.Items["agentId"] = agentId; ok = true; }
+                else if (ThreadTokens.Find(c, hash) is { } t)
+                { ctx.Items["agentId"] = t.AgentId; ctx.Items["threadId"] = t.ThreadId; ctx.Items["sandboxId"] = t.SandboxId; ok = true; }
+            }
+            else if (c.QueryFirstOrDefault<long?>("SELECT ps.pool_id FROM pool_secrets ps JOIN pools p ON p.id=ps.pool_id WHERE ps.token_hash=@hash AND p.removed=0", new { hash }) is { } poolId)
+            { ctx.Items["poolId"] = poolId; ok = true; }
         }
-        if (agentId is null) { ctx.Response.StatusCode = 401; return; }
-        ctx.Items["agentId"] = agentId.Value;
+        if (!ok) { ctx.Response.StatusCode = 401; return; }
     }
     await next();
 });
@@ -105,10 +127,12 @@ if (Directory.Exists(wwwroot))
 
 app.MapHub<AppHub>("/hubs/app");
 app.MapHub<RunnerHub>("/hubs/runner");
+app.MapHub<PoolHub>("/hubs/pool");
+Gateway.Map(app);
 Api.Map(app);
 app.MapFallback(async ctx =>
 {
-    if (ctx.Request.Path.StartsWithSegments("/api") || ctx.Request.Path.StartsWithSegments("/hubs")) { ctx.Response.StatusCode = 404; return; }
+    if (ctx.Request.Path.StartsWithSegments("/api") || ctx.Request.Path.StartsWithSegments("/hubs") || ctx.Request.Path.StartsWithSegments("/gateway")) { ctx.Response.StatusCode = 404; return; }
     var index = Path.Combine(wwwroot, "index.html");
     if (!File.Exists(index)) { ctx.Response.StatusCode = 404; await ctx.Response.WriteAsync("The web app isn't built. Run `bun run build` in web/."); return; }
     ctx.Response.ContentType = "text/html";

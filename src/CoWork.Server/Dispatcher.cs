@@ -25,6 +25,8 @@ public sealed class Dispatcher
     private readonly IHubContext<RunnerHub> _runnerHub;
     private readonly LiveQueue _live;
     private readonly ThreadViews _views;
+    private readonly SandboxRegistry _sandboxConns;
+    private readonly Sandboxes _sandboxes;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly ConcurrentDictionary<(long, long), TurnState> _turns = new();
 
@@ -43,8 +45,12 @@ public sealed class Dispatcher
 
     private sealed class InFlight { public long ThreadId { get; set; } public long ChannelId { get; set; } public string? Turn { get; set; } public long? Behalf { get; set; } public long? Cause { get; set; } }
 
-    public Dispatcher(Db db, IEventStore store, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> runnerHub, LiveQueue live, ThreadViews views)
-    { _db = db; _store = store; _rt = rt; _runners = runners; _runnerHub = runnerHub; _live = live; _views = views; }
+    public Dispatcher(Db db, IEventStore store, Realtime rt, RunnerRegistry runners, IHubContext<RunnerHub> runnerHub, LiveQueue live, ThreadViews views,
+        SandboxRegistry sandboxConns, Sandboxes sandboxes)
+    { _db = db; _store = store; _rt = rt; _runners = runners; _runnerHub = runnerHub; _live = live; _views = views; _sandboxConns = sandboxConns; _sandboxes = sandboxes; }
+
+    /// <summary>Where a message for this agent in this thread goes: a template's sandbox for that thread, else the agent's runner.</summary>
+    private string? ConnectionFor(MemberRow agent, long threadId) => agent.IsTemplate ? _sandboxConns.ConnectionOf(agent.Id, threadId) : _runners.ConnectionOf(agent.Id);
 
     private static readonly Regex MentionRx = new(@"(?<![\w@])@([a-zA-Z0-9][a-zA-Z0-9_-]*)", RegexOptions.Compiled);
     private static string NewTurn() => "t-" + Guid.NewGuid().ToString("N")[..12];
@@ -94,7 +100,7 @@ public sealed class Dispatcher
                 var channel = ctx.Query<ChannelRow>("SELECT * FROM channels WHERE id=@channelId", new { channelId }).First();
                 postId = ctx.NextId("posts");
                 var mentions = Mentions(body).ToArray();
-                var mentioned = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND rs.token_hash IS NOT NULL
+                var mentioned = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND " + Q.CanWork + @"
                     AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != author.Id && mentions.Contains(a.Handle.ToLowerInvariant())).ToList();
                 var posted = new { postId, channelId, threadId, body = body, mentions };
@@ -132,7 +138,7 @@ public sealed class Dispatcher
                 var targets = new Dictionary<long, MemberRow>();
                 if (threadId is not null)
                     foreach (var a in ctx.Query<MemberRow>(Q.MemberSelect + @" JOIN thread_agents ta ON ta.agent_id = m.id AND ta.thread_id=@root
-                        WHERE m.removed=0 AND rs.token_hash IS NOT NULL AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { root, channelId }))
+                        WHERE m.removed=0 AND " + Q.CanWork + @" AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { root, channelId }))
                         if (Refusal(ctx, channel, a, authorId) is null) targets[a.Id] = a;      // a reply from someone the grant doesn't allow isn't passed on (only a mention gets the short reply)
                 foreach (var a in mentioned) targets[a.Id] = a;
                 targets.Remove(author.Id);
@@ -160,15 +166,18 @@ public sealed class Dispatcher
     /// <summary>Sends each agent's next queued delivery per thread, if the runner is connected and that thread's agent is idle.</summary>
     public async Task Pump(long agentId)
     {
+        List<(long Thread, long? Behalf)> pendingSandboxes = new();
         await _lock.WaitAsync();
         try
         {
-            var conn = _runners.ConnectionOf(agentId);
-            if (conn is null) return;
-            var sends = new List<(Deliveries.Row Row, string Turn, DeliverMessage Msg)>();
+            bool template;
+            using (var c = _db.Open()) template = c.ExecuteScalar<string?>("SELECT placement FROM agents WHERE member_id=@agentId", new { agentId }) == "pool";
+            if (!template && _runners.ConnectionOf(agentId) is null) return;
+            var sends = new List<(Deliveries.Row Row, string Turn, DeliverMessage Msg, string Conn)>();
+            var needSandbox = new List<(long Thread, long? Behalf)>();
             var stored = _store.Append(ctx =>
             {
-                sends.Clear();
+                sends.Clear(); needSandbox.Clear();
                 var agent = ctx.Query<MemberRow>(Q.MemberSelect + " WHERE m.id=@agentId", new { agentId }).FirstOrDefault();
                 if (agent is null || agent.Removed) return Array.Empty<NewEvent>();
                 var record = ctx.Scalar<int>("SELECT record_tool_output FROM agents WHERE member_id=@agentId", new { agentId }) == 1;
@@ -179,17 +188,20 @@ public sealed class Dispatcher
                 foreach (var r in ctx.Query<Deliveries.Row>(Deliveries.Queued, new { agentId }))
                 {
                     if (!seen.Add(r.ThreadId) || busy.Contains(r.ThreadId)) continue;
+                    var to = ConnectionFor(agent, r.ThreadId);
+                    if (to is null) { if (agent.IsTemplate) needSandbox.Add((r.ThreadId, r.Behalf)); continue; }      // a template's thread with no sandbox connected: ask for one
                     var turn = r.Turn ?? NewTurn();
-                    evs.Add(new NewEvent($"thread-{r.ThreadId}", "TurnStarted", new { agentId, deliveryId = r.Position, host = agent.RunnerHost }, agentId, r.Behalf, turn, r.Position));
-                    var (project, where) = WorkspaceOf(ctx, r.ThreadId, agent);
+                    var host = agent.IsTemplate ? ctx.Scalar<string?>("SELECT p.name FROM sandboxes s JOIN pools p ON p.id=s.pool_id WHERE s.thread_id=@t AND s.agent_id=@agentId", new { t = r.ThreadId, agentId }) : agent.RunnerHost;
+                    evs.Add(new NewEvent($"thread-{r.ThreadId}", "TurnStarted", new { agentId, deliveryId = r.Position, host }, agentId, r.Behalf, turn, r.Position));
+                    var (project, where) = WorkspaceOf(ctx, r.ThreadId, agent, forPool: agent.IsTemplate);
                     sends.Add((r, turn, new DeliverMessage(r.Position, r.ThreadId, agentId, agent.Handle, agent.Instructions ?? "",
-                        JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace!, r.Text, record, project, where)));
+                        JsonSerializer.Deserialize<string[]>(agent.HarnessCommand!)!, agent.Workspace ?? "", r.Text, record, project, where), to));
                 }
                 return evs;
             });
             for (var i = 0; i < sends.Count; i++)
             {
-                var (r, turn, msg) = sends[i];
+                var (r, turn, msg, conn) = sends[i];
                 long channelId;
                 using (var c = _db.Open()) channelId = c.ExecuteScalar<long>("SELECT channel_id FROM threads WHERE root_id=@t", new { t = r.ThreadId });
                 _turns[(r.ThreadId, agentId)] = new TurnState { ThreadId = r.ThreadId, AgentId = agentId, ChannelId = channelId, Turn = turn, Behalf = r.Behalf, StartedAt = stored[i].Position };
@@ -200,19 +212,21 @@ public sealed class Dispatcher
                     _store.Append(new[] { new NewEvent($"thread-{r.ThreadId}", "TurnInterrupted", new { agentId, requeued = true, reason = "the runner couldn't be reached" }, agentId, r.Behalf, turn, stored[i].Position) });
                 }
             }
+            pendingSandboxes = needSandbox.ToList();
         }
         finally { _lock.Release(); }
+        foreach (var (thread, behalf) in pendingSandboxes) await _sandboxes.Ensure(thread, agentId, behalf);
     }
 
     /// <summary>Where a thread works: outside a project, the agent's own folder (null, null); inside one, the project's first workspace this agent
     /// can reach (a repository anywhere, a folder only on its own machine), or none, with the thread's own branch.</summary>
-    private static (long? Project, ThreadWorkspace? Where) WorkspaceOf(IDecisionContext ctx, long threadId, MemberRow agent)
+    internal static (long? Project, ThreadWorkspace? Where) WorkspaceOf(IDecisionContext ctx, long threadId, MemberRow agent, bool forPool = false)
     {
         var t = ctx.Query<(long ChannelId, string? Slug)>("SELECT channel_id, slug FROM threads WHERE root_id=@threadId", new { threadId }).FirstOrDefault();
         var project = ctx.Scalar<long?>("SELECT project_id FROM channels WHERE id=@ch", new { ch = t.ChannelId });
         if (project is null) return (null, null);
         var slug = t.Slug ?? Projects.Slug(ctx.Scalar<string>("SELECT body FROM posts WHERE id=@threadId", new { threadId }) ?? "", threadId);
-        var ws = Projects.WorkspaceFor(ctx.Query<WorkspaceRow>("SELECT * FROM workspaces WHERE project_id=@project ORDER BY id", new { project }), agent.RunnerHost);
+        var ws = Projects.WorkspaceFor(ctx.Query<WorkspaceRow>("SELECT * FROM workspaces WHERE project_id=@project ORDER BY id", new { project }), forPool ? null : agent.RunnerHost);   // a pool's sandboxes reach repositories, not folders on someone's machine
         var branch = Projects.Branch(slug);
         return (project, ws is null
             ? new ThreadWorkspace(null, "none", "none", null, null, null, branch)
@@ -227,6 +241,29 @@ public sealed class Dispatcher
         await _rt.ToAll("bootstrap-changed");
         await BroadcastAgentThreads(agentId);
         await Pump(agentId);
+    }
+
+    /// <summary>The runner inside a sandbox connected with its thread token: the thread's queued message can go.</summary>
+    public async Task SandboxConnected(long sandboxId, long agentId, long threadId, HubCallerContext context)
+    {
+        _store.Append(ctx =>
+        {
+            var s = ctx.Query<SandboxRow>("SELECT * FROM sandboxes WHERE id=@sandboxId", new { sandboxId }).FirstOrDefault();
+            return s is null ? Array.Empty<NewEvent>() : new[] { new NewEvent($"thread-{threadId}", "SandboxConnected", new { sandboxId, agentId, postId = s.PostId }, agentId, s.RequestedBy) };
+        });
+        FailInFlight(agentId, "the sandbox's runner reconnected during this turn", threadId);
+        _sandboxConns.Set(agentId, threadId, new SandboxRegistry.Entry(context.ConnectionId, sandboxId, context));
+        await BroadcastThread(threadId);
+        await Pump(agentId);
+    }
+
+    public async Task SandboxDisconnected(long agentId, long threadId, string conn)
+    {
+        if (!_sandboxConns.Remove(agentId, threadId, conn)) return;
+        string handle;
+        using (var c = _db.Open()) handle = c.ExecuteScalar<string>("SELECT handle FROM members WHERE id=@agentId", new { agentId }) ?? "the agent";
+        FailInFlight(agentId, $"{handle}'s sandbox stopped during this turn", threadId);
+        await BroadcastThread(threadId);
     }
 
     /// <summary>An agent went online or offline: every thread it's in shows its new status.</summary>
@@ -262,12 +299,12 @@ public sealed class Dispatcher
 
     // ---- turns that ended badly --------------------------------------------
 
-    private void FailInFlight(long agentId, string why)
+    private void FailInFlight(long agentId, string why, long? onlyThread = null)
     {
         List<InFlight> stuck;
         using (var c = _db.Open())
             stuck = c.Query<InFlight>(@"SELECT o.thread_id, t.channel_id, o.turn, o.behalf, o.cause FROM open_turns o JOIN threads t ON t.root_id=o.thread_id
-                WHERE o.agent_id=@agentId", new { agentId }).ToList();
+                WHERE o.agent_id=@agentId AND (@onlyThread IS NULL OR o.thread_id=@onlyThread)", new { agentId, onlyThread }).ToList();
         foreach (var s in stuck)
         {
             _turns.TryGetValue((s.ThreadId, agentId), out var st);
@@ -429,9 +466,14 @@ public sealed class Dispatcher
                 // the runner says where it prepared the thread's work: a worktree on its own branch, a folder, a scratch folder or the agent's own folder
                 lock (st.Gate)
                 {
-                    string? host;
-                    using (var c = _db.Open()) host = c.ExecuteScalar<string?>("SELECT runner_host FROM agents WHERE member_id=@agentId", new { agentId });
-                    _store.Append(new[] { Ev(st, "ThreadWorkspaceReady", new { agentId, workspaceId = e.WorkspaceId, place = e.Status, branch = e.Title, location = e.Text, host, sandboxed = false }) });
+                    string? host; var sandboxed = false;
+                    using (var c = _db.Open())
+                    {
+                        host = c.ExecuteScalar<string?>("SELECT runner_host FROM agents WHERE member_id=@agentId", new { agentId });
+                        if (c.ExecuteScalar<string?>("SELECT p.name FROM sandboxes s JOIN pools p ON p.id=s.pool_id WHERE s.thread_id=@t AND s.agent_id=@agentId", new { t = e.ThreadId, agentId }) is { } pool)
+                        { host = pool; sandboxed = true; }      // a template's sandbox: the place is in a container on the pool
+                    }
+                    _store.Append(new[] { Ev(st, "ThreadWorkspaceReady", new { agentId, workspaceId = e.WorkspaceId, place = e.Status, branch = e.Title, location = e.Text, host, sandboxed }) });
                 }
                 break;
             case StreamKinds.Error:
@@ -501,7 +543,7 @@ public sealed class Dispatcher
                 var channel = ctx.Query<ChannelRow>("SELECT * FROM channels WHERE id=@channelId", new { channelId }).First();
                 var lastPost = ctx.Scalar<long?>("SELECT MAX(id) FROM posts WHERE thread_id=@threadId AND author_id=@agentId AND kind='text' AND deleted=0", new { threadId, agentId }) ?? 0;
                 var wanted = Mentions(said).ToHashSet();
-                var targets = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND rs.token_hash IS NOT NULL
+                var targets = ctx.Query<MemberRow>(Q.MemberSelect + @" WHERE m.kind='agent' AND m.removed=0 AND " + Q.CanWork + @"
                     AND m.id IN (SELECT member_id FROM channel_audience WHERE channel_id=@channelId)", new { channelId })
                     .Where(a => a.Id != agentId && wanted.Contains(a.Handle.ToLowerInvariant()));
                 var chain = ctx.Scalar<int>("SELECT agent_chain FROM threads WHERE root_id=@threadId", new { threadId });
@@ -541,9 +583,24 @@ public sealed class Dispatcher
             _store.Append(ctx =>
             {
                 var owner = ctx.Scalar<long>("SELECT owner_id FROM agents WHERE member_id=@agentId", new { agentId });
-                return new[] { Ev(st, "PermissionRequested", new { postId = ctx.NextId("posts"), channelId = st.ChannelId, requestId = r.RequestId, agentId, ownerId = owner, title = r.Title, options = r.Options }) };
+                var (answerer, leads) = Answerers(ctx, agentId, r.ThreadId, owner);
+                return new[] { Ev(st, "PermissionRequested", new { postId = ctx.NextId("posts"), channelId = st.ChannelId, requestId = r.RequestId, agentId, ownerId = answerer, agentOwnerId = owner,
+                    leadIds = leads, leadAfter = leads.Length == 0 ? (long?)null : Db.Now() + LeadAfterMs, title = r.Title, options = r.Options }) };
             });
         return Task.CompletedTask;
+    }
+
+    /// <summary>How long the person who started a template's thread has to answer before the project's leads may (decision 7).</summary>
+    public static long LeadAfterMs = 30 * 60_000;
+
+    /// <summary>Who answers an agent's asks: a pinned agent's owner; a template's in a project, whoever started the thread, and its leads as a fallback.</summary>
+    private static (long Answerer, long[] Leads) Answerers(IDecisionContext ctx, long agentId, long threadId, long owner)
+    {
+        if (ctx.Scalar<string?>("SELECT placement FROM agents WHERE member_id=@agentId", new { agentId }) != "pool") return (owner, Array.Empty<long>());
+        var started = ctx.Scalar<long?>("SELECT started_by FROM threads WHERE root_id=@threadId", new { threadId }) ?? owner;
+        var leads = ctx.Query<long>(@"SELECT pm.member_id FROM project_members pm JOIN channels ch ON ch.project_id=pm.project_id JOIN threads t ON t.channel_id=ch.id
+            WHERE t.root_id=@threadId AND pm.role='lead' AND pm.member_id<>@started ORDER BY pm.member_id", new { threadId, started }).ToArray();
+        return (started, leads);
     }
 
     /// <summary>The owner's answer to an ask card. Returns false if the caller may not answer.</summary>
@@ -556,7 +613,8 @@ public sealed class Dispatcher
             var p = ctx.Query<PostRow>("SELECT * FROM posts WHERE id=@postId", new { postId }).FirstOrDefault();
             if (p is null || p.Kind != "ask" || p.Meta is null) { error = "not found"; return Array.Empty<NewEvent>(); }
             var meta = System.Text.Json.Nodes.JsonNode.Parse(p.Meta)!.AsObject();
-            if ((long)meta["ownerId"]! != callerId) { error = "forbidden"; return Array.Empty<NewEvent>(); }
+            var lead = meta["leadIds"] is System.Text.Json.Nodes.JsonArray ls && ls.Any(l => (long?)l == callerId) && (long?)meta["leadAfter"] <= Db.Now();
+            if ((long)meta["ownerId"]! != callerId && !lead) { error = "forbidden"; return Array.Empty<NewEvent>(); }
             if ((string?)meta["status"] != "pending") { error = "already answered"; return Array.Empty<NewEvent>(); }
             var canSee = ctx.Scalar<int>("SELECT COUNT(*) FROM channels ch WHERE ch.id=@ch AND " + Access.SeesChannel, new { ch = p.ChannelId, m = callerId });
             if (canSee == 0) { error = "forbidden"; return Array.Empty<NewEvent>(); }
@@ -566,7 +624,13 @@ public sealed class Dispatcher
             return new[] { new NewEvent($"thread-{p.ThreadId}", optionId is null ? "PermissionDenied" : "PermissionGranted", new { postId, requestId, agentId, optionId }, callerId, req.Behalf, req.Correlation, req.Position == 0 ? null : req.Position) };
         });
         if (error is not null) return (false, error);
-        var conn = _runners.ConnectionOf(agentId);
+        string? conn;
+        using (var c = _db.Open())
+        {
+            var agent = Q.Member(c, agentId);
+            var thread = c.ExecuteScalar<long>("SELECT thread_id FROM posts WHERE id=@postId", new { postId });
+            conn = agent is null ? null : ConnectionFor(agent, thread);
+        }
         if (conn is not null)
             await _runnerHub.Clients.Client(conn).SendAsync("PermissionAnswer", new PermissionAnswerMsg(requestId, optionId));
         return (true, null);

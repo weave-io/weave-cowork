@@ -87,26 +87,41 @@ public sealed class AppHub : Hub
     }
 }
 
-/// <summary>Runners. The token was checked in middleware; the agent id is in the connection's items.</summary>
+/// <summary>Runners. The token was checked in middleware; the agent id is in the connection's items. A runner inside a sandbox connects with a
+/// thread token: its connection is bound to that one thread (`threadId`, `sandboxId` in the items). It hears only that thread's messages and may
+/// report only that thread's events.</summary>
 public sealed class RunnerHub : Hub
 {
     private readonly Dispatcher _d;
     public RunnerHub(Dispatcher d) { _d = d; }
     private long AgentId => (long)Context.GetHttpContext()!.Items["agentId"]!;
+    private long? BoundThread => Context.GetHttpContext()!.Items.TryGetValue("threadId", out var t) ? t as long? : null;
+    private long? SandboxId => Context.GetHttpContext()!.Items.TryGetValue("sandboxId", out var s) ? s as long? : null;
 
     public override async Task OnConnectedAsync()
     {
-        var host = Context.GetHttpContext()!.Request.Headers["X-Cowork-Host"].ToString();
-        await _d.RunnerConnected(AgentId, Context.ConnectionId, string.IsNullOrWhiteSpace(host) ? null : host);
+        if (SandboxId is { } sandbox) await _d.SandboxConnected(sandbox, AgentId, BoundThread!.Value, Context);
+        else
+        {
+            var host = Context.GetHttpContext()!.Request.Headers["X-Cowork-Host"].ToString();
+            await _d.RunnerConnected(AgentId, Context.ConnectionId, string.IsNullOrWhiteSpace(host) ? null : host);
+        }
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        await _d.RunnerDisconnected(AgentId, Context.ConnectionId);
+        if (SandboxId is not null) await _d.SandboxDisconnected(AgentId, BoundThread!.Value, Context.ConnectionId);
+        else await _d.RunnerDisconnected(AgentId, Context.ConnectionId);
         await base.OnDisconnectedAsync(exception);
     }
 
-    public Task Stream(StreamEvent e) => _d.OnStream(AgentId, e);
-    public Task RequestPermission(PermissionRequestMsg r) => _d.OnPermission(AgentId, r);
+    /// <summary>A sandbox's connection speaks for its own thread only.</summary>
+    private void Check(long threadId)
+    {
+        if (BoundThread is { } t && t != threadId) throw new HubException($"This connection is for thread {t} only.");
+    }
+
+    public Task Stream(StreamEvent e) { Check(e.ThreadId); return _d.OnStream(AgentId, e); }
+    public Task RequestPermission(PermissionRequestMsg r) { Check(r.ThreadId); return _d.OnPermission(AgentId, r); }
 }

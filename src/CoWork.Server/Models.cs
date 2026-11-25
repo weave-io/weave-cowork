@@ -21,6 +21,10 @@ public class MemberRow
     public string? Workspace { get; set; }
     public string? RunnerHost { get; set; }
     public bool HasToken { get; set; }
+    public string Placement { get; set; } = "runner";   // agents: runner (pinned, its owner connects a runner) | pool (a team template: a sandbox per thread)
+    public string? Image { get; set; }
+    public string? Model { get; set; }
+    public bool IsTemplate => Placement == "pool";
 }
 
 public class ChannelRow
@@ -56,7 +60,7 @@ public static class Q
     public const string MemberSelect = @"
         SELECT m.id, m.kind, m.handle, m.display_name, m.created_at, m.removed,
                p.role AS role, a.owner_id, a.about, a.instructions, a.harness_command, a.workspace, a.runner_host,
-               (rs.token_hash IS NOT NULL) AS has_token
+               (rs.token_hash IS NOT NULL) AS has_token, COALESCE(a.placement,'runner') AS placement, a.image, a.model
         FROM members m LEFT JOIN people p ON p.member_id = m.id LEFT JOIN agents a ON a.member_id = m.id LEFT JOIN runner_secrets rs ON rs.agent_id = m.id";
 
     public static MemberRow? Member(SqliteConnection c, long id) =>
@@ -99,6 +103,10 @@ public static class Q
         id = m.Id, kind = m.Kind, handle = m.Handle, displayName = m.DisplayName, removed = m.Removed,
         role = m.Role, ownerId = m.OwnerId, about = m.About, online,
         harnessCommand = m.HarnessCommand is null ? null : JsonSerializer.Deserialize<string[]>(m.HarnessCommand),
-        workspace = m.Workspace, runnerHost = m.RunnerHost, connected = m.HasToken,
+        workspace = m.Workspace, runnerHost = m.RunnerHost, connected = m.HasToken || m.IsTemplate,
+        placement = m.Kind == "agent" ? m.Placement : null, image = m.Image, model = m.Model,
     };
+
+    /// <summary>An agent that can be given work: a pinned agent whose runner enrolled, or a team template (a pool starts it). As SQL on `m`, `rs`, `a`.</summary>
+    public const string CanWork = "(rs.token_hash IS NOT NULL OR a.placement='pool')";
 }

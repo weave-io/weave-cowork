@@ -1,0 +1,32 @@
+# cowork-sandbox-opencode: what a pool starts for each thread of a team template that runs OpenCode (docs/architecture/provisioning.html,
+# "Images"). A small Debian, the runner (self-contained, it connects out to the server with the thread's token), OpenCode at a pinned version,
+# git and ripgrep, and a non-root user. Build it with deploy/sandbox/build.sh, which puts the runner and the OpenCode binary in the context.
+FROM docker.io/library/debian:trixie-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl libstdc++6 libssl3t64 zlib1g \
+ && rm -rf /var/lib/apt/lists/*
+
+# the sandbox's user; /work is the thread's volume (the repository's copy in /work/repo, the harness's home in /work/home)
+RUN useradd --create-home --uid 1000 --shell /bin/bash cowork && mkdir -p /work && chown cowork:cowork /work
+
+COPY --chmod=0755 opencode /usr/local/bin/opencode
+COPY runner/ /opt/cowork-runner/
+
+ENV HOME=/work/home \
+    XDG_CONFIG_HOME=/work/home/.config \
+    XDG_DATA_HOME=/work/home/.local/share \
+    XDG_STATE_HOME=/work/home/.local/state \
+    XDG_CACHE_HOME=/work/home/.cache \
+    OPENCODE_DISABLE_AUTOUPDATE=1 \
+    OPENCODE_DISABLE_MODELS_FETCH=1 \
+    COWORK_WORKSPACE=/work/repo \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+LABEL org.opencontainers.image.title="cowork-sandbox-opencode" \
+      org.opencontainers.image.version="2.4.1" \
+      org.opencontainers.image.description="Weave CoWork sandbox: cowork-runner and OpenCode 2.4.1"
+
+USER cowork
+WORKDIR /work
+ENTRYPOINT ["/opt/cowork-runner/cowork-runner", "sandbox"]

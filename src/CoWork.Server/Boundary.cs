@@ -13,7 +13,7 @@ public static class Boundary
 {
     public sealed record Line(string Key, string Label, string Text);
 
-    public static object For(SqliteConnection c, ProjectRow project, MemberRow agent, string takesWorkFrom, bool online)
+    public static object For(SqliteConnection c, ProjectRow project, MemberRow agent, string takesWorkFrom, bool online, int idleSeconds = Sandboxes.DefaultIdleSeconds)
     {
         var owner = agent.OwnerId is { } o ? Q.Member(c, o) : null;
         var ownerName = owner?.DisplayName ?? "its owner";
@@ -37,6 +37,8 @@ public static class Boundary
         lines.Add(new("takesWorkFrom", "Takes work from", takesWorkFrom == "owner"
             ? $"Only {ownerName}. Anyone else who mentions it gets a short reply: \"{agent.Handle} only takes work from {ownerName}.\""
             : $"Members of {project.Name}: {Projects.List(people)}."));
+
+        if (agent.IsTemplate) return Template(c, project, agent, takesWorkFrom, lines, ownerName, idleSeconds);
 
         // works on
         var all = Projects.Workspaces(c, project.Id);
@@ -68,4 +70,37 @@ public static class Boundary
             warning = $"Runs unsandboxed on {machine}. It can read and change anything the runner's account can there. Threads show this to everyone.",
         };
     }
+
+    /// <summary>A team template's boundary: a sandbox per thread on a pool, the server's model access through the gateway, whoever started the
+    /// thread answers its asks. Round 1 doesn't enforce the network list yet, and the sentence says so.</summary>
+    static object Template(SqliteConnection c, ProjectRow project, MemberRow agent, string takesWorkFrom, List<Line> lines, string ownerName, int idleSeconds)
+    {
+        var pools = c.Query<string>("SELECT name FROM pools WHERE removed=0 AND enrolled_at IS NOT NULL ORDER BY id").ToList();
+        var where = pools.Count == 0 ? "a pool (none is connected yet)" : Projects.List(pools);
+        var chosen = Projects.WorkspaceFor(Projects.Workspaces(c, project.Id), null);
+        var leads = c.Query<string>("SELECT m.display_name FROM project_members pm JOIN members m ON m.id=pm.member_id WHERE pm.project_id=@p AND pm.role='lead' AND m.removed=0 ORDER BY m.display_name", new { p = project.Id }).ToList();
+        lines.Add(new("worksOn", "Works on", chosen is null
+            ? $"An empty workspace in each thread's own sandbox on {where}."
+            : $"`{chosen.Name}` (`{chosen.Url}`, branch `{chosen.Branch}`): {where} keeps a mirror, and each thread gets a copy on its own `cowork/<thread>` branch in its sandbox's volume. The sandbox holds no push credential."));
+        lines.Add(new("reaches", "Reaches", "The server and its model gateway. For now the rest of the network is open too: the project's network list is enforced by the egress proxy, in the next round."));
+        lines.Add(new("asks", "Asks", $"Whoever started the thread; {(leads.Count == 0 ? "an admin" : Projects.List(leads))} if they haven't answered in 30 minutes. Everyone else sees that it's waiting."));
+        lines.Add(new("spends", "Spends", "The server's model access, through CoWork's gateway, counted per thread. No key is ever in the sandbox."));
+        lines.Add(new("remembers", "Remembers", "Each thread's volume on its pool: the copy of the repository and the harness's session, kept when the sandbox stops."));
+        lines.Add(new("stops", "Stops", $"When its turn ends; after {Duration(idleSeconds)} idle the sandbox stops and its volume stays, so the next message picks up where it left off. Agent-to-agent turns stop after 3 without a person."));
+        return new
+        {
+            project = new { id = project.Id, name = project.Name },
+            agent = new { id = agent.Id, handle = agent.Handle, displayName = agent.DisplayName, about = agent.About ?? "", ownerId = agent.OwnerId, ownerName, runnerHost = (string?)null, online = pools.Count > 0,
+                harnessCommand = System.Text.Json.JsonSerializer.Deserialize<string[]>(agent.HarnessCommand ?? "[]"), placement = agent.Placement, image = agent.Image, model = agent.Model },
+            takesWorkFrom,
+            inProject = c.ExecuteScalar<int>("SELECT COUNT(*) FROM project_agents WHERE project_id=@p AND agent_id=@a", new { p = project.Id, a = agent.Id }) > 0,
+            sandboxed = true,
+            lines,
+            warning = "",
+            note = $"Each thread gets its own sandbox on {where}. Model keys stay in CoWork's gateway; the sandbox never holds them.",
+        };
+    }
+
+    public static string Duration(int seconds) => seconds % 3600 == 0 && seconds >= 3600 ? $"{seconds / 3600} hour{(seconds == 3600 ? "" : "s")}"
+        : seconds % 60 == 0 && seconds >= 60 ? $"{seconds / 60} minute{(seconds == 60 ? "" : "s")}" : $"{seconds} seconds";
 }

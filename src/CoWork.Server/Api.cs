@@ -17,8 +17,9 @@ public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? 
 public record PostBody(string Body, long? ThreadId);
 public record AnswerBody(string? OptionId);
 public record RoleBody(string Role);
-public record AgentEditBody(string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace, bool? RecordToolOutput = null);
-public record AgentBody(string Handle, string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string Workspace);
+public record AgentEditBody(string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string? Workspace, bool? RecordToolOutput = null, string? Image = null, string? Model = null);
+/// <param name="Placement">runner: its owner connects a runner (pinned); pool: a team template, a sandbox per thread on a pool.</param>
+public record AgentBody(string Handle, string? DisplayName, string? About, string? Instructions, string? HarnessCommand, string? Workspace, string? Placement = null, string? Image = null, string? Model = null);
 
 public static partial class Api
 {
@@ -143,13 +144,14 @@ public static partial class Api
         });
 
         // ---- everything below needs a signed-in person ----
-        authed.MapGet("/bootstrap", (HttpContext ctx, Db db, RunnerRegistry runners, VoicePresence voice, VoiceOptions vo, IEventStore store) =>
+        authed.MapGet("/bootstrap", (HttpContext ctx, Db db, RunnerRegistry runners, PoolRegistry pools, VoicePresence voice, VoiceOptions vo, IEventStore store) =>
         {
             var me = Me(ctx);
             var position = store.Head();          // read first: a browser catches up from here, so nothing after it can be missed
             using var c = db.Open();
             var server = c.ExecuteScalar<string>("SELECT value FROM settings WHERE key='server_name'");
-            var members = c.Query<MemberRow>(Q.MemberSelect).Select(m => Q.MemberDto(m, m.Kind == "agent" && runners.IsOnline(m.Id))).ToList();
+            var poolOnline = pools.Online.Count > 0;         // a template is available while a pool is online
+            var members = c.Query<MemberRow>(Q.MemberSelect).Select(m => Q.MemberDto(m, m.Kind == "agent" && (m.IsTemplate ? poolOnline : runners.IsOnline(m.Id)))).ToList();
             var visible = Access.VisibleChannelIds(c, me).ToHashSet();
             var channels = c.Query<ChannelRow>("SELECT * FROM channels ORDER BY name").Where(ch => visible.Contains(ch.Id)).Select(ch => new
             {
@@ -205,6 +207,7 @@ public static partial class Api
         MapPosts(authed);
         MapPeople(authed);
         MapAgents(api, authed);
+        MapPools(api, authed);
         MapViews(authed);
         MapProjects(authed);
     }

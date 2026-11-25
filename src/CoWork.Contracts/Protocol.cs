@@ -44,3 +44,50 @@ public static class StreamKinds
 {
     public const string Text = "text", ToolStart = "toolStart", ToolEnd = "toolEnd", ToolUpdate = "toolUpdate", TurnEnded = "turnEnded", Error = "error", Workspace = "workspace";
 }
+
+// ---- pools and sandboxes ------------------------------------------------------------------------------------------
+// A pool is a runner in pool mode: it serves no agent itself. It enrols with a one-time code, and its token may only receive the commands
+// below and report state. The commands take the shape of Agent Substrate's actor API (create, resume, suspend, delete; network rules and
+// credential references as data), so another provider is a translation, not a redesign.
+
+public record PoolEnrolRequest(string Code, string Host, int Slots, long MemoryMb);
+/// <param name="ServerId">The server's own id: with the pool's id it makes the names and labels of what the pool creates unique to this server.</param>
+public record PoolEnrolResponse(long PoolId, string Name, string Token, string? ServerId = null);
+
+/// <summary>Pool → server when it connects: how much room it has and which sandboxes it is running now (by id).</summary>
+public record PoolHello(int Slots, long MemoryMb, string[] Running);
+
+/// <summary>What a sandbox starts from and runs: the template's image and harness, the model it asks the gateway for.</summary>
+public record SandboxTemplate(string Image, string[] HarnessCommand, string? Model);
+
+/// <summary>The thread's workspace inside the sandbox: a repository is copied from the pool's mirror onto <see cref="Branch"/>.</summary>
+public record SandboxWorkspace(string Kind, string? Name, string? Url, string? BaseBranch, string Branch);    // Kind: repository | none
+
+public record SandboxLimits(long MemoryMb, double? Cpus = null);
+
+/// <summary>Network rules in the shape of Substrate's EgressPolicy: hosts a sandbox may reach and, for a host, headers the proxy replaces with a
+/// secret it holds (the sandbox sends a placeholder). Round 1 carries them; enforcing them is the egress proxy's job.</summary>
+public record EgressPolicy(EgressRule[] Rules);
+public record EgressRule(string[] Hosts, ReplaceHeader[]? ReplaceHeaders = null);
+public record ReplaceHeader(string Header, string? Prefix, string CredentialRef);
+
+/// <summary>Create or resume one sandbox: the thread's container. <see cref="ThreadToken"/> is minted for this start only: the runner in the
+/// container connects with it, and it is the sandbox's key to the model gateway. Ids say whose it is; the pool labels what it makes with them.</summary>
+public record SandboxSpec(
+    string SandboxId, long ThreadId, long AgentId, string Handle, long? ProjectId,
+    SandboxTemplate Template, SandboxWorkspace Workspace, SandboxLimits Limits, EgressPolicy Network,
+    string ThreadToken);
+
+public record CreateSandbox(SandboxSpec Spec);
+public record ResumeSandbox(SandboxSpec Spec);
+public record SuspendSandbox(string SandboxId);
+public record DeleteSandbox(string SandboxId);
+
+/// <summary>Pool → server: a sandbox's state. <see cref="WorkspaceMs"/> and <see cref="ContainerMs"/>: how long preparing the volume and starting
+/// the container took (for the thread's starting rows).</summary>
+public record SandboxStateReport(string SandboxId, string State, string? Reason = null, long? WorkspaceMs = null, long? ContainerMs = null);
+
+public static class SandboxStates
+{
+    public const string Suspended = "suspended", Resuming = "resuming", Running = "running", Suspending = "suspending", Failed = "failed", Deleted = "deleted";
+}

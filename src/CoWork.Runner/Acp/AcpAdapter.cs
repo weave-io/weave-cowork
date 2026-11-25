@@ -36,11 +36,15 @@ public sealed class AcpAdapter : IAsyncDisposable
     private readonly SessionStore? _store;
     private readonly ConcurrentDictionary<string, bool> _canLoad = new();
 
+    private readonly bool _sandbox;
+
     /// <param name="agentRoot">This agent's own folder on the runner: clones, worktrees and per-project harness data live under it.</param>
-    public AcpAdapter(IRunnerSink sink, SessionStore? store = null, string? agentRoot = null)
+    /// <param name="sandboxWorkspace">Inside a sandbox: the one workspace every message works in. The sandbox is the thread's, so the harness
+    /// keeps its data in the sandbox's own home (its volume), with no folder per project.</param>
+    public AcpAdapter(IRunnerSink sink, SessionStore? store = null, string? agentRoot = null, string? sandboxWorkspace = null)
     {
-        _sink = sink; _store = store;
-        _places = new Workspaces(agentRoot ?? Path.Combine(Path.GetTempPath(), "cowork-runner", "agent"));
+        _sink = sink; _store = store; _sandbox = sandboxWorkspace is not null;
+        _places = new Workspaces(agentRoot ?? Path.Combine(Path.GetTempPath(), "cowork-runner", "agent")) { Fixed = sandboxWorkspace };
         _places.Log = m => Log?.Invoke(m);
         _pump = Task.Run(async () =>
         {
@@ -62,7 +66,7 @@ public sealed class AcpAdapter : IAsyncDisposable
         await gate.WaitAsync();
         try
         {
-            var key = m.ProjectId is { } project ? $"project-{project}" : "agent";
+            var key = m.ProjectId is { } project && !_sandbox ? $"project-{project}" : "agent";
             var proc = await EnsureProcess(key, m);
             var (sessionId, first) = await EnsureSession(proc, key, m);
             // the agent's instructions go in the first prompt of each session, before the first message
@@ -98,7 +102,8 @@ public sealed class AcpAdapter : IAsyncDisposable
             foreach (var (thread, k) in _procOf.ToList())
                 if (k == key && _sessions.TryRemove(thread, out var sid)) { _threads.TryRemove(sid, out _); _procOf.TryRemove(thread, out _); }
             string cwd; Dictionary<string, string>? env = null;
-            if (m.ProjectId is { } project)
+            if (_sandbox) cwd = _places.Fixed!;
+            else if (m.ProjectId is { } project)
             {
                 cwd = _places.ProjectFolder(project);
                 env = HarnessHome.For(_places.Root, project, l => Log?.Invoke(l));
@@ -126,7 +131,7 @@ public sealed class AcpAdapter : IAsyncDisposable
         var cwd = place.Cwd;
         _workspaces[m.ThreadId] = cwd;
         _procOf[m.ThreadId] = key;
-        if (m.ThreadWorkspace is not null)
+        if (m.ThreadWorkspace is not null || _sandbox)
             Emit(new StreamEvent(m.ThreadId, StreamKinds.Workspace, place.Location, null, place.Branch, null, place.Place, WorkspaceId: place.WorkspaceId));
         var saved = _store?.Get(m.ThreadId);
         if (saved is not null && _canLoad.GetValueOrDefault(key))

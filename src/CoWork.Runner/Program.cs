@@ -5,6 +5,9 @@ using CoWork.Runner;
 // cowork-runner: connects agents' harnesses to a Weave CoWork server.
 //   cowork-runner connect <server> --code XXXX-XXXX   enrol this machine for an agent, then keep serving
 //   cowork-runner run                                 serve every agent saved on this machine
+//   cowork-runner pool connect <server> --code …      enrol this machine as a pool (sandboxes per thread, rootless podman), then serve
+//   cowork-runner pool run                            serve the pools saved on this machine
+//   cowork-runner sandbox                             inside a sandbox: serve one thread with the token in COWORK_THREAD_TOKEN
 return await Cli.Main(args);
 
 static class Cli
@@ -36,8 +39,103 @@ static class Cli
             return await Serve(config, Opt(args, "--host") ?? host);
         }
         if (cmd == "run") return await Serve(config, Opt(args, "--host") ?? host);
-        Console.Error.WriteLine("cowork-runner connect <server> --code XXXX-XXXX\ncowork-runner run");
+        if (cmd == "pool") return await PoolMode(config, args.Skip(1).ToArray(), host);
+        if (cmd == "sandbox") return await SandboxMode();
+        Console.Error.WriteLine("cowork-runner connect <server> --code XXXX-XXXX\ncowork-runner run\ncowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M\ncowork-runner pool run");
         return cmd is null or "--help" or "-h" ? 0 : 2;
+    }
+
+    /// <summary>`pool connect`: enrol this machine as a pool with a one-time code, save it, then serve. `pool run`: serve the pools saved here.</summary>
+    static async Task<int> PoolMode(RunnerConfig agents, string[] args, string host)
+    {
+        var pools = new PoolConfig(agents);
+        var sub = args.FirstOrDefault();
+        if (sub == "connect")
+        {
+            var server = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"));
+            var code = Opt(args, "--code");
+            if (server is null || code is null) { Console.Error.WriteLine("Usage: cowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M"); return 2; }
+            server = server.TrimEnd('/');
+            var slots = int.TryParse(Opt(args, "--slots"), out var sl) && sl > 0 ? sl : 2;
+            var memory = MemoryMb(Opt(args, "--memory") ?? "1500M");
+            if (memory is null) { Console.Error.WriteLine("--memory is a size like 1500M or 2G."); return 2; }
+            using var http = new HttpClient();
+            HttpResponseMessage res;
+            try { res = await http.PostAsJsonAsync(server + "/api/pools/enrol", new PoolEnrolRequest(code, Opt(args, "--host") ?? host, slots, memory.Value)); }
+            catch (Exception e) { Console.Error.WriteLine($"Couldn't reach {server}: {e.Message}"); return 1; }
+            if (!res.IsSuccessStatusCode)
+            {
+                var err = await res.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                Console.Error.WriteLine(err.TryGetProperty("error", out var m) ? m.GetString() : $"The server said {(int)res.StatusCode}.");
+                return 1;
+            }
+            var pr = (await res.Content.ReadFromJsonAsync<PoolEnrolResponse>())!;
+            pools.Add(new SavedPool(server, pr.PoolId, pr.Name, pr.Token, slots, memory.Value, pr.ServerId));
+            Console.WriteLine($"Enrolled {pr.Name}: {slots} slots, {memory} MB each. Saved to {pools.Path}. Staying connected; press Ctrl+C to stop (later: cowork-runner pool run).");
+            return await ServePools(pools);
+        }
+        if (sub == "run") return await ServePools(pools);
+        Console.Error.WriteLine("cowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M\ncowork-runner pool run");
+        return 2;
+    }
+
+    public static long? MemoryMb(string s)
+    {
+        s = s.Trim().ToUpperInvariant();
+        var mult = s.EndsWith('G') ? 1024 : 1;
+        var num = s.TrimEnd('M', 'G', 'B');
+        return long.TryParse(num, out var n) && n > 0 ? n * mult : null;
+    }
+
+    static async Task<int> ServePools(PoolConfig config)
+    {
+        var saved = config.Load();
+        if (saved.Count == 0) { Console.Error.WriteLine("No pools saved here yet. Use: cowork-runner pool connect <server> --code XXXX-XXXX"); return 1; }
+        using var stop = new CancellationTokenSource();
+        void Stop() { try { stop.Cancel(); } catch (ObjectDisposedException) { } }
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; Stop(); };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Stop();
+        using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; Stop(); });
+        var links = new List<PoolLink>();
+        foreach (var p in saved)
+        {
+            var link = new PoolLink(p, RunnerConfig.DataRoot());
+            var pool = p;
+            link.Revoked += () => { Console.WriteLine($"[{pool.Name}] the server removed this pool; forgetting it."); config.Remove(pool); _ = link.DisposeAsync(); };
+            links.Add(link);
+            _ = Task.Run(async () => { if (!await link.ConnectAsync(stop.Token)) { Console.Error.WriteLine($"[{pool.Name}] the server no longer accepts this pool's token; forgetting it."); config.Remove(pool); } });
+        }
+        try { await Task.Delay(Timeout.Infinite, stop.Token); } catch (OperationCanceledException) { }
+        foreach (var l in links) await l.DisposeAsync();       // the sandboxes keep running; the server suspends idle ones when the pool is back
+        return 0;
+    }
+
+    /// <summary>`sandbox`: the runner inside a sandbox (the image's entry point). It serves one agent in one thread, connecting with the thread's
+    /// token, with the workspace the pool made and the gateway as the harness's only model provider. Exits when the server revokes the token.</summary>
+    static async Task<int> SandboxMode()
+    {
+        string Env(string k) => Environment.GetEnvironmentVariable(k) ?? "";
+        var server = Env("COWORK_SERVER").TrimEnd('/');
+        var token = Env("COWORK_THREAD_TOKEN");
+        if (server.Length == 0 || token.Length == 0 || !long.TryParse(Env("COWORK_AGENT"), out var agentId)) { Console.Error.WriteLine("cowork-runner sandbox needs COWORK_SERVER, COWORK_THREAD_TOKEN and COWORK_AGENT."); return 2; }
+        var handle = Env("COWORK_HANDLE"); var workspace = Env("COWORK_WORKSPACE") is { Length: > 0 } w ? w : "/work/repo";
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var configHome = Env("XDG_CONFIG_HOME") is { Length: > 0 } x ? x : Path.Combine(home, ".config");
+        if (Env("COWORK_MODEL") is { Length: > 0 } model)
+            Console.WriteLine($"[{handle}] the harness's model: {model} through {CoWork.Runner.Acp.GatewayConfig.WriteOpenCode(configHome, server + "/gateway/v1", model)}");
+        using var stop = new CancellationTokenSource();
+        void Stop() { try { stop.Cancel(); } catch (ObjectDisposedException) { } }
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Stop();
+        using var term = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; Stop(); });
+        var link = new ServerLink(new SavedAgent(server, agentId, handle, token), "sandbox",
+            sessions: new SessionStore(Path.Combine(configHome, "cowork-runner", "sessions.json")),
+            agentRoot: Path.Combine(home, ".local", "share", "cowork-runner"), sandboxWorkspace: workspace);
+        var code = 0;
+        link.Revoked += () => { Console.WriteLine($"[{handle}] the server revoked this sandbox's token; stopping."); Stop(); };
+        if (!await link.ConnectAsync(stop.Token)) { Console.Error.WriteLine($"[{handle}] the server doesn't accept this sandbox's token."); return 3; }
+        try { await Task.Delay(Timeout.Infinite, stop.Token); } catch (OperationCanceledException) { }
+        await link.DisposeAsync();
+        return code;
     }
 
     static string? Opt(string[] a, string name) { var i = Array.IndexOf(a, name); return i >= 0 && i + 1 < a.Length ? a[i + 1] : null; }

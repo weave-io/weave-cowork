@@ -31,7 +31,14 @@ public static partial class Api
             if (!HandleRx.IsMatch(handle)) return Err(400, "Agent names are 2–31 characters: lowercase letters, numbers, - and _.");
             var cmd = ParseCommand(string.IsNullOrWhiteSpace(b.HarnessCommand) ? "opencode acp" : b.HarnessCommand);
             if (cmd.Length == 0) return Err(400, "Add the harness command.");
-            if (string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
+            var template = b.Placement == "pool";
+            if (template)
+            {
+                // a team template runs on the server's pools and spends the server's model access: an admin makes it
+                using (var c = db.Open()) if (!Access.IsAdmin(c, me)) return Err(403, "Only admins can make a team template.");
+                if (string.IsNullOrWhiteSpace(b.Model)) return Err(400, "Pick the model it asks the gateway for.");
+            }
+            else if (string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
             var code = Tokens.NewCode();
             long id = 0; var taken = false;
             store.Append(d =>
@@ -39,20 +46,26 @@ public static partial class Api
                 taken = d.Scalar<int>("SELECT COUNT(*) FROM members WHERE handle=@handle", new { handle }) > 0;
                 if (taken) return Array.Empty<NewEvent>();
                 id = d.NextId("members");
-                var expires = Db.Now() + 10 * 60_000;
-                d.Execute("INSERT OR REPLACE INTO runner_secrets(agent_id, token_hash, code_hash) VALUES (@id, NULL, @h)", new { id, h = Tokens.Hash(code) });
-                return new[]
-                {
-                    new NewEvent($"agent-{id}", "AgentCreated", new
+                var created = new NewEvent($"agent-{id}", "AgentCreated", template
+                    ? new
                     {
                         agentId = id, handle, displayName = string.IsNullOrWhiteSpace(b.DisplayName) ? handle : b.DisplayName.Trim(), ownerId = me,
-                        about = b.About ?? "", instructions = b.Instructions ?? "", harnessCommand = cmd, workspace = b.Workspace.Trim(), recordToolOutput = false,
-                    }, me),
-                    new NewEvent($"agent-{id}", "EnrolmentCodeIssued", new { agentId = id, expiresAt = expires }, me, CausedByIndex: 0),
-                };
+                        about = b.About ?? "", instructions = b.Instructions ?? "", harnessCommand = cmd, workspace = (string?)null, recordToolOutput = false,
+                        placement = "pool", image = string.IsNullOrWhiteSpace(b.Image) ? Sandboxes.DefaultImage : b.Image.Trim(), model = b.Model!.Trim(),
+                    }
+                    : (object)new
+                    {
+                        agentId = id, handle, displayName = string.IsNullOrWhiteSpace(b.DisplayName) ? handle : b.DisplayName.Trim(), ownerId = me,
+                        about = b.About ?? "", instructions = b.Instructions ?? "", harnessCommand = cmd, workspace = b.Workspace!.Trim(), recordToolOutput = false,
+                    }, me);
+                if (template) return new[] { created };          // nobody connects a template: a pool starts it when a thread needs it
+                var expires = Db.Now() + 10 * 60_000;
+                d.Execute("INSERT OR REPLACE INTO runner_secrets(agent_id, token_hash, code_hash) VALUES (@id, NULL, @h)", new { id, h = Tokens.Hash(code) });
+                return new[] { created, new NewEvent($"agent-{id}", "EnrolmentCodeIssued", new { agentId = id, expiresAt = expires }, me, CausedByIndex: 0) };
             });
             if (taken) return Err(409, "That name is taken.");
             await rt.ToAll("bootstrap-changed");
+            if (template) return Results.Ok(new { agentId = id, handle, template = true });
             return Results.Ok(CodeResponse(ctx, id, code, handle));
         });
 
@@ -64,6 +77,7 @@ public static partial class Api
             var m = Q.Member(c, id)!;
             return Results.Ok(new { id, handle = m.Handle, displayName = m.DisplayName, about = m.About ?? "", instructions = m.Instructions ?? "",
                 harnessCommand = string.Join(' ', JsonSerializer.Deserialize<string[]>(m.HarnessCommand!)!.Select(a => a.Any(char.IsWhiteSpace) ? $"\"{a}\"" : a)), workspace = m.Workspace,
+                placement = m.Placement, image = m.Image, model = m.Model,
                 recordToolOutput = c.ExecuteScalar<int>("SELECT record_tool_output FROM agents WHERE member_id=@id", new { id }) == 1 });
         });
 
@@ -72,14 +86,19 @@ public static partial class Api
         {
             var cmd = ParseCommand(b.HarnessCommand ?? "");
             if (cmd.Length == 0) return Err(400, "Add the harness command.");
-            if (string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
             var me = Me(ctx);
+            bool template;
             using (var c = db.Open())
+            {
                 if (!CanAdminAgent(c, id, me)) return Err(403, "Only the agent's owner or an admin can do that.");
+                template = Q.Member(c, id)!.IsTemplate;
+            }
+            if (!template && string.IsNullOrWhiteSpace(b.Workspace)) return Err(400, "Add the workspace folder the agent works in.");
             store.Append(new[] { new NewEvent($"agent-{id}", "AgentEdited", new
             {
                 agentId = id, displayName = string.IsNullOrWhiteSpace(b.DisplayName) ? null : b.DisplayName.Trim(), about = b.About ?? "", instructions = b.Instructions ?? "",
-                harnessCommand = cmd, workspace = b.Workspace.Trim(), recordToolOutput = b.RecordToolOutput,
+                harnessCommand = cmd, workspace = b.Workspace?.Trim(), recordToolOutput = b.RecordToolOutput,
+                image = template ? b.Image?.Trim() : null, model = template ? b.Model?.Trim() : null,
             }, me) });
             await rt.ToAll("bootstrap-changed");
             return Results.Ok(new { ok = true });
@@ -176,6 +195,7 @@ public static partial class Api
         var hub = rt.Services.GetRequiredService<IHubContext<RunnerHub>>();
         var store = rt.Services.GetRequiredService<IEventStore>();
         rt.Services.GetRequiredService<Dispatcher>().AbandonAgent(id, "the agent was removed");
+        await rt.Services.GetRequiredService<Sandboxes>().StopAll(id, null, "the agent was removed");       // a template's tokens stop working at once
         store.Append(d =>
         {
             d.Execute("UPDATE runner_secrets SET token_hash=NULL, code_hash=NULL WHERE agent_id=@id", new { id });
