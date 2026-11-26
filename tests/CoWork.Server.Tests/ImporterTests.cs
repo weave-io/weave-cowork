@@ -26,12 +26,11 @@ public class ImporterTests
 
     static void Clean(string path) { foreach (var f in new[] { path, path + "-wal", path + "-shm" }) try { File.Delete(f); } catch { } }
 
-    static async Task<Person> SignIn(TestApp app, string user, string password)
+    /// <summary>The fixture's people had passwords, which no longer sign anyone in: the test gives them a single sign-on identity to look with.</summary>
+    static async Task<Person> SignIn(TestApp app, string user)
     {
-        var p = new Person(app, user);
-        var r = await p.Http.PostAsJsonAsync("/api/auth/login", new { username = user, password });
-        r.EnsureSuccessStatusCode(); p.CaptureCookie(r);
-        return p;
+        app.LinkSso(user);
+        return await app.SignIn(user);
     }
 
     static JsonNode Strip(JsonNode? n)
@@ -66,7 +65,7 @@ public class ImporterTests
 
     static async Task AssertSameAnswersAsBefore(TestApp app)
     {
-        var alex = await SignIn(app, "alex", "correct horse"); var rosa = await SignIn(app, "rosa", "rosa-password");
+        var alex = await SignIn(app, "alex"); var rosa = await SignIn(app, "rosa");
         Assert.True(JsonNode.DeepEquals(Expected("alex"), await Answers(alex)), "Alex sees what he saw before the upgrade");
         Assert.True(JsonNode.DeepEquals(Expected("rosa"), await Answers(rosa)), "Rosa sees what she saw before the upgrade");
     }
@@ -99,7 +98,7 @@ public class ImporterTests
                 Assert.Equal(3, queued.Count);
                 Assert.Contains(queued, q => q.Text.Contains("are you there?"));
                 // the same ids carry on: a new post doesn't reuse one
-                var alex = await SignIn(app, "alex", "correct horse");
+                var alex = await SignIn(app, "alex");
                 var ch = c.ExecuteScalar<long>("SELECT id FROM channels WHERE name='checkout-app'");
                 var next = (await (await alex.Http.PostAsJsonAsync($"/api/channels/{ch}/posts", new { body = "after the upgrade" })).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
                 Assert.True(next > c.ExecuteScalar<long>("SELECT MAX(id) FROM posts WHERE id<>@next", new { next }));

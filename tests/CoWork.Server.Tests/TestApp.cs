@@ -9,6 +9,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using System.Net;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
@@ -22,8 +26,11 @@ public sealed class TestApp : WebApplicationFactory<Program>
     public string ArtifactsDir { get; }
     public const string VoiceKey = "testkey", VoiceSecret = "test-secret-test-secret-test-secret-1234";
     private readonly bool _owns;
+    /// <summary>The server's OpenID Connect provider (<see cref="FakeIssuer"/>), unless the app was made without one.</summary>
+    public FakeIssuer Issuer { get; } = new();
     /// <param name="existingDb">Start a second server on a database another one left behind (a restart); it isn't deleted on dispose.</param>
-    public TestApp(bool voice = false, string? existingDb = null)
+    /// <param name="sso">false: a server nobody set a sign-in provider up for.</param>
+    public TestApp(bool voice = false, string? existingDb = null, bool sso = true)
     {
         _owns = existingDb is null;
         DbPath = existingDb ?? Path.Combine(Path.GetTempPath(), $"cowork-test-{Guid.NewGuid():N}.db");
@@ -33,16 +40,46 @@ public sealed class TestApp : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("LIVEKIT_API_KEY", voice ? VoiceKey : null);
         Environment.SetEnvironmentVariable("LIVEKIT_API_SECRET", voice ? VoiceSecret : null);
         Environment.SetEnvironmentVariable("LIVEKIT_URL", voice ? "ws://livekit.test:7880" : null);
+        Environment.SetEnvironmentVariable("COWORK_OIDC__AUTHORITY", sso ? FakeIssuer.Authority : null);
+        Environment.SetEnvironmentVariable("COWORK_OIDC__CLIENTID", sso ? FakeIssuer.ClientId : null);
+        Environment.SetEnvironmentVariable("COWORK_OIDC__CLIENTSECRET", sso ? FakeIssuer.ClientSecret : null);
         _ = Server;
+        foreach (var k in new[] { "COWORK_OIDC__AUTHORITY", "COWORK_OIDC__CLIENTID", "COWORK_OIDC__CLIENTSECRET" }) Environment.SetEnvironmentVariable(k, null);
         Environment.SetEnvironmentVariable("LIVEKIT_API_KEY", null); Environment.SetEnvironmentVariable("LIVEKIT_API_SECRET", null); Environment.SetEnvironmentVariable("LIVEKIT_URL", null);
     }
 
     public SqliteConnection Sql() { var c = new SqliteConnection($"Data Source={DbPath}"); c.Open(); return c; }
 
+    // the server's backchannel (discovery, keys, tokens, userinfo) goes to the fake provider
+    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+        builder.ConfigureTestServices(s => s.Configure<OpenIdConnectOptions>(CoWork.Server.Sso.Scheme, o => o.BackchannelHttpHandler = Issuer));
+
+    /// <summary>What a browser does for "Continue with single sign-on": to the server, to the provider (signing in as <paramref name="who"/>),
+    /// back to the server's callback, and on. Returns where the server finally sends the browser.</summary>
+    public async Task<string> Sso(Person p, FakeIssuer.Identity who, string intent = "signin", string? code = null, string? serverName = null, bool refuse = false)
+    {
+        var url = $"/auth/sso?intent={intent}" + (code is null ? "" : $"&code={code}") + (serverName is null ? "" : $"&serverName={Uri.EscapeDataString(serverName)}");
+        var toProvider = await p.Http.GetAsync(url);
+        Assert.Equal(HttpStatusCode.Redirect, toProvider.StatusCode);
+        var authorize = toProvider.Headers.Location!;
+        Assert.StartsWith(FakeIssuer.Authority + "/authorize", authorize.ToString());
+        var back = new Uri(refuse ? FakeIssuer.Refuse(authorize) : Issuer.SignInAt(authorize, who));
+        var callback = await p.Http.GetAsync(back.PathAndQuery);
+        Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
+        var next = PathOf(callback.Headers.Location!);
+        if (next != "/auth/sso/done") return next;
+        var done = await p.Http.GetAsync(next);
+        Assert.Equal(HttpStatusCode.Redirect, done.StatusCode);
+        p.CaptureCookie(done);
+        return PathOf(done.Headers.Location!);
+    }
+    static string PathOf(Uri u) => u.IsAbsoluteUri ? u.PathAndQuery : u.OriginalString;
+
     public async Task<Person> Setup(string user = "alex", string name = "Alex")
     {
         var p = new Person(this, user);
-        var r = await p.Http.PostAsJsonAsync("/api/setup", new { serverName = "Lumen Labs", username = user, displayName = name, password = "correct horse" });
+        await Sso(p, FakeIssuer.For(user, name), "setup", serverName: "Lumen Labs");
+        var r = await p.Http.PostAsJsonAsync("/api/setup", new { serverName = "Lumen Labs", handle = user, displayName = name });
         r.EnsureSuccessStatusCode(); p.CaptureCookie(r);
         return p;
     }
@@ -53,9 +90,27 @@ public sealed class TestApp : WebApplicationFactory<Program>
     {
         var code = await Invite(admin);
         var p = new Person(this, user);
-        var r = await p.Http.PostAsJsonAsync($"/api/invites/{code}/accept", new { username = user, displayName = name, password = "rosa-password" });
+        await Sso(p, FakeIssuer.For(user, name), "invite", code);
+        var r = await p.Http.PostAsJsonAsync($"/api/invites/{code}/accept", new { handle = user, displayName = name });
         r.EnsureSuccessStatusCode(); p.CaptureCookie(r);
         return p;
+    }
+
+    /// <summary>A member signs in again, in a new browser, with single sign-on.</summary>
+    public async Task<Person> SignIn(string user)
+    {
+        var p = new Person(this, user);
+        Assert.Equal("/", await Sso(p, FakeIssuer.For(user)));
+        Assert.Equal(HttpStatusCode.OK, (await p.Http.GetAsync("/api/bootstrap")).StatusCode);
+        return p;
+    }
+
+    /// <summary>Gives a member who has no sign-in (a person in a database from before single sign-on) the test provider's identity for their handle.</summary>
+    public void LinkSso(string user)
+    {
+        using var c = Sql();
+        c.Execute("INSERT OR IGNORE INTO logins(issuer, subject, member_id, email, created_at) SELECT @iss, @sub, id, @email, 0 FROM members WHERE handle=@user",
+            new { iss = FakeIssuer.Authority, sub = FakeIssuer.For(user).Subject, email = FakeIssuer.For(user).Email, user });
     }
 
     protected override void Dispose(bool disposing)
@@ -77,9 +132,13 @@ public sealed class Person
     public Person(TestApp app, string handle)
     {
         _app = app; Handle = handle;
-        Http = app.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        Http = app.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
     }
-    public void CaptureCookie(HttpResponseMessage r) { if (r.Headers.TryGetValues("Set-Cookie", out var v)) Cookie = v.First().Split(';')[0]; }
+    /// <summary>Keeps the session cookie for SignalR connections (the pending sign-in cookie, set or cleared beside it, isn't it).</summary>
+    public void CaptureCookie(HttpResponseMessage r)
+    {
+        if (r.Headers.TryGetValues("Set-Cookie", out var v) && v.FirstOrDefault(x => x.StartsWith("cowork=")) is { } c) Cookie = c.Split(';')[0];
+    }
 
     public async Task<long> Channel(string name, bool priv = false)
     {

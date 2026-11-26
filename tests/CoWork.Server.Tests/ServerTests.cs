@@ -15,21 +15,14 @@ public class AuthAndMembershipTests
         using var app = new TestApp();
         var anon = app.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anon.GetAsync("/api/bootstrap")).StatusCode);
+        // setup needs someone the provider signed in
+        var nobody = await anon.PostAsJsonAsync("/api/setup", new { serverName = "x", handle = "mallory", displayName = "M" });
+        Assert.Equal(HttpStatusCode.Unauthorized, nobody.StatusCode);
         await app.Setup();
-        var again = await anon.PostAsJsonAsync("/api/setup", new { serverName = "x", username = "mallory", displayName = "M", password = "password123" });
+        var mallory = new Person(app, "mallory");
+        await app.Sso(mallory, FakeIssuer.For("mallory"), "setup", serverName: "x");
+        var again = await mallory.Http.PostAsJsonAsync("/api/setup", new { serverName = "x", handle = "mallory", displayName = "M" });
         Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
-    }
-
-    [Fact]
-    public async Task Wrong_password_is_refused_and_passwords_are_hashed()
-    {
-        using var app = new TestApp();
-        await app.Setup();
-        var r = await app.CreateClient().PostAsJsonAsync("/api/auth/login", new { username = "alex", password = "wrong wrong" });
-        Assert.Equal(HttpStatusCode.Unauthorized, r.StatusCode);
-        Assert.Contains("Wrong username or password", await r.Content.ReadAsStringAsync());
-        using var c = app.Sql();
-        Assert.DoesNotContain("correct horse", c.ExecuteScalar<string>("SELECT password_hash FROM credentials LIMIT 1"));
     }
 
     [Fact]
@@ -82,14 +75,21 @@ public class AuthAndMembershipTests
         Assert.Equal(HttpStatusCode.OK, (await rosa.Http.GetAsync("/api/bootstrap")).StatusCode);
         (await alex.Http.DeleteAsync($"/api/people/{rosa.Id}")).EnsureSuccessStatusCode();
         Assert.Equal(HttpStatusCode.Unauthorized, (await rosa.Http.GetAsync("/api/bootstrap")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await app.CreateClient().PostAsJsonAsync("/api/auth/login", new { username = "rosa", password = "rosa-password" })).StatusCode);
+        // and signing in again with single sign-on doesn't let her back in
+        var again = new Person(app, "rosa");
+        Assert.Equal("/", await app.Sso(again, FakeIssuer.For("rosa")));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await again.Http.GetAsync("/api/bootstrap")).StatusCode);
     }
 }
 
 public class InviteTests
 {
-    static Task<HttpResponseMessage> Accept(TestApp app, string code, string user) =>
-        app.CreateClient().PostAsJsonAsync($"/api/invites/{code}/accept", new { username = user, displayName = user, password = "password123" });
+    static async Task<HttpResponseMessage> Accept(TestApp app, string code, string user)
+    {
+        var p = new Person(app, user);
+        await app.Sso(p, FakeIssuer.For(user), "invite", code);
+        return await p.Http.PostAsJsonAsync($"/api/invites/{code}/accept", new { handle = user, displayName = user });
+    }
 
     [Fact]
     public async Task Revoked_expired_and_used_up_links_are_refused_with_a_reason()

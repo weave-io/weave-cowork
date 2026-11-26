@@ -206,8 +206,8 @@ public class RoundTwoTests
         Assert.Equal(new[] { "AgentCreated", "AgentEdited", "AgentRemoved", "EnrolmentCodeIssued", "RunnerConnected", "RunnerDisconnected", "RunnerEnrolled" }, Types("agent-%"));
         Assert.Equal(new[] { "AgentAddedToProject", "AgentGrantsChanged", "ProjectCreated", "ProjectMemberAdded", "ProjectUpdated", "WorkspaceAdded" }, Types("project-%"));
         Assert.Contains("ChannelMovedToProject", Types("channel-%")); Assert.Contains("WorkRefused", Types("thread-%"));
-        // the log is safe to export: no password hash, token, enrolment code or invite code is in it
-        var secrets = c.Query<string>(@"SELECT password_hash FROM credentials UNION ALL SELECT token_hash FROM runner_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT code_hash FROM runner_secrets WHERE code_hash IS NOT NULL
+        // the log is safe to export: no token, enrolment code or invite code is in it, nor who anyone is at the sign-in provider
+        var secrets = c.Query<string>(@"SELECT subject FROM logins UNION ALL SELECT email FROM logins UNION ALL SELECT token_hash FROM runner_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT code_hash FROM runner_secrets WHERE code_hash IS NOT NULL
             UNION ALL SELECT code FROM invite_codes UNION ALL SELECT token_hash FROM thread_tokens UNION ALL SELECT token_hash FROM pool_secrets WHERE token_hash IS NOT NULL UNION ALL SELECT value FROM server_secrets").ToList();
         Assert.True(secrets.Count >= 9);
         Assert.Contains("sk-busy-secret-77", secrets);
@@ -341,7 +341,9 @@ public class RoundTwoTests
         var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => alex.Http.PostAsJsonAsync("/api/channels", new { name = "same" })));
         Assert.Equal(1, results.Count(r => r.StatusCode == HttpStatusCode.OK)); Assert.Equal(5, results.Count(r => r.StatusCode == HttpStatusCode.Conflict));
         var code = await (await alex.Http.PostAsJsonAsync("/api/invites", new { maxUses = 1 })).Content.ReadFromJsonAsync<JsonElement>();
-        var joins = await Task.WhenAll(Enumerable.Range(0, 4).Select(i => app.CreateClient().PostAsJsonAsync($"/api/invites/{code.GetProperty("code").GetString()}/accept", new { username = $"user{i}", displayName = $"User {i}", password = "long enough" })));
+        var people = new List<Person>();
+        foreach (var i in Enumerable.Range(0, 4)) { var p = new Person(app, $"user{i}"); await app.Sso(p, FakeIssuer.For($"user{i}"), "invite", code.GetProperty("code").GetString()); people.Add(p); }
+        var joins = await Task.WhenAll(people.Select((p, i) => p.Http.PostAsJsonAsync($"/api/invites/{code.GetProperty("code").GetString()}/accept", new { handle = $"user{i}", displayName = $"User {i}" })));
         Assert.Equal(1, joins.Count(r => r.StatusCode == HttpStatusCode.OK)); Assert.Equal(3, joins.Count(r => r.StatusCode == HttpStatusCode.Gone));
     }
 }
@@ -351,9 +353,6 @@ static class TestAppExtras
     /// <summary>Signs in again as the first person (the one setup made).</summary>
     public static async Task<Person> Setup2(this TestApp app)
     {
-        var p = new Person(app, "alex");
-        var r = await p.Http.PostAsJsonAsync("/api/auth/login", new { username = "alex", password = "correct horse" });
-        r.EnsureSuccessStatusCode(); p.CaptureCookie(r);
-        return p;
+        return await app.SignIn("alex");
     }
 }

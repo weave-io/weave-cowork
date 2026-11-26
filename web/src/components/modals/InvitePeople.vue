@@ -19,7 +19,7 @@ async function copy(text: string) { try { await navigator.clipboard.writeText(te
 const days = (ms: number) => Math.max(0, Math.ceil((ms - Date.now()) / 86_400_000))
 </script>
 <template>
-  <AppDialog title="Invite people" description="A link lets someone make an account and join. It expires in 7 days and can be used 10 times." wide @close="closeModal">
+  <AppDialog title="Invite people" description="A link lets someone sign in with single sign-on and join. It expires in 7 days and can be used 10 times." wide @close="closeModal">
     <Button data-testid="create-invite" @click="create"><Link :size="16" />Create an invite link</Button>
     <div v-if="fresh" class="mt-3 flex items-center gap-2 rounded-btn border border-border bg-card-bg p-2">
       <code class="flex-1" data-testid="invite-link">{{ link(fresh) }}</code>
