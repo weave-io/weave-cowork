@@ -1184,3 +1184,20 @@ the computer; the app's copy is the page as researcher wrote it.
 - A pinned runner's agent was checked through the MCP tool in the server's tests, not live with a real harness.
 - Pages that pick their theme with `matchMedia` in JavaScript still follow the computer; the guide says not to.
 - The theme follows CoWork's light or dark, not its exact palette (Nord, Dracula…).
+
+## One main: sign-in (11), the showcase (12) and the design skill (13)
+
+Sign-in reached GitHub's main as PR #1 while the showcase and the design skill were still on the local main's line, both numbered from
+11. They were put on top of GitHub's main in that order: sign-in keeps 11, the showcase is 12, the design skill 13 (its brief, log entry,
+screenshots folder `docs/screens/brief13/` and sandbox tag `2.4.1-b13`). Commit messages from before keep their old numbers.
+
+- **Conflicts:** the README takes the showcase's structure with sign-in carried in (a Sign-in section under Quick start, the OIDC settings in
+  Configuration and `deploy/.env`, invites by single sign-on, Dex in the contributing notes, passkeys in "not built yet"); `lib.mjs` keeps
+  both sides (Dex, and Playwright from wherever it's found); the log keeps both entries.
+- **Live checks moved to sign-in:** `showcase.mjs` and `phase16.mjs` set up with `setUp` and join with `ssoJoin` (they were written with
+  passwords). Dex now knows Priya for the showcase, and `ensureDex` restarts a Dex left running with an older list of people.
+- **The showcase's researcher had its own styling:** "a light page, a clear table, no external fonts or scripts". Owner instructions win
+  over the skill, so it didn't load it, and the hero showed a white page priced in dollars. The instructions now leave the look to the
+  design guide; the next run's hero has a dark page in euros that opens with the answer, and bars in proportion.
+- **Checked on the result:** `dotnet test` (Runner 44, Server 113), `bun run test` (58), and live on `2.4.1-b13`: phase15 21 (sign-in),
+  phase16 10, phase13 32, phase14 26, and the showcase (19 steps, 23 pictures, redrawn and looked at).
