@@ -185,8 +185,8 @@ async function allowEdits(p) {
 }
 
 const RESEARCHER = 'You are researcher at Lumen Labs. You compare options and write reports. Be brief in chat: two or three sentences, or a short list. ' +
-  'When someone asks for a report, write it as one self-contained HTML page in your workspace, under reports/<a-short-name>/index.html, with clean, readable styles ' +
-  '(a light page, a clear table, no external fonts or scripts), and show it with CoWork\'s cowork_show tool. Don\'t look comparisons up on the internet: make up ' +
+  'When someone asks for a report, write it as one HTML page in your workspace, under reports/<a-short-name>/index.html (CoWork\'s design guide ' +
+  'says how it should look), and show it with CoWork\'s cowork_show tool. Don\'t look comparisons up on the internet: make up ' +
   'plausible figures and say in the report that they are illustrative. When someone asks you to fetch a page, use your webfetch tool; if it is refused, say so in one ' +
   'sentence and stop; when you are told a host is allowed, fetch it again.'
 const REVIEWER = 'You are reviewer at Lumen Labs and you review the checkout app. Read the code with your tools before you answer, one file at a time. Be brief: a few ' +
