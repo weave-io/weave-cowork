@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { highlight, hasFilter, toggleFilter, resultPath } from './search'
+import { highlight, plain, hasFilter, toggleFilter, resultPath } from './search'
 
 describe('search helpers', () => {
   test('marks become hits and the rest stays text', () => {
@@ -8,6 +8,13 @@ describe('search helpers', () => {
     ])
     expect(highlight('\u0002Rounding\u0003')).toEqual([{ text: 'Rounding', hit: true }])
     expect(highlight('<b>not html</b>')).toEqual([{ text: '<b>not html</b>', hit: false }])
+  })
+  test("a snippet's markdown reads as text", () => {
+    expect(plain('…but **Vatbook does not support partial \u0002refunds\u0003 at all**—so')).toBe('…but Vatbook does not support partial \u0002refunds\u0003 at all—so')
+    expect(plain('Rounds VAT *per line* before summing 2. **\u0002Refund\u0003** (`refundTotal` in \u0002refunds\u0003.ts')).toBe('Rounds VAT per line before summing 2. \u0002Refund\u0003 (refundTotal in \u0002refunds\u0003.ts')
+    expect(plain('### \u0002Refund\u0003 rounding')).toBe('\u0002Refund\u0003 rounding')
+    expect(plain('2 * 3 and snake_case_name stay')).toBe('2 * 3 and snake_case_name stay')
+    expect(highlight('**\u0002Refund\u0003**')).toEqual([{ text: 'Refund', hit: true }])
   })
   test('chips add a filter and take it out again', () => {
     expect(toggleFilter('refund rounding', 'is:thread')).toBe('refund rounding is:thread ')

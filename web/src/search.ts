@@ -7,8 +7,18 @@ export interface Segment { text: string; hit: boolean }
 /** "a \u0002refund\u0003 drifts" → [{a }, {refund, hit}, { drifts}]. Rendered as text and <mark>, so nothing in a message is HTML. */
 export function highlight(snippet: string): Segment[] {
   const out: Segment[] = []
-  for (const [i, part] of snippet.split(/[\u0002\u0003]/).entries()) if (part) out.push({ text: part, hit: i % 2 === 1 })
+  for (const [i, part] of plain(snippet).split(/[\u0002\u0003]/).entries()) if (part) out.push({ text: part, hit: i % 2 === 1 })
   return out
+}
+
+/** A snippet is cut from a message's markdown, so it reads as text without the markers: **bold**, *it*, __bold__, `code`, a heading's #s and a
+ *  quote's >. A lone * or _ between words (2 * 3, snake_case) stays. */
+export function plain(snippet: string): string {
+  return snippet
+    .replace(/\*\*|__|`/g, '')
+    .replace(/(^|[\s(\u0002\u0003])\*(?=[^\s*])/g, '$1')
+    .replace(/([^\s*])\*(?=$|[\s).,;:!?\u0002\u0003])/g, '$1')
+    .replace(/(^|\n)\s*(#{1,6}|>)\s+/g, '$1')
 }
 
 const words = (q: string) => q.split(/\s+/).filter(Boolean)
