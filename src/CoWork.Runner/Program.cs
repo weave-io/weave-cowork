@@ -116,6 +116,9 @@ static class Cli
         var configHome = Env("XDG_CONFIG_HOME") is { Length: > 0 } x ? x : Path.Combine(home, ".config");
         if (Env("COWORK_MODEL") is { Length: > 0 } model)
             Console.WriteLine($"[{handle}] the harness's model: {model} through {CoWork.Runner.Acp.GatewayConfig.WriteOpenCode(configHome, server + "/gateway/v1", model)}");
+        // brief 12: CoWork's skills where the harness looks for them (this home is the thread's, so writing here touches nobody's own harness)
+        try { Console.WriteLine($"[{handle}] skills: {string.Join(", ", CoWork.Runner.Acp.HarnessSkills.Install(home))}"); }
+        catch (Exception e) { Console.WriteLine($"[{handle}] couldn't install CoWork's skills ({e.Message}); the agent still has cowork_design_guide"); }
         using var stop = new CancellationTokenSource();
         void Stop() { try { stop.Cancel(); } catch (ObjectDisposedException) { } }
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Stop();

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
+using CoWork.Contracts;
 using Dapper;
 using Microsoft.Data.Sqlite;
 
@@ -95,13 +96,16 @@ public sealed class Mcp
     /// What the harness puts in front of the model before it has read any tool's description. Brief 10: OpenCode 2.4.1 calls MCP tools from code
     /// ("code mode") and lists only these instructions up front, so the model guessed <c>cowork_show({ format, content, title })</c> before it
     /// looked the tool up. The call shapes are here, and cowork_show's rule (a path in the workspace, never the content) with them.
+    /// Brief 12: and the design guide, read before a page is written (as a skill where the harness has it, else through the tool).
     /// </summary>
     public const string Instructions =
         "CoWork's tools for this thread: cowork_read_channel({ channel?, limit?, threadId? }) reads a channel or a thread you take part in; " +
         "cowork_search({ query, limit? }) searches what you may see; cowork_resolve_thread({ summary, title? }) resolves this thread with an outcome when " +
         "the work is done; cowork_show({ path, title?, open? }) shows people a report, document, image or table you made. cowork_show takes the path of " +
         "a file, never its content: write the file inside your workspace (your working directory) first, for example reports/<name>/index.html, then " +
-        "call cowork_show with that path. A file outside the workspace, like one in /tmp, can't be shown.";
+        "call cowork_show with that path. A file outside the workspace, like one in /tmp, can't be shown. Before you write a page to show, read CoWork's " +
+        "design guide: the cowork-design skill if you have it, otherwise cowork_design_guide({}). Pages can't load anything from the internet; fonts come " +
+        "from /a/fonts/fonts.css.";
 
     static JsonArray Tools() => new(
         Tool("cowork_read_channel", "Read the latest messages of a channel you take part in (by default this thread's channel), oldest first, with who wrote each and which have threads. Give threadId to read one thread instead.",
@@ -111,7 +115,9 @@ public sealed class Mcp
             new JsonObject { ["query"] = Prop("string", "What to look for."), ["limit"] = Prop("integer", "At most this many of each kind (default 8).") }, "query"),
         Tool("cowork_resolve_thread", "Mark this thread done, with an outcome people see on the post, in the thread and in search: a short title and a summary of what was found or done. Use it when the work is finished.",
             new JsonObject { ["summary"] = Prop("string", "What was found or done, in a few sentences or bullet lines."), ["title"] = Prop("string", "A short title for the outcome (default: the summary's first line).") }, "summary"),
-        Artifacts.ToolDefinition());
+        Artifacts.ToolDefinition(),
+        Tool("cowork_design_guide", "How to design a page you show with cowork_show so it looks chosen for its subject: how much design it needs, palette, type from " +
+            "CoWork's font kit, layout, light and dark themes, phone width and copy. Read it before you write a page's HTML or CSS.", new JsonObject()));
 
     static JsonObject Tool(string name, string description, JsonObject props, params string[] required) => new()
     {
@@ -132,6 +138,7 @@ public sealed class Mcp
                 case "cowork_search": await _views.CatchUpAsync(); r = SearchFor(who, args); break;
                 case "cowork_resolve_thread": r = Resolve(who, args); break;
                 case "cowork_show": r = await _artifacts.Show(who, args); break;
+                case "cowork_design_guide": r = (Skills.Design.Body, false, new { skill = Skills.Design.Name }); break;
                 default: return ($"There's no tool called {name}.", true);
             }
         }
