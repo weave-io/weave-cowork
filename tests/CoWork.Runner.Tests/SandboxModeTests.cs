@@ -27,6 +27,18 @@ public class SandboxModeTests : IDisposable
     public void Memory_sizes(string s, long? mb) => Assert.Equal(mb, PoolConfig.MemoryMb(s));
 
     [Fact]
+    public void A_sandbox_home_gets_CoWork_s_skills_where_Claude_Code_Codex_and_OpenCode_look_and_a_changed_text_is_written_again()
+    {
+        var files = HarnessSkills.Install(_dir);
+        Assert.Equal(new[] { Path.Combine(_dir, ".claude", "skills", "cowork-design", "SKILL.md"), Path.Combine(_dir, ".agents", "skills", "cowork-design", "SKILL.md") }, files);
+        Assert.All(files, f => Assert.Equal(Skills.Design.Text, File.ReadAllText(f)));
+        Assert.StartsWith("---\nname: cowork-design\n", File.ReadAllText(files[0]));
+        File.WriteAllText(files[1], "an older text");
+        HarnessSkills.Install(_dir);
+        Assert.Equal(Skills.Design.Text, File.ReadAllText(files[1]));
+    }
+
+    [Fact]
     public void OpenCode_gets_the_gateway_as_its_only_provider_and_the_token_by_name_not_by_value()
     {
         var path = GatewayConfig.WriteOpenCode(_dir, "http://host.containers.internal:5884/gateway/v1/", "claude-haiku-4.5");
