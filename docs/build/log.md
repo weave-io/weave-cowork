@@ -984,3 +984,65 @@ by its label. The trial on 5889, `cowork-try`, the images `cowork-sandbox-openco
   running the user asked why the quick look and the member list got handles too (they asked only for the canvas). That's brief item 4; taking
   them out is a few lines in `Shell.vue` if the user prefers only the canvas.
 - Touch devices between phone and desktop width get the handle, but it's 8 px wide, which is small for a finger.
+
+## Brief 11: sign in with single sign-on, no passwords
+
+**Demo:** `tests/live/phase15.mjs` (21 checks; browsers for Alex, Rosa and Lee; a real OpenID Connect provider, Dex v2.44.0, in podman on
+the host network at 127.0.0.1:5556). Alex opens a fresh server: the setup screen has a server name and "Continue with single sign-on", no
+password. Dex signs him in and sends him back. CoWork says "alex@lumen.example · Signed in with single sign-on", suggests the handle `alex`,
+keeps the server name he typed, and he is the admin in #general. Rosa's invite says "Alex invited you to Lumen Labs" and has no fields at all.
+Dex sends her back to `/invite/<code>`. `alex` as her handle gets "Someone here is already @alex. Try another." With `rosa` she's in as a
+member, at `/`. Lee, whom Dex knows but nobody invited, gets "lee@lumen.example isn't a member of Lumen Labs. Ask someone here for an invite
+link." The API says 401 to him, and "Use another account" goes back to Dex. Rosa signs out: the sign-in screen is one button. She signs back
+in and is the same member. The database has no `credentials` table and no password column. `logins` has two rows, Dex's issuer plus its
+subject. The event log holds neither subject nor email. A second server started without the settings says "Sign-in isn't set up yet",
+names the three settings, and has no form.
+
+**What changed**
+- **Server** (`Sso.cs`, `Api.Auth.cs`): ASP.NET Core's OpenID Connect handler, configured from `COWORK_OIDC__AUTHORITY`, `__CLIENTID` and
+  `__CLIENTSECRET`. It uses the authorization code flow with PKCE, `response_mode=query` (a redirect back, so its correlation and nonce
+  cookies can be SameSite=Lax), scopes `openid profile email`, userinfo, standard claim names and no tokens kept. `/auth/sso?intent=…` goes
+  to the provider and `/signin-oidc` is the callback. The provider's answer goes into a 15-minute pending cookie (`cowork-sso`), not the
+  session. `/auth/sso/done` then signs a member in (and drops the pending cookie). Anyone else goes back to the app: `/invite/<code>` or
+  setup to choose a handle (`/api/auth/pending` gives the suggestion), or the sign-in screen to be told they aren't a member.
+  `POST /api/setup` and `/api/invites/{code}/accept` now need the pending identity and take `handle` and `displayName`. A provider that
+  says no ends at `/?sso=failed`. `/api/auth/login`, the password hasher and the "Wrong username or password." path are gone.
+  `UseForwardedHeaders` takes `X-Forwarded-Proto` (only the scheme), so behind Caddy the redirect URL is `https://…`.
+- **Data:** migration `016` adds `logins (issuer, subject, member_id, email, created_at)` and drops `credentials`. Like the secrets in `004`,
+  a sign-in is written in the same transaction as `PersonJoined` and never put in an event. `/api/setup/status` adds `sso` (configured)
+  and `passwordAccounts` (people but no sign-ins).
+- **Web** (`AuthCard.vue`): the screens from the mockup. Step 1 is the provider button (with the server name for setup, and "X invited you
+  to" for an invite). Step 2 shows who the provider signed in, with "Not you?", plus the handle and display name. Also: not a member, the
+  provider said no, sign-in not set up, and a password-era server. An error clears once a field is edited. The invite dialog says "A
+  link lets someone sign in with single sign-on and join."
+- **Docs:** README "Sign-in" (the redirect URL, scopes and settings), `deploy/docker-compose.yml` and `deploy/.env.example` carry the
+  three settings, and `AGENTS.md`'s model and security basics.
+
+**Decisions**
+- **Who someone is is the issuer and subject, never the email.** An email can change or be claimed; tests cover the same email under another
+  subject, and the same subject under another issuer, both refused.
+- **Not a member until a member.** The provider's answer never signs anyone in to CoWork by itself. A member who opens an invite is just
+  signed in, and the invite isn't used. A member removed in CoWork who signs in at the provider is nobody.
+- **Plain `http` authority only for loopback** (`RequireHttpsMetadata` is off only for `127.0.0.1`/`localhost`), for development and the live
+  checks.
+- **No migration** (the user's call): a server from before says "Accounts here used passwords" and asks for a fresh data folder.
+- **Passkeys deferred** (the user's call, after weighing that a CoWork passkey would skip the provider and so IdP offboarding).
+
+**Checked** (ports 5881, 5886 and 5887; Dex as `cowork-live-dex`, left running for the other checks. 5889, `~/.weave` and the user's compose
+untouched.)
+- `dotnet test`: 110 server, 10 of them new in `SsoTests`. They go through the real OpenID Connect handler against `FakeIssuer`, a provider
+  inside the test process that checks client credentials, single-use codes and PKCE. Covered: setup through the provider, sign out and
+  back in, not a member, issuer + subject not email, a member's invite unused, handle rules, the provider saying no, no passwords, no
+  provider, and a password-era database. Every test that signed in with a password now signs in through it. `bun run test`: 56.
+- Live: **`phase15` 21 checks** (twice; the first run failed on the test reading `textContent`, which runs the lines together), and
+  **`phase1` 25 checks** on a scratch server with Dex (screenshots to a scratch folder). Screenshots `docs/screens/brief11/`, dark and
+  light, looked at. Fixed from them: the "already @alex" error stayed after the handle was changed.
+- The other live checks (`phase2`, `phase4` to `phase14`, `makeover`) were changed the same way: `setUp`, `ssoJoin` and `ssoSignIn` from
+  `lib.mjs`, and `SSO_ENV` for the servers they start. They are syntax-checked but **not run** in this brief. phase2 and phase4 need their
+  scratch server started with the `SSO_ENV` variables.
+
+**Not done / next**
+- Passkeys of CoWork's own (deferred above). Several providers at once, joining without an invite (e.g. by email domain), groups or roles from
+  the provider, and single sign-out: none were asked for.
+- The rest of the live regression (above).
+

@@ -1,5 +1,7 @@
 # Weave CoWork, self-hosted.
 #   docker compose -f deploy/docker-compose.yml up -d --build      (podman compose works too)
+# Sign-in: set COWORK_OIDC__AUTHORITY, COWORK_OIDC__CLIENTID and COWORK_OIDC__CLIENTSECRET (in deploy/.env) for your OpenID Connect
+# provider, with the redirect URL https://<your host>/signin-oidc registered there (see the README's "Sign-in").
 # Then open http://localhost:5880: the first person to arrive sets the server up and becomes its admin.
 #
 # Voice channels (optional): copy deploy/.env.example to deploy/.env, set the LiveKit key and secret, and start with the
@@ -19,6 +21,10 @@ services:
       - cowork-data:/data          # the SQLite database lives here
     environment:
       COWORK_DATA: /data
+      # sign-in: any standard OpenID Connect provider (the issuer, and CoWork's client id and secret there)
+      COWORK_OIDC__AUTHORITY: ${COWORK_OIDC__AUTHORITY:-}
+      COWORK_OIDC__CLIENTID: ${COWORK_OIDC__CLIENTID:-}
+      COWORK_OIDC__CLIENTSECRET: ${COWORK_OIDC__CLIENTSECRET:-}
       # voice: the same key and secret LiveKit below is started with; LIVEKIT_URL is where browsers reach LiveKit
       # (ws://host:7880, or wss://livekit.example.com behind a proxy). Empty: the web app uses its own host on port 7880.
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}

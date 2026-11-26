@@ -36,10 +36,36 @@ cd web && bun install && bun run build          # builds the web app into src/Co
 cd .. && dotnet run --project src/CoWork.Server # http://localhost:5880, data in ./data/cowork.db
 ```
 
-Open http://localhost:5880. The first person to arrive sets the server up (name, username, display name, password) and is
-its admin. For web development run `bun run dev` in `web/` as well: Vite on :5173 proxies `/api` and `/hubs` to :5880.
+Open http://localhost:5880. The first person to arrive names the server, signs in with single sign-on (see Sign-in below),
+chooses a handle and display name, and is its admin. For web development run `bun run dev` in `web/` as well: Vite on :5173
+proxies `/api` and `/hubs` to :5880.
 
-Configuration (environment variables): `COWORK_DATA` (folder for the database, default `./data`), `COWORK_DB` (full
+## Sign-in
+
+CoWork takes no passwords. People sign in through your OpenID Connect provider, using standard OIDC (the authorization code
+flow with PKCE, discovery from the provider's `.well-known/openid-configuration`), so any compliant provider works and
+nothing in CoWork is specific to one. Register CoWork with the provider as a web application:
+
+- **Redirect URL:** the server's own address plus `/signin-oidc`, e.g. `https://cowork.example.com/signin-oidc`.
+- **Scopes:** `openid profile email`.
+
+Then start the server with three settings:
+
+```bash
+COWORK_OIDC__AUTHORITY=https://id.example.com      # the issuer
+COWORK_OIDC__CLIENTID=cowork
+COWORK_OIDC__CLIENTSECRET=…                         # leave empty for a public client (PKCE only)
+```
+
+The provider says who someone is; the invite link is still the only way in. A person is the provider's issuer and subject id,
+never their email, and CoWork keeps no provider tokens. Someone the provider signs in who isn't a member is told so; a member
+removed in CoWork can't sign back in. Signing out of CoWork doesn't sign you out of the provider. Without these settings the
+server says "Sign-in isn't set up yet" and nobody can get in. The provider may be plain `http` only on this machine
+(`127.0.0.1`/`localhost`), for development. A server from before single sign-on (people with passwords) can't be carried
+over: start it with a fresh data folder.
+
+Configuration (environment variables): `COWORK_OIDC__AUTHORITY`, `COWORK_OIDC__CLIENTID` and `COWORK_OIDC__CLIENTSECRET`
+(sign-in, above), `COWORK_DATA` (folder for the database, default `./data`), `COWORK_DB` (full
 path of the database file), `ASPNETCORE_URLS` (default `http://localhost:5880`), and for voice `LIVEKIT_API_KEY`,
 `LIVEKIT_API_SECRET` and `LIVEKIT_URL` (see Voice channels).
 
@@ -50,7 +76,8 @@ own: `COWORK_ARTIFACT_ORIGIN=https://artifacts.cowork.example` (pointing at the 
 (the only page allowed to frame them); `/a/…` then answers only on that host name.
 
 Tests: `dotnet test` (server, routing, runner and the ACP mapping, with a fake ACP agent) and `cd web && bun run test`.
-Live checks with Playwright (two browsers, a real runner and OpenCode) are in `tests/live/`.
+Live checks with Playwright (two browsers, a real runner and OpenCode) are in `tests/live/`; people sign in through a real
+OpenID Connect provider, Dex, which the checks start in podman (`tests/live/lib.mjs`).
 
 ## Self-host with Docker or Podman
 
@@ -58,9 +85,11 @@ Live checks with Playwright (two browsers, a real runner and OpenCode) are in `t
 docker compose -f deploy/docker-compose.yml up -d --build      # or: podman compose -f …
 ```
 
-The server listens on port 5880; its SQLite file is on the `cowork-data` volume. Open it, set it up, invite people.
+The server listens on port 5880; its SQLite file is on the `cowork-data` volume. Set the three `COWORK_OIDC__…` settings
+(in `deploy/.env`, see Sign-in), open it, set it up, invite people.
 For HTTPS put it behind a reverse proxy: `deploy/docker-compose.yml` has a commented Caddy service and
-`deploy/Caddyfile.example` has the two lines it needs. SignalR needs WebSockets, which Caddy passes through.
+`deploy/Caddyfile.example` has the two lines it needs. SignalR needs WebSockets, which Caddy passes through. The server
+takes the scheme from the proxy's `X-Forwarded-Proto`, so the redirect URL it sends the provider is `https://…`.
 
 ## Voice channels
 
@@ -101,8 +130,9 @@ Not built: agents in voice (transcripts, raising a hand, text-to-speech), video 
 ## Invite people
 
 Admin: server menu (the server name, top left) → **Invite people** → create a link. It expires in 7 days and can be used
-10 times; the dialog lists the links you made and lets you revoke them. Whoever opens it makes an account and joins as a
-member. Admins make other people admins, or remove them, in **People and agents**.
+10 times; the dialog lists the links you made and lets you revoke them. Whoever opens it signs in with single sign-on, chooses a
+handle and display name (suggested from what the provider says), and joins as a member. A member who opens one is just
+signed in; the link isn't used. Admins make other people admins, or remove them, in **People and agents**.
 
 ## Connect a runner and invite an agent
 
@@ -168,7 +198,7 @@ time (Server settings), then the volume goes, and its branch with it unless the 
 
 ## What's not built yet
 
-OpenID Connect and passkeys; agent keys (ed25519) instead of tokens; more agent tools (`cowork_start_thread`, a project library, …); agents starting threads; reactions; roles and
+Passkeys of CoWork's own (people can use their provider's); agent keys (ed25519) instead of tokens; more agent tools (`cowork_start_thread`, a project library, …); agents starting threads; reactions; roles and
 channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
 layout; sharing agents across servers; agents in voice. See the "Later" list in
 `docs/build/brief.md`.
