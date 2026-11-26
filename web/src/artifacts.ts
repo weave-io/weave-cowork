@@ -20,6 +20,10 @@ export type ArtifactKind = 'html' | 'markdown' | 'image' | 'svg' | 'csv' | 'json
 /** The chip on a card and a tab. */
 export const kindLabel = (k: string) => ({ html: 'html', markdown: 'md', image: 'image', svg: 'svg', csv: 'csv', json: 'json', pdf: 'pdf' } as Record<string, string>)[k] ?? 'file'
 /** What it is, in words, on a card ("report · v2 · 41 KB"). */
+/** A page's address with the app's light or dark in its fragment (brief 12). The fragment never reaches the server; the script CoWork adds to
+ * each page reads it and switches the page's own prefers-color-scheme rules, so changing the theme changes the page without a reload. */
+export const withScheme = (url: string, scheme: 'dark' | 'light') => `${url.split('#')[0]}#scheme=${scheme}`
+
 export const kindWords = (k: string) => ({ html: 'page', markdown: 'document', image: 'image', svg: 'image', csv: 'table', json: 'data', pdf: 'PDF' } as Record<string, string>)[k] ?? 'file'
 
 export function formatSize(b: number): string {

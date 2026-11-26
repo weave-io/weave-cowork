@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 import { FileText, Table2, Braces, File, Image as ImageIcon, FileType } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import type { Post } from '@/types'
-import { artifactById, canvas, formatSize, kindWords, loadArtifact, openInCanvas } from '@/artifacts'
+import { artifactById, canvas, formatSize, kindWords, loadArtifact, openInCanvas, withScheme } from '@/artifacts'
+import { scheme } from '@/theme'
 import { threadPath } from '@/threads'
 import { Button } from '@/components/ui/button'
 import { KindChip } from '@/components/ui/kind-chip'
@@ -38,7 +39,7 @@ function open() {
     role="button" tabindex="0" :aria-label="`Open ${post.body}`" data-testid="artifact-card" :data-artifact="id" :data-version="latest.version"
     @click="open" @keydown.enter.prevent="open" @keydown.space.prevent="open">
     <div class="relative h-[52px] w-[74px] overflow-hidden rounded-[6px] border border-border bg-white" aria-hidden="true">
-      <iframe v-if="thumb?.url && latest.kind === 'html' && !redacted" :src="thumb.url" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" tabindex="-1" title=""
+      <iframe v-if="thumb?.url && latest.kind === 'html' && !redacted" :src="withScheme(thumb.url, scheme)" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" tabindex="-1" title=""
         class="pointer-events-none absolute top-0 left-0 h-[520px] w-[740px] origin-top-left scale-[0.1] border-0" data-testid="artifact-thumb" />
       <img v-else-if="thumb?.url && (latest.kind === 'image' || latest.kind === 'svg') && !redacted" :src="thumb.url" alt="" class="h-full w-full object-cover" referrerpolicy="no-referrer" />
       <div v-else class="grid h-full w-full place-items-center bg-[color-mix(in_srgb,var(--text)_6%,var(--card-bg))] text-muted"><component :is="icon" :size="18" /></div>

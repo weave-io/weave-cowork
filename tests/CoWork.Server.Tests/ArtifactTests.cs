@@ -131,7 +131,11 @@ public class ArtifactTests
         var csp = page.Headers.GetValues("Content-Security-Policy").Single();
         Assert.Contains("default-src 'self'", csp); Assert.Contains("connect-src 'none'", csp); Assert.Contains("frame-ancestors 'self'", csp); Assert.EndsWith("sandbox allow-scripts", csp);
         Assert.Equal("nosniff", page.Headers.GetValues("X-Content-Type-Options").Single());
-        Assert.Contains("Tax APIs</h1>", await page.Content.ReadAsStringAsync());
+        var served = await page.Content.ReadAsStringAsync();
+        Assert.Contains("Tax APIs</h1>", served);
+        // brief 12: the page gets the script that follows CoWork's light or dark, just before </body>; its other files don't, nor does the app's copy
+        Assert.EndsWith("</script>\n</body></html>", served);
+        Assert.Contains("<img src=img/chart.png><script data-cowork=\"scheme\">", served);
         var css = await anon.GetAsync(v1.GetProperty("base").GetString() + "style.css");
         Assert.Equal(("text/css", "h1{color:teal}"), (css.Content.Headers.ContentType!.MediaType, await css.Content.ReadAsStringAsync()));
         Assert.Equal(HttpStatusCode.OK, (await anon.GetAsync(v1.GetProperty("base").GetString() + "img/chart.png")).StatusCode);
@@ -152,6 +156,7 @@ public class ArtifactTests
         // the app reads a file's text without it ever rendering at the app's origin
         var raw = await w.Rosa.Http.GetAsync($"/api/artifacts/{artifact}/versions/1/raw/style.css");
         Assert.Equal(("text/plain", "attachment"), (raw.Content.Headers.ContentType!.MediaType, raw.Content.Headers.ContentDisposition!.DispositionType));
+        Assert.Equal(Page(), await (await w.Rosa.Http.GetAsync($"/api/artifacts/{artifact}/versions/1/raw/index.html")).Content.ReadAsStringAsync());
 
         // Rosa replies under the canvas: her reply quotes it, and researcher hears which artifact and version, and where it is
         await box.End();
