@@ -56,21 +56,20 @@ export function freshHarnessHome(prefix) {
 
 /** Sign-in: CoWork has no passwords (brief 11), so the live checks sign people in through a real OpenID Connect provider, Dex, run in podman
  *  on the host network at 127.0.0.1:5556 and left running between checks (stop it with `podman stop cowork-live-dex`). Its users are the
- *  invented people of the checks (alex, rosa, sam, jo, and lee, who is never invited), all with the password "password" (Dex's own
+ *  invented people of the checks (alex, rosa, sam, jo, priya for the showcase, and lee, who is never invited), all with the password "password" (Dex's own
  *  example hash): they are Dex's users, not CoWork's. A server under check is started with SSO_ENV; for phase1, 2 and 4, which use a
  *  server you start yourself, start it with these variables too. */
 export const DEX_ISSUER = 'http://127.0.0.1:5556/dex'
 export const SSO_ENV = { COWORK_OIDC__AUTHORITY: DEX_ISSUER, COWORK_OIDC__CLIENTID: 'cowork-live', COWORK_OIDC__CLIENTSECRET: 'cowork-live-secret' }
 const DEX_IMAGE = 'ghcr.io/dexidp/dex:v2.44.0'
-const DEX_PEOPLE = ['alex', 'rosa', 'sam', 'jo', 'lee']
+const DEX_PEOPLE = ['alex', 'rosa', 'sam', 'jo', 'lee', 'priya']
 const dexUp = async () => { try { return (await fetch(`${DEX_ISSUER}/.well-known/openid-configuration`)).ok } catch { return false } }
 export async function ensureDex() {
-  if (await dexUp()) return
   const dir = `${homedir()}/.cache/cowork-tmp/dex`
   mkdirSync(dir, { recursive: true })
   const redirects = []
   for (let port = 5880; port <= 5889; port++) for (const host of ['127.0.0.1', 'localhost']) redirects.push(`http://${host}:${port}/signin-oidc`)
-  writeFileSync(`${dir}/config.yaml`, [
+  const config = [
     `issuer: ${DEX_ISSUER}`,
     'storage: { type: memory }',
     'web: { http: 127.0.0.1:5556 }',
@@ -80,7 +79,15 @@ export async function ensureDex() {
     `  - { id: ${SSO_ENV.COWORK_OIDC__CLIENTID}, secret: ${SSO_ENV.COWORK_OIDC__CLIENTSECRET}, name: CoWork, redirectURIs: [${redirects.map(r => `'${r}'`).join(', ')}] }`,
     'staticPasswords:',
     ...DEX_PEOPLE.map((h, i) => `  - { email: '${h}@lumen.example', hash: '$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W', username: '${h}', userID: '0000000${i}-dex-${h}' }`),
-  ].join('\n') + '\n')
+  ].join('\n') + '\n'
+  // a Dex already running with this config is used as it is; one started with an older config (fewer people) is restarted
+  const running = existsSync(`${dir}/config.yaml`) ? readFileSync(`${dir}/config.yaml`, 'utf8') : null
+  if (await dexUp()) {
+    if (running === config) return
+    try { execFileSync('podman', ['stop', '-t', '2', 'cowork-live-dex'], { stdio: 'ignore' }) } catch { /* not ours, or gone */ }
+    for (const t0 = Date.now(); await dexUp(); ) { if (Date.now() - t0 > 15000) throw new Error('an older Dex is still answering on 127.0.0.1:5556'); await new Promise(r => setTimeout(r, 250)) }
+  }
+  writeFileSync(`${dir}/config.yaml`, config)
   execFileSync('podman', ['run', '-d', '--rm', '--name', 'cowork-live-dex', '--network', 'host', '-v', `${dir}/config.yaml:/etc/dex/config.yaml:ro,Z`, DEX_IMAGE, 'dex', 'serve', '/etc/dex/config.yaml'], { stdio: 'ignore' })
   for (const t0 = Date.now(); !(await dexUp()); ) { if (Date.now() - t0 > 30000) throw new Error('Dex did not start'); await new Promise(r => setTimeout(r, 250)) }
 }

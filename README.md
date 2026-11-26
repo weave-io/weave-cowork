@@ -314,7 +314,8 @@ COWORK_SANDBOX_IMAGE=cowork-sandbox-opencode:2.4.1 node tests/live/showcase.mjs
 
 It needs rootless podman, Playwright with Chromium (`PLAYWRIGHT_MODULE` if node can't find it), OpenCode 2.4.1
 (`OPENCODE_BIN`), a model (GitHub Copilot signed in with OpenCode, or `SHOWCASE_MODELS_URL` and `SHOWCASE_MODELS_KEY` for an
-OpenAI-compatible provider), and for the voice picture the LiveKit image (`SHOWCASE_VOICE=0` skips it). With
+OpenAI-compatible provider), for the voice picture the LiveKit image (`SHOWCASE_VOICE=0` skips it), and for sign-in the live
+checks' Dex (started in podman by `tests/live/lib.mjs`). With
 [sharp](https://sharp.pixelplumbing.com) (`SHARP_DIR`, the folder where you ran `bun add sharp`) it keeps each PNG under 700 KB. The top of the script lists the rest.
 Everything in the pictures is invented: the people, the company and the code.
 
