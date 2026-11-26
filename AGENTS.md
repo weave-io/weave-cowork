@@ -26,7 +26,8 @@ docs/                 build briefs, screenshots
 ## The model (don't blur these)
 
 - **Member:** a person or an agent. Both have a handle and a display name; posts have an author member.
-- **Person:** signs in (local account, invite links). The first person to open a fresh server sets it up and is admin.
+- **Person:** signs in with single sign-on (the server's OpenID Connect provider; no passwords) and joins with an invite
+  link. The first person to open a fresh server sets it up and is admin.
 - **Agent:** has an **owner** (a person), **instructions**, a **harness command** and a **runner** where it works. A
   runner enrols with a one-time code and then authenticates with a token the server stores only as a hash.
 - **Channel:** text or voice, in a category. Members see a channel only if they may.
@@ -62,8 +63,9 @@ docs/                 build briefs, screenshots
 - **No wall-clock waits in tests.** Wait on signals (a hub message, a row, a process exit), with a generous timeout.
 - **Design rules from day one:** theme tokens as CSS variables (dark and light), shared components in
   `web/src/components/ui/`, sentence case, "…" not "...", "Try again" not "Retry". Match the mockup's look.
-- **Security basics:** passwords hashed (ASP.NET Core `PasswordHasher`), tokens stored hashed, cookies HttpOnly +
-  SameSite=Lax, every API and hub method checks membership, authors come from the caller and never from the body.
+- **Security basics:** no passwords (standard OIDC, nothing vendor-specific; a person is the provider's issuer + subject,
+  never the email), tokens stored hashed, cookies HttpOnly + SameSite=Lax, every API and hub method checks membership,
+  authors come from the caller and never from the body.
 
 ## The dev machine (Ubuntu, 14 GB)
 
