@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { LogIn } from 'lucide-vue-next'
 import { get, post, del, ApiError } from '../api'
 import { store, signedIn } from '../store'
@@ -20,6 +20,7 @@ const serverName = ref(''), handle = ref(''), displayName = ref('')
 const error = ref(''), busy = ref(false)
 const invite = ref<{ valid: boolean; reason: string | null; serverName: string; invitedBy: string } | null>(null)
 const providerSaidNo = ref(false)
+watch([handle, displayName, serverName], () => { error.value = '' })        // an error is about what was sent: editing clears it
 
 onMounted(async () => {
   const q = new URLSearchParams(location.search)
