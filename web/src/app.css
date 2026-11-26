@@ -62,3 +62,6 @@ mark { background: color-mix(in srgb, var(--idle) 28%, transparent); color: inhe
 .kind-chip { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--accent-dim); color: var(--accent-text); text-transform: uppercase; white-space: nowrap; }
 /* where an artifact sits in the canvas and on its own page: a quiet stage around the white page */
 .artifact-stage-bg { background: color-mix(in srgb, var(--text) 7%, var(--main-bg)); }
+/* A panel being sized (ui/resize-handle): no text selection and the resize cursor everywhere; iframes don't take the pointer. */
+html.panel-resizing, html.panel-resizing * { user-select: none; cursor: col-resize !important; }
+html.panel-resizing iframe { pointer-events: none; }

@@ -38,6 +38,8 @@ import WhereAgentsRun from '../components/modals/WhereAgentsRun.vue'
 import ServerSettings from '../components/modals/ServerSettings.vue'
 import ArtifactPage from '../components/artifacts/ArtifactPage.vue'
 import { canvasOpenFor } from '../artifacts'
+import { ResizeHandle } from '@/components/ui/resize-handle'
+import { MEMBERS, THREAD_PANEL, useElementWidth, usePanelWidth } from '../panels'
 
 const route = useRoute(), router = useRouter()
 // /c/:id the channel, /c/:id/t/:root a thread's quick look beside it, /c/:id/threads All threads, /c/:id/threads/:root a thread's full view
@@ -110,6 +112,15 @@ watch(() => [posts.value.length, store.feed.channelId], async () => {
 // back from search to the channel that was open: its feed is drawn again, at the bottom
 watch(searching, async s => { if (!s) { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight } }, { flush: 'post' })
 
+// brief 10: the quick look and the member list are sized by their handles and remembered. The member list's room leaves the quick look its
+// minimum; the quick look gets what the member list leaves (so neither squeezes the channel below 360 px).
+const area = ref<HTMLElement | null>(null)
+const areaWidth = useElementWidth(area)
+const panelShown = computed(() => view.value === 'panel' && !!store.feed.thread)
+const membersShown = computed(() => !isPhone.value && (!panelShown.value || isWide.value) && !(view.value === 'full' && canvasOpenFor(ids.value.thread)))
+const membersWidth = usePanelWidth(MEMBERS, () => areaWidth.value - (panelShown.value ? THREAD_PANEL.min : 0), () => panelShown.value ? 220 : 244)
+const panelWidth = usePanelWidth(THREAD_PANEL, () => areaWidth.value - (membersShown.value ? membersWidth.width.value : 0), () => 400)
+
 const goChannel = (id: number) => { navOpen.value = false; router.push(`/c/${id}`) }
 const goProject = (id: number) => { navOpen.value = false; router.push(`/p/${id}`) }
 const openT = (rootId: number) => router.push(`/c/${store.feed.channelId}/t/${rootId}`)
@@ -136,7 +147,8 @@ async function send(text: string) {
         </div>
       </template>
 
-      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-panel-bg" :class="isPhone ? '' : 'rounded-panel border border-border shadow-(--sheet-shadow)'">
+      <div ref="area" class="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-panel-bg" :class="isPhone ? '' : 'rounded-panel border border-border shadow-(--sheet-shadow)'"
+        :style="{ '--thread-panel-w': `${panelWidth.width.value}px`, '--members-w': `${membersWidth.width.value}px` }">
         <SearchView v-if="searching" />
         <ProjectSettings v-else-if="projectPage != null" :key="projectPage" :project-id="projectPage" class="min-h-0 min-w-0 flex-1" />
         <ArtifactPage v-else-if="artifactPage != null" :id="artifactPage" />
@@ -168,8 +180,10 @@ async function send(text: string) {
           <EmptyState v-else :icon="Hash" title="Pick a channel" description="Or create one with +." class="flex-1" />
         </main>
 
-        <ThreadPanel v-if="view === 'panel' && store.feed.thread" class="border-l border-border" :class="isPhone ? 'w-full' : 'w-[400px] shrink-0'" @close="closeT" />
-        <MemberList v-if="!isPhone && (view !== 'panel' || !store.feed.thread || isWide) && !(view === 'full' && canvasOpenFor(ids.thread))" class="shrink-0 border-l border-border" :class="view === 'panel' && store.feed.thread ? 'w-[220px]' : 'w-[244px]'" />
+        <ResizeHandle v-if="panelShown && !isPhone" :panel="panelWidth" />
+        <ThreadPanel v-if="panelShown" class="border-l border-border" :class="isPhone ? 'w-full' : 'w-(--thread-panel-w) shrink-0'" @close="closeT" />
+        <ResizeHandle v-if="membersShown" :panel="membersWidth" />
+        <MemberList v-if="membersShown" class="w-(--members-w) shrink-0 border-l border-border" />
         </template>
       </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Hash, Lock, Menu, Layers } from 'lucide-vue-next'
 import { store } from '../../store'
@@ -14,6 +14,8 @@ import SessionLines from './SessionLines.vue'
 import ThreadConversation from './ThreadConversation.vue'
 import ThreadTitle from './ThreadTitle.vue'
 import ArtifactCanvas from '../artifacts/ArtifactCanvas.vue'
+import { ResizeHandle } from '@/components/ui/resize-handle'
+import { CANVAS, useElementWidth, usePanelWidth } from '../../panels'
 
 // A thread as a full conversation in the main area (its URL is its own, so it can be shared and reloaded): its title as the heading (edited in
 // place), its status, the channel it hangs off (a link back to the post), the session line, every reply, tool row, ask and the outcome, and its
@@ -48,6 +50,11 @@ watch(() => [open.value, canvas.active, canvas.tabs.find(x => x.id === canvas.ac
     router.replace({ query: { ...rest, ...want } })
 })
 
+// brief 10: the canvas's width, dragged on its left edge and remembered (48% of the area by default, 420 to 860 px)
+const wrap = ref<HTMLElement | null>(null)
+const room = useElementWidth(wrap)
+const canvasWidth = usePanelWidth(CANVAS, () => room.value, r => Math.min(860, Math.max(420, r * 0.48)))
+
 const shown = computed(() => t.value ? threadArtifacts(t.value.replies) : [])
 // "2 artifacts": every artifact the thread shows, in tabs, the first one in front
 function showAll() {
@@ -58,7 +65,7 @@ function showAll() {
 }
 </script>
 <template>
-  <div class="flex min-h-0 min-w-0 flex-1" data-testid="thread-view-wrap">
+  <div ref="wrap" class="flex min-h-0 min-w-0 flex-1" data-testid="thread-view-wrap" :style="{ '--canvas-w': `${canvasWidth.width.value}px` }">
     <main v-show="!(open && (canvas.full || isPhone))" class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="thread-view">
       <template v-if="t">
         <header class="shrink-0 border-b border-border px-3 py-2.5 sm:px-4">
@@ -82,7 +89,8 @@ function showAll() {
       </template>
       <div v-else class="grid flex-1 place-items-center"><Spinner /></div>
     </main>
+    <ResizeHandle v-if="open && t && channel && !isPhone && !canvas.full" :panel="canvasWidth" />
     <ArtifactCanvas v-if="open && t && channel" :channel-id="channel.id" :thread-id="t.rootId"
-      class="border-border" :class="isPhone ? 'fixed inset-0 z-40 w-full' : canvas.full ? 'min-w-0 flex-1' : 'w-[48%] max-w-[860px] min-w-[420px] shrink-0 border-l'" />
+      class="border-border" :class="isPhone ? 'fixed inset-0 z-40 w-full' : canvas.full ? 'min-w-0 flex-1' : 'w-(--canvas-w) shrink-0 border-l'" />
   </div>
 </template>
