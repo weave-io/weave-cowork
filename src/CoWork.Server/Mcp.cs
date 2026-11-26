@@ -75,7 +75,7 @@ public sealed class Mcp
                     ["protocolVersion"] = (string?)m["params"]?["protocolVersion"] ?? Protocol,
                     ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } },
                     ["serverInfo"] = new JsonObject { ["name"] = "cowork", ["version"] = "0.7" },
-                    ["instructions"] = "CoWork's tools for this thread: read a channel or a thread you take part in, search what you may see, show people a page, document, image or table you made (cowork_show), and resolve this thread with an outcome when the work is done.",
+                    ["instructions"] = Instructions,
                 })!;
             case "ping": return (JsonObject)Result(new JsonObject())!;
             case "tools/list": return (JsonObject)Result(new JsonObject { ["tools"] = Tools() })!;
@@ -90,6 +90,18 @@ public sealed class Mcp
                 return new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "Method not found: " + method } };
         }
     }
+
+    /// <summary>
+    /// What the harness puts in front of the model before it has read any tool's description. Brief 10: OpenCode 2.4.1 calls MCP tools from code
+    /// ("code mode") and lists only these instructions up front, so the model guessed <c>cowork_show({ format, content, title })</c> before it
+    /// looked the tool up. The call shapes are here, and cowork_show's rule (a path in the workspace, never the content) with them.
+    /// </summary>
+    public const string Instructions =
+        "CoWork's tools for this thread: cowork_read_channel({ channel?, limit?, threadId? }) reads a channel or a thread you take part in; " +
+        "cowork_search({ query, limit? }) searches what you may see; cowork_resolve_thread({ summary, title? }) resolves this thread with an outcome when " +
+        "the work is done; cowork_show({ path, title?, open? }) shows people a report, document, image or table you made. cowork_show takes the path of " +
+        "a file, never its content: write the file inside your workspace (your working directory) first, for example reports/<name>/index.html, then " +
+        "call cowork_show with that path. A file outside the workspace, like one in /tmp, can't be shown.";
 
     static JsonArray Tools() => new(
         Tool("cowork_read_channel", "Read the latest messages of a channel you take part in (by default this thread's channel), oldest first, with who wrote each and which have threads. Give threadId to read one thread instead.",

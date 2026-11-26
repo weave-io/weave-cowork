@@ -58,12 +58,16 @@ public class WorkTests
         // the MCP handshake and the three tools
         var (st, init) = await Mcp(w.App, token, "initialize", new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "t", version = "0" } });
         Assert.Equal(("cowork", true), ((string)init!["result"]!["serverInfo"]!["name"]!, init["result"]!["capabilities"]!["tools"] is not null));
+        // brief 10: what a harness shows before any tool's description has each call's shape, and cowork_show's rule
+        Assert.Contains("cowork_show({ path, title?, open? })", (string)init["result"]!["instructions"]!);
+        Assert.Contains("cowork_show takes the path of a file, never its content: write the file inside your workspace (your working directory) first", (string)init["result"]!["instructions"]!);
         var tools = (await Mcp(w.App, token, "tools/list")).Body!["result"]!["tools"]!.AsArray().Select(t => (string)t!["name"]!).ToArray();
         Assert.Equal(new[] { "cowork_read_channel", "cowork_search", "cowork_resolve_thread", "cowork_show" }, tools);
         // brief 10: cowork_show says up front that the file must be inside the workspace
         var show = (await Mcp(w.App, token, "tools/list")).Body!["result"]!["tools"]!.AsArray().Single(t => (string)t!["name"]! == "cowork_show")!;
-        Assert.StartsWith("Show people something you made, as an artifact in this thread. The file must be inside your workspace (your working directory): " +
-            "a file anywhere else, like /tmp, can't be shown", (string)show["description"]!);
+        Assert.StartsWith("Show people a file you wrote, as an artifact in this thread. It takes the file's path, not its content, and the file must be " +
+            "inside your workspace (your working directory): first write it there with your file tool, for example reports/<name>/index.html, then call " +
+            "this with that path. A file anywhere else, like /tmp, can't be shown.", (string)show["description"]!);
         var note = await w.App.CreateClient().PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", method = "notifications/initialized" });
         Assert.Equal(HttpStatusCode.Unauthorized, note.StatusCode);
 

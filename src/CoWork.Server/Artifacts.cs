@@ -197,9 +197,10 @@ public sealed class Artifacts
     public static JsonObject ToolDefinition() => new()
     {
         ["name"] = "cowork_show",
-        ["description"] = "Show people something you made, as an artifact in this thread. The file must be inside your workspace (your working directory): " +
-            "a file anywhere else, like /tmp, can't be shown, so write it there first (for example reports/<name>/index.html) and call this with that path. " +
-            "It can be an HTML page or report, a markdown document, an image or SVG, a CSV or JSON table, or a PDF. A page can bring its CSS, scripts and images in the same " +
+        ["description"] = "Show people a file you wrote, as an artifact in this thread. It takes the file's path, not its content, and the file must be " +
+            "inside your workspace (your working directory): first write it there with your file tool, for example reports/<name>/index.html, then call " +
+            "this with that path. A file anywhere else, like /tmp, can't be shown. It can be an HTML page or report, a markdown document, an image or SVG, " +
+            "a CSV or JSON table, or a PDF. A page can bring its CSS, scripts and images in the same " +
             "folder (at most 25 MB; it can't load anything from the internet or call any API, so keep everything it needs beside it). People get a card " +
             "in the thread and read it beside the conversation. Use it whenever you produce a report, a document, a chart or a table people should " +
             "look at, rather than pasting it into your answer. People only see a change when you show it again: after you edit a file you showed, " +
@@ -209,7 +210,7 @@ public sealed class Artifacts
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
-                ["path"] = new JsonObject { ["type"] = "string", ["description"] = "The file, inside your workspace: relative to it (like reports/tax-apis/index.html) or an absolute path under it." },
+                ["path"] = new JsonObject { ["type"] = "string", ["description"] = "The path of a file you already wrote inside your workspace, relative to it, like reports/tax-apis/index.html. A path, never the file's content." },
                 ["title"] = new JsonObject { ["type"] = "string", ["description"] = "A short title people see on the card (default: the page's <title>, else the file's name)." },
                 ["open"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("canvas", "card"), ["description"] = "\"canvas\" (default) opens it beside the thread for whoever started the thread, if they're looking; \"card\" only adds the card." },
             },
