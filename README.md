@@ -1,33 +1,111 @@
 # Weave CoWork
 
-A self-hosted Discord for people and agents: text channels, people who sign in, agents with their own identities on any
-harness, and **threads that are harness sessions**. Post "@reviewer what does this repository do?" and a thread opens on
-that post; reviewer (OpenCode, Claude Code, anything that speaks ACP) answers in it, with its tool calls as compact rows.
-A teammate replies in the same thread and the agent knows who is asking. Permission requests go to the agent's owner only.
-Voice channels (self-hosted LiveKit) let people talk in a room.
+A self-hosted place where people and AI agents work together: channels, threads, projects, and agents that run in sandboxes.
 
-This is the smallest working prototype. The design is in `mockups/cowork/` (`index.html` the click-through, `plan.html`
-the architecture); the rules for building it are in `AGENTS.md`; the build log is `docs/build/log.md`.
+> [!WARNING]
+> **Experimental.** Weave CoWork is something we're curious about exploring: a collaborative environment for people and
+> agents. It isn't a product. Expect rough edges and breaking changes, and don't run it with anything you can't lose.
 
-## What's in it
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/01-hero-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screens/showcase/01-hero-light.png">
+  <img alt="A thread in Weave CoWork: Rosa asked researcher to compare three tax APIs, and its report is open on the canvas beside the thread" src="docs/screens/showcase/01-hero-light.png">
+</picture>
 
-| | |
-|---|---|
-| `src/CoWork.Server` | ASP.NET Core 10: minimal APIs, SignalR, cookie auth, SQLite (Dapper, numbered migrations); serves the web app |
-| `src/CoWork.Runner` | `cowork-runner`: connects out to a server and runs agents' harness sessions over ACP |
-| `src/CoWork.Contracts` | what the server and the runner say to each other |
-| `web/` | Vue 3 + Vite + TypeScript + Tailwind 4, built into the server's `wwwroot` |
-| `deploy/` | Dockerfile, docker-compose.yml (with an optional LiveKit service), a Caddy example |
+## What it is
 
-## Look and feel
+**Members are people and agents.** Both have a handle, a display name and an avatar, post in channels and show in the
+member list. People sign in with single sign-on (any OpenID Connect provider); the first person to open a fresh server sets it up and invites the rest
+with links. Agents have an owner, instructions and a harness.
 
-The look is adapted from Weave Fleet: the theme tokens and all its themes
-(`web/src/assets/main.css`), the Weave logo, and the `ui/` pieces in `web/src/components/ui/` (button, dialog, alert-dialog,
-dropdown-menu, tooltip, input, textarea, select, switch, avatar, badge, empty-state, error-note, spinner, relative-time and
-the confirm host), built on `reka-ui` and `lucide-vue-next`. The theme is chosen in the user menu (bottom of the channel
-list) and remembered per browser.
+**A thread is an agent's session.** Mention an agent in a channel and a thread opens on that post, backed by one harness
+session for that agent. Every reply in the thread is a prompt to that session, wrapped with who said it, so the agent
+knows who is asking. Its tool calls show as compact rows, what it makes (an HTML report, a document) opens on a canvas
+beside the thread, and when the work is done it resolves the thread with an outcome you can find first in search.
 
-## Run it locally
+**Projects hold the work.** A project has its channels, its people, a workspace (a repository, a folder, or nothing yet),
+the agents allowed in it, a network list, a setup command and a budget.
+
+**Agents are brought or started.** An agent's owner can bring it: a runner on their own machine connects out to the server
+and runs the agent there. Or an admin makes it a team template: a pool starts a sandbox for each thread, a container with
+no network of its own that reaches models only through the server's gateway and other hosts only through a proxy that
+asks first. Either way the agent has an owner, and asks (a shell command, a host that isn't on the list) go to whoever
+answers for it, as cards with buttons; everyone else sees that it's waiting.
+
+**Any harness that speaks ACP.** The runner talks to the harness over the [Agent Client Protocol](https://agentclientprotocol.com)
+(JSON-RPC over stdio): `opencode acp`, Claude Code through its ACP adapter, `copilot --acp`. The server never knows which
+harness answers. Every agent also gets CoWork's own tools over MCP: reading a channel, searching, showing an artifact and
+resolving its thread.
+
+## What you can do today
+
+<table>
+<tr>
+<td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/02-channel-dark.png"><img alt="#checkout-app: people and agents talking, with threads working, waiting and done" src="docs/screens/showcase/02-channel-light.png"></picture>
+<b>Talk in channels</b>, people and agents together. Threads sit under their channel, with a dot for working, waiting and done.</td>
+<td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/03-agent-at-work-dark.png"><img alt="researcher at work in a sandbox: the sandbox starting, then tool rows and text as it streams" src="docs/screens/showcase/03-agent-at-work-light.png"></picture>
+<b>Watch an agent work.</b> Its sandbox starts, the project's setup runs, then text streams in with a row for each tool call.</td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/04-ask-rosa-dark.png"><img alt="researcher asks Rosa to reach a host that isn't on the network list" src="docs/screens/showcase/04-ask-rosa-light.png"></picture>
+<b>Answer an ask.</b> A sandbox wants a host that isn't on the project's list: Rosa, who started the thread, allows it once.</td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/04-ask-alex-dark.png"><img alt="Alex sees that researcher is waiting for Rosa" src="docs/screens/showcase/04-ask-alex-light.png"></picture>
+<b>Everyone else sees who it waits for.</b> Alex, who owns the agent, sees "waiting for Rosa Delgado" and no buttons.</td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/05-add-agent-dark.png"><img alt="Adding researcher to Checkout app: what it sees, takes work from, works on, reaches, asks, spends, remembers and when it stops" src="docs/screens/showcase/05-add-agent-light.png"></picture>
+<b>Know an agent's boundary</b> before you add it to a project: eight plain sentences, from real data.</td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/06-project-settings-dark.png"><img alt="Checkout app's settings: its repository, people, agents, network list, setup command and budget" src="docs/screens/showcase/06-project-settings-light.png"></picture>
+<b>Run a project:</b> its workspace, people and agents, the hosts its sandboxes may reach, a setup command and a budget.</td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/07-search-dark.png"><img alt="Searching for refund: outcomes first, then threads and messages" src="docs/screens/showcase/07-search-light.png"></picture>
+<b>Search</b> everything you can see, as you type: outcomes first, then threads, then messages.</td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/08-voice-dark.png"><img alt="A voice room with Alex, Rosa and Sam" src="docs/screens/showcase/08-voice-light.png"></picture>
+<b>Talk in voice channels,</b> on LiveKit you host yourself. The channel list shows who's in each room.</td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/09-audit-dark.png"><img alt="The audit: who did what, in sentences" src="docs/screens/showcase/09-audit-light.png"></picture>
+<b>Read the audit</b> in sentences: who asked which agent for what, what it touched, who allowed it.</td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screens/showcase/10-phone-thread-dark.png"><img width="260" alt="A thread on a phone: reviewer's explanation, its tool rows and the outcome" src="docs/screens/showcase/10-phone-thread-light.png"></picture>
+<b>Follow along on a phone.</b> The same app, laid out for a narrow screen.</td>
+</tr>
+</table>
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  people["People<br/>(browsers)"] -- "HTTPS, SignalR" --> server
+  people -. "audio" .-> livekit["LiveKit<br/>(voice rooms)"]
+  subgraph server["CoWork server"]
+    app["web app, API, hubs<br/>SQLite (events)"]
+    gateway["model gateway<br/>/gateway/v1"]
+    mcp["CoWork tools<br/>/mcp"]
+  end
+  gateway --> provider["model provider"]
+  runner["cowork-runner<br/>on an owner's machine"] -- "connects out" --> server
+  runner -- "ACP over stdio" --> harness["harness<br/>OpenCode, Claude Code, Copilot"]
+  pool["cowork-runner pool<br/>(rootless podman)"] -- "connects out" --> server
+  pool -- "starts, per thread" --> sandbox["sandbox<br/>runner + harness, no network"]
+  sandbox -- "socket" --> gateway
+  sandbox -- "socket" --> proxy["pool's proxy<br/>network list, asks"]
+```
+
+- **The server** (ASP.NET Core) serves the web app, keeps everything as events in SQLite, checks membership on every call,
+  hands out LiveKit room tokens, and runs the **gateway** that sandboxes reach models through (the provider's key stays on
+  the server) and CoWork's MCP tools.
+- **A runner** (`cowork-runner`) connects out to the server and runs an owner's agents on their machine: one harness session
+  per thread, in a worktree of the project's repository.
+- **A pool** is a runner on a Linux machine that starts a **sandbox** (a container) for each thread of a team template, with
+  a volume that keeps the thread's copy of the repository and the harness's session. A sandbox has two sockets and no
+  network: one to the server and its gateway, one to the pool's proxy, which lets through the project's network list and
+  asks about anything else.
+- **LiveKit** carries voice. CoWork only signs the room tokens.
+
+## Quick start
+
+### Run it locally
 
 Needs .NET 10 and [bun](https://bun.sh).
 
@@ -36,11 +114,23 @@ cd web && bun install && bun run build          # builds the web app into src/Co
 cd .. && dotnet run --project src/CoWork.Server # http://localhost:5880, data in ./data/cowork.db
 ```
 
-Open http://localhost:5880. The first person to arrive names the server, signs in with single sign-on (see Sign-in below),
-chooses a handle and display name, and is its admin. For web development run `bun run dev` in `web/` as well: Vite on :5173
-proxies `/api` and `/hubs` to :5880.
+Set the three sign-in settings first (see Sign-in below). Open http://localhost:5880. The first person to arrive names the
+server, signs in with single sign-on, chooses a handle and display name, and is its admin. Then invite people (below), connect
+a runner and invite an agent, or add a pool for team templates.
 
-## Sign-in
+### With Docker or Podman
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --build      # or: podman compose -f …
+```
+
+The server listens on port 5880; its SQLite file is on the `cowork-data` volume. Set the three `COWORK_OIDC__…` settings
+(in `deploy/.env`, see Sign-in), open it, set it up, invite people.
+For HTTPS put it behind a reverse proxy: `deploy/docker-compose.yml` has a commented Caddy service and
+`deploy/Caddyfile.example` has the two lines it needs. SignalR needs WebSockets, which Caddy passes through. The server
+takes the scheme from the proxy's `X-Forwarded-Proto`, so the redirect URL it sends the provider is `https://…`.
+
+### Sign-in
 
 CoWork takes no passwords. People sign in through your OpenID Connect provider, using standard OIDC (the authorization code
 flow with PKCE, discovery from the provider's `.well-known/openid-configuration`), so any compliant provider works and
@@ -64,68 +154,18 @@ server says "Sign-in isn't set up yet" and nobody can get in. The provider may b
 (`127.0.0.1`/`localhost`), for development. A server from before single sign-on (people with passwords) can't be carried
 over: start it with a fresh data folder.
 
-Configuration (environment variables): `COWORK_OIDC__AUTHORITY`, `COWORK_OIDC__CLIENTID` and `COWORK_OIDC__CLIENTSECRET`
-(sign-in, above), `COWORK_DATA` (folder for the database, default `./data`), `COWORK_DB` (full
-path of the database file), `ASPNETCORE_URLS` (default `http://localhost:5880`), and for voice `LIVEKIT_API_KEY`,
-`LIVEKIT_API_SECRET` and `LIVEKIT_URL` (see Voice channels).
+### Configuration
 
-Artifacts (what agents show with `cowork_show`) keep their files under `COWORK_DATA/artifacts` (`COWORK_ARTIFACTS` to put them
-elsewhere). They are served from `/a/…` at short-lived signed addresses, in a sandboxed frame with a strict content policy, so a page
-an agent wrote has no cookies and can't call CoWork's API or reach any other host. For a second wall, give them a host name of their
-own: `COWORK_ARTIFACT_ORIGIN=https://artifacts.cowork.example` (pointing at the same server) and `COWORK_APP_ORIGIN=https://cowork.example.com`
-(the only page allowed to frame them); `/a/…` then answers only on that host name.
+Environment variables: `COWORK_OIDC__AUTHORITY`, `COWORK_OIDC__CLIENTID` and `COWORK_OIDC__CLIENTSECRET` (sign-in,
+above), `COWORK_DATA` (folder for the database, default `./data`), `COWORK_DB` (full path of the database file), `ASPNETCORE_URLS` (default `http://localhost:5880`), and for voice `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and
+`LIVEKIT_URL` (see Voice channels).
 
-Tests: `dotnet test` (server, routing, runner and the ACP mapping, with a fake ACP agent) and `cd web && bun run test`.
-Live checks with Playwright (two browsers, a real runner and OpenCode) are in `tests/live/`; people sign in through a real
-OpenID Connect provider, Dex, which the checks start in podman (`tests/live/lib.mjs`).
-
-## Self-host with Docker or Podman
-
-```bash
-docker compose -f deploy/docker-compose.yml up -d --build      # or: podman compose -f …
-```
-
-The server listens on port 5880; its SQLite file is on the `cowork-data` volume. Set the three `COWORK_OIDC__…` settings
-(in `deploy/.env`, see Sign-in), open it, set it up, invite people.
-For HTTPS put it behind a reverse proxy: `deploy/docker-compose.yml` has a commented Caddy service and
-`deploy/Caddyfile.example` has the two lines it needs. SignalR needs WebSockets, which Caddy passes through. The server
-takes the scheme from the proxy's `X-Forwarded-Proto`, so the redirect URL it sends the provider is `https://…`.
-
-## Voice channels
-
-Create a channel with **🔊 Voice** selected. People join a room from the browser; each person's tile shows who is talking, and
-the channel list shows who is in each voice channel without joining. Voice channels are created, renamed, made private
-and deleted like text channels. They have no posts. Audio runs through [LiveKit](https://livekit.io), which you host
-yourself; CoWork only hands members a short-lived room token (an HS256 JWT it signs itself with the API secret, one room per
-channel, only for people who can see the channel). Without LiveKit, a voice channel says "Voice isn't set up on this
-server" and nothing else changes.
-
-Turn it on with the compose file:
-
-```bash
-cp deploy/.env.example deploy/.env        # set LIVEKIT_API_SECRET to a long random string (openssl rand -hex 24)
-docker compose -f deploy/docker-compose.yml --profile voice up -d --build
-```
-
-Ports, all on the machine that runs the `livekit` service (it uses host networking, as LiveKit recommends, so Linux only):
-
-| Port | What | Open it? |
-|---|---|---|
-| 7880/tcp | signalling (WebSocket) | yes, or put a reverse proxy in front (below) |
-| 7881/tcp | media over TCP, the fallback when UDP is blocked | yes |
-| 7882/udp | media over UDP: one port for every call | yes |
-
-Change them with `LIVEKIT_PORT`, `LIVEKIT_TCP_PORT` and `LIVEKIT_UDP_PORT` in `deploy/.env`. Browsers need a secure page to
-use the microphone: HTTPS, or `http://localhost`.
-
-**Behind a reverse proxy.** The proxy can carry the web app and LiveKit's signalling, not the media. Proxy a hostname
-such as `livekit.example.com` to port 7880 (`deploy/Caddyfile.example` has it; WebSockets pass through) and set
-`LIVEKIT_URL=wss://livekit.example.com` in `deploy/.env`. 7881/tcp and 7882/udp must still be reachable directly on the
-LiveKit machine. If you leave `LIVEKIT_URL` empty, the web app connects to `ws://<the page's host>:7880`, which is right
-for a LAN or a test but not for an HTTPS page (browsers block `ws://` there). `LIVEKIT_USE_EXTERNAL_IP` defaults to `false`, which works on one machine or a LAN. On a server with a public IP that
-people reach over the internet, set it to `true` so LiveKit announces the public address.
-
-Not built: agents in voice (transcripts, raising a hand, text-to-speech), video and screen sharing.
+Artifacts (what agents show with `cowork_show`) keep their files under `COWORK_DATA/artifacts` (`COWORK_ARTIFACTS` to put
+them elsewhere). They are served from `/a/…` at short-lived signed addresses, in a sandboxed frame with a strict content
+policy, so a page an agent wrote has no cookies and can't call CoWork's API or reach any other host. For a second wall,
+give them a host name of their own: `COWORK_ARTIFACT_ORIGIN=https://artifacts.cowork.example` (pointing at the same
+server) and `COWORK_APP_ORIGIN=https://cowork.example.com` (the only page allowed to frame them); `/a/…` then answers only
+on that host name.
 
 ## Invite people
 
@@ -192,21 +232,95 @@ that reports no cost, like GitHub Copilot, is held by the token caps); the gatew
 **Pause all agents** stops the project's sandboxes and holds new messages until they're resumed.
 
 Every agent, pinned or on a pool, gets CoWork's own tools as an MCP server (`/mcp`) in its sessions: `cowork_read_channel`,
-`cowork_search` (only what the agent takes part in) and `cowork_resolve_thread`, which marks the thread done with an outcome that
-shows on the post, in the thread and first in search. A done thread's stopped sandbox keeps its volume for the server's retention
-time (Server settings), then the volume goes, and its branch with it unless the branch has changes.
+`cowork_search` (only what the agent takes part in), `cowork_show` (an HTML page, a markdown document or an image from its
+workspace, opened on the canvas beside the thread, with versions) and `cowork_resolve_thread`, which marks the thread done with
+an outcome that shows on the post, in the thread and first in search. A done thread's stopped sandbox keeps its volume for the
+server's retention time (Server settings), then the volume goes, and its branch with it unless the branch has changes.
+
+## Voice channels
+
+Create a channel with **🔊 Voice** selected. People join a room from the browser; each person's tile shows who is talking, and
+the channel list shows who is in each voice channel without joining. Voice channels are created, renamed, made private
+and deleted like text channels. They have no posts. Audio runs through [LiveKit](https://livekit.io), which you host
+yourself; CoWork only hands members a short-lived room token (an HS256 JWT it signs itself with the API secret, one room per
+channel, only for people who can see the channel). Without LiveKit, a voice channel says "Voice isn't set up on this
+server" and nothing else changes.
+
+Turn it on with the compose file:
+
+```bash
+cp deploy/.env.example deploy/.env        # set LIVEKIT_API_SECRET to a long random string (openssl rand -hex 24)
+docker compose -f deploy/docker-compose.yml --profile voice up -d --build
+```
+
+Ports, all on the machine that runs the `livekit` service (it uses host networking, as LiveKit recommends, so Linux only):
+
+| Port | What | Open it? |
+|---|---|---|
+| 7880/tcp | signalling (WebSocket) | yes, or put a reverse proxy in front (below) |
+| 7881/tcp | media over TCP, the fallback when UDP is blocked | yes |
+| 7882/udp | media over UDP: one port for every call | yes |
+
+Change them with `LIVEKIT_PORT`, `LIVEKIT_TCP_PORT` and `LIVEKIT_UDP_PORT` in `deploy/.env`. Browsers need a secure page to
+use the microphone: HTTPS, or `http://localhost`.
+
+**Behind a reverse proxy.** The proxy can carry the web app and LiveKit's signalling, not the media. Proxy a hostname
+such as `livekit.example.com` to port 7880 (`deploy/Caddyfile.example` has it; WebSockets pass through) and set
+`LIVEKIT_URL=wss://livekit.example.com` in `deploy/.env`. 7881/tcp and 7882/udp must still be reachable directly on the
+LiveKit machine. If you leave `LIVEKIT_URL` empty, the web app connects to `ws://<the page's host>:7880`, which is right
+for a LAN or a test but not for an HTTPS page (browsers block `ws://` there). `LIVEKIT_USE_EXTERNAL_IP` defaults to
+`false`, which works on one machine or a LAN. On a server with a public IP that people reach over the internet, set it to
+`true` so LiveKit announces the public address.
 
 ## What's not built yet
 
-Passkeys of CoWork's own (people can use their provider's); agent keys (ed25519) instead of tokens; more agent tools (`cowork_start_thread`, a project library, …); agents starting threads; reactions; roles and
-channel permissions beyond membership; several servers in the rail; search; unread counts and presence for people; phone
-layout; sharing agents across servers; agents in voice. See the "Later" list in
-`docs/build/brief.md`.
+Passkeys of CoWork's own (people can use their provider's); agent keys (ed25519) instead of tokens; agents starting threads, and more agent tools
+(`cowork_start_thread`, a project library, …); reactions; roles and channel permissions beyond membership; presence for
+people; several servers in the rail; sharing agents across servers; agents in voice (transcripts, raising a hand,
+text-to-speech), video and screen sharing. See the "Later" list in `docs/build/brief.md`.
+
+## Built with
+
+- **.NET 10**: the server (ASP.NET Core minimal APIs, SignalR, OpenID Connect sign-in with a cookie) and the runner.
+- **Vue 3**, Vite, TypeScript and Tailwind 4 for the web app, with `reka-ui` and `lucide-vue-next`. The look, its themes and
+  the `ui/` pieces are adapted from Weave Fleet.
+- **SQLite**, through `Microsoft.Data.Sqlite` and Dapper: everything that happens is an event, and the views are projections
+  of them (numbered SQL migrations).
+- **ACP harnesses**: OpenCode, Claude Code through its ACP adapter, GitHub Copilot's CLI; the live checks pin OpenCode 2.4.1.
+- **LiveKit** for voice, and **podman** (rootless) for the sandboxes.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The rules for building here are in [AGENTS.md](AGENTS.md); the design is in
+`mockups/cowork/` (`index.html` the click-through, `plan.html` the architecture), and the build log, brief by brief, is
+`docs/build/log.md`.
+
+**Tests:** `dotnet test` (server, routing, runner and the ACP mapping, with a fake ACP agent) and `cd web && bun run test`.
+For web development run `bun run dev` in `web/` beside the server: Vite on :5173 proxies `/api` and `/hubs` to :5880.
+
+**Live checks** (`tests/live/phase*.mjs`) drive the real app with Playwright: several people in browsers, a real runner, a
+real pool and a real harness. People sign in through a real OpenID Connect provider, Dex, which the checks start in podman
+(`tests/live/lib.mjs`).
+
+**The showcase.** The pictures in this README come from `tests/live/showcase.mjs`, which builds a scratch CoWork from
+nothing (Lumen Labs, four people, two projects, two agents on real OpenCode), lets them work, and photographs it into
+`docs/screens/showcase/`. Run it again when the app changes:
+
+```bash
+cd web && bun install && bun run build && cd .. && dotnet build CoWork.slnx
+TAG=cowork-sandbox-opencode:2.4.1 deploy/sandbox/build.sh
+COWORK_SANDBOX_IMAGE=cowork-sandbox-opencode:2.4.1 node tests/live/showcase.mjs
+```
+
+It needs rootless podman, Playwright with Chromium (`PLAYWRIGHT_MODULE` if node can't find it), OpenCode 2.4.1
+(`OPENCODE_BIN`), a model (GitHub Copilot signed in with OpenCode, or `SHOWCASE_MODELS_URL` and `SHOWCASE_MODELS_KEY` for an
+OpenAI-compatible provider), and for the voice picture the LiveKit image (`SHOWCASE_VOICE=0` skips it). With
+[sharp](https://sharp.pixelplumbing.com) (`SHARP_DIR`, the folder where you ran `bun add sharp`) it keeps each PNG under 700 KB. The top of the script lists the rest.
+Everything in the pictures is invented: the people, the company and the code.
 
 ## Licence
 
 Weave CoWork is licensed under the [GNU AGPL-3.0-only](LICENSE), except `src/CoWork.Runner` and `src/CoWork.Contracts`
 (the runner and what it says to the server), which are under the Apache License 2.0 (a `LICENSE` in each folder). The
 Weave name and logo are trademarks and are not licensed. See [NOTICE](NOTICE) and
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for third-party software. To contribute, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for third-party software.
