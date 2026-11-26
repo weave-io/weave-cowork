@@ -220,6 +220,8 @@ try {
   const k2 = await aria(r, 'canvas')
   await r.keyboard.press('ArrowRight')
   const k3 = await aria(r, 'canvas')
+  // the line fades in (a CSS transition): read it once the fade is over
+  await r.waitForFunction(() => getComputedStyle(document.querySelector('[data-testid=resize-canvas]').firstElementChild).opacity === '1')
   const focusCue = await sep.evaluate(el => ({ line: getComputedStyle(el.firstElementChild).width, opacity: getComputedStyle(el.firstElementChild).opacity, outline: getComputedStyle(el).outlineStyle }))
   expect(focusCue.line === '4px' && focusCue.opacity === '1' && focusCue.outline === 'none', `focused from the keyboard the handle shows its line thicker (${focusCue.line}), no ring around the grip`)
   expect(k1.now === k0.now + 16 && k2.now === k1.now + 64 && k3.now === k2.now - 16 && near(await width(r, C), k3.now, 1),
