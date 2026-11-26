@@ -1,6 +1,6 @@
 // Journey steps 7-10 with a REAL runner and a REAL harness (OpenCode 2 under a scratch HOME).
 //   BASE=http://127.0.0.1:5882 DB=~/.cache/cowork-scratch/p2/cowork.db node tests/live/phase2.mjs
-import { launch, person, BASE, SHOTS, expect, ok, freshHarnessHome } from './lib.mjs'
+import { launch, person, BASE, SHOTS, expect, ok, freshHarnessHome, setUp, ssoJoin } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
@@ -36,13 +36,13 @@ try {
   ;(async () => { while (!finished) { if (auto) { const b = a.locator('[data-testid=ask-card] button:has-text("Allow once")'); if (await b.count().catch(() => 0)) await b.first().click({ timeout: 2000 }).catch(() => {}) } await new Promise(res => setTimeout(res, 1500)) } })()
   // --- people, as in phase 1 (done fast) ---
   await a.goto(BASE)
-  await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex'); await a.fill('[name=displayName]', 'Alex'); await a.fill('[name=password]', 'correct horse')
-  await a.click('button[type=submit]'); await a.waitForSelector('[data-channel=general]')
+  await setUp(a)
+  await a.waitForSelector('[data-channel=general]')
   await a.click('[data-testid=create-channel]'); await a.fill('[name=name]', 'checkout-app'); await a.fill('[name=topic]', 'Cart, payment and order confirmation'); await a.click('button:has-text("Create channel")')
   await a.waitForSelector('[data-testid=channel-title]:has-text("checkout-app")')
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await r.goto(`${BASE}/invite/${code}`)
-  await r.fill('[name=username]', 'rosa'); await r.fill('[name=displayName]', 'Rosa'); await r.fill('[name=password]', 'rosa-password'); await r.click('button[type=submit]')
+  await ssoJoin(r, 'rosa', 'Rosa')
   await r.waitForSelector('[data-channel=checkout-app]'); await r.click('[data-channel=checkout-app]')
   ok('Alex and Rosa are in #checkout-app')
 

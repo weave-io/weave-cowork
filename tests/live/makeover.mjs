@@ -2,7 +2,7 @@
 // real LiveKit, driven the way phase2 and phase4 drive them. Invented data only.
 //   BASE=http://127.0.0.1:5884 DB=~/.cache/cowork-scratch/mk/cowork.db node tests/live/makeover.mjs
 // (the server needs LIVEKIT_API_KEY / LIVEKIT_API_SECRET / LIVEKIT_URL and a LiveKit running; see ~/.cache/cowork-scratch/mk.sh)
-import { launch, person, BASE, expect, ok } from './lib.mjs'
+import { launch, person, BASE, expect, ok, ssoJoin, setUp } from './lib.mjs'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { mkdirSync } from 'node:fs'
@@ -35,16 +35,16 @@ let finished = false
 try {
   ;(async () => { while (!finished) { const b = a.locator('[data-testid=ask-card] button:has-text("Allow once")'); if (await b.count().catch(() => 0)) await b.first().click({ timeout: 2000 }).catch(() => {}); await new Promise(res => setTimeout(res, 1500)) } })()
   await a.goto(BASE)
-  await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex'); await a.fill('[name=displayName]', 'Alex'); await a.fill('[name=password]', 'correct horse')
+  await a.fill('[name=serverName]', 'Lumen Labs')
   await shot(a, 'setup-dark')
-  await a.click('button[type=submit]'); await a.waitForSelector('[data-channel=general]')
+  await setUp(a)
   await a.click('[data-testid=create-channel]'); await a.fill('[name=name]', 'checkout-app'); await a.fill('[name=topic]', 'Cart, payment and order confirmation'); await a.click('button:has-text("Create channel")')
   await a.waitForSelector('[data-testid=channel-title]:has-text("checkout-app")')
   await a.click('[data-testid=create-channel]'); await a.click('[data-testid=kind-voice]'); await a.fill('[name=name]', 'standup'); await a.click('button:has-text("Create channel")')
   await a.waitForSelector('[data-channel=standup][data-kind=voice]')
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await r.goto(`${BASE}/invite/${code}`)
-  await r.fill('[name=username]', 'rosa'); await r.fill('[name=displayName]', 'Rosa'); await r.fill('[name=password]', 'rosa-password'); await r.click('button[type=submit]')
+  await ssoJoin(r, 'rosa', 'Rosa')
   await r.waitForSelector('[data-channel=checkout-app]'); await r.click('[data-channel=checkout-app]')
   await a.click('[data-channel=checkout-app]')
   ok('Alex and Rosa are in #checkout-app')

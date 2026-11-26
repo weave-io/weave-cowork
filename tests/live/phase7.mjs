@@ -6,7 +6,7 @@
 // cowork/<slug> branch, a file written in one isn't in the other → the settings show the workspace, people, agents and rules → reviewer set to
 // take work from Alex only: Rosa gets "reviewer only takes work from Alex." instead of a turn. Starts its own server (default port 5883).
 //   node tests/live/phase7.mjs          (screenshots go to docs/screens/brief5/)
-import { launch, person, expect, ok, freshHarnessHome, MODEL } from './lib.mjs'
+import { launch, person, expect, ok, freshHarnessHome, MODEL, setUp, ssoJoin, SSO_ENV } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { rmSync, mkdirSync, writeFileSync, existsSync, readlinkSync } from 'node:fs'
@@ -44,7 +44,7 @@ git(SCRATCH.dir, 'clone', '-q', '--bare', seed, BARE)
 
 let server = null, runner = null
 function startServer() {
-  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, COWORK_DB: DB, ASPNETCORE_URLS: BASE }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, ...SSO_ENV, COWORK_DB: DB, ASPNETCORE_URLS: BASE }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
   server.log = ''; server.stdout.on('data', d => server.log += d); server.stderr.on('data', d => server.log += d)
   return until('the server to listen', async () => { try { return (await fetch(BASE + '/api/setup/status')).ok } catch { return false } }, 30000)
 }
@@ -67,7 +67,7 @@ const json = (p, path) => p.evaluate(async (u) => { const r = await fetch(u); re
 async function join(p, handle, name) {
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await p.goto(`${BASE}/invite/${code}`)
-  await p.fill('[name=username]', handle); await p.fill('[name=displayName]', name); await p.fill('[name=password]', `${handle}-password`); await p.click('button[type=submit]')
+  await ssoJoin(p, handle, name)
   await p.waitForSelector('[data-channel=general]')
 }
 try {
@@ -75,8 +75,8 @@ try {
 
   // --- Alex sets up Lumen Labs; Rosa, Sam and Jo join; Alex brings his own agent, reviewer, on his runner on build-01 ---
   await a.goto(BASE)
-  await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex'); await a.fill('[name=displayName]', 'Alex'); await a.fill('[name=password]', 'correct horse')
-  await a.click('button[type=submit]'); await a.waitForSelector('[data-channel=general]')
+  await setUp(a)
+  await a.waitForSelector('[data-channel=general]')
   await join(r, 'rosa', 'Rosa'); await join(s, 'sam', 'Sam'); await join(j, 'jo', 'Jo')
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]')
   await a.fill('[name=handle]', 'reviewer'); await a.fill('[name=about]', 'Reviews and fixes the checkout app')
