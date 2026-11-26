@@ -1119,3 +1119,66 @@ reduces any over 700 KB to a palette PNG with [sharp](https://sharp.pixelplumbin
   checks what must be true (a report shown and changed, an outcome, an ask allowed and one waiting, a turn photographed while it works), not
   the words.
 - The member list's Activity and Edit now show on hover; on a touch screen wider than a phone the name still truncates beside them.
+
+## Brief 12: pages that look chosen
+
+**Demo:** `tests/live/phase16.mjs` (10 checks; Alex and Rosa in browsers, Rosa's computer light and CoWork in its default dark; a real pool with
+real containers on `cowork-sandbox-opencode:2.4.1-b12`, real OpenCode 2.4.1 through this machine's Copilot sign-in, Haiku 4.5). researcher's
+instructions say nothing about design, and Rosa asks in brief 10's words. The sandbox's runner has put `cowork-design` in the harness's home;
+OpenCode loads it with its own skill tool before it writes the page; the page has its own dark and light, links `/a/fonts/fonts.css` and loads
+nothing from the internet, and its fonts load in the sandboxed frame; it's dark beside dark CoWork although Rosa's computer is light; she
+switches CoWork to light and the same page (no reload) turns light, and back; the card's thumbnail is told too; opened on its own it follows
+the computer; the app's copy is the page as researcher wrote it.
+
+**What changed**
+- **`cowork-design`** (`src/CoWork.Contracts/Skills/cowork-design/SKILL.md`, embedded once, read by `Skills.Design`): Weave Fleet's
+  fleet-design adapted for CoWork (the user agreed to bring it in). Kept: the plan, the rules for type, colour and layout, the generic looks to
+  avoid, copy. New: where the page goes and `cowork_show`; nothing from the internet; the font kit; both themes always; the canvas's widths; a
+  five-point recipe for reports (the answer first, amounts as bars with a pattern that works, quiet tables, no side stripes or boxed sections,
+  one accent); a self-check instead of Fleet's browser check. NOTICE says where it came from.
+- **Native skill in sandboxes:** `HarnessSkills.Install` (runner) writes it to `~/.claude/skills/cowork-design/` (Claude Code; OpenCode reads
+  it too) and `~/.agents/skills/cowork-design/` (Codex; OpenCode too) when the runner starts in a sandbox. OpenCode 2.4.1's folders were read
+  from its binary (its config folder, `~/.claude`, `~/.agents`). Not on a pinned runner: that home is its owner's.
+- **Through MCP, everywhere:** `cowork_design_guide` returns the same text (without its front matter), and the MCP instructions say to read
+  the guide before writing a page ("the cowork-design skill if you have it, otherwise cowork_design_guide({})") and that fonts come from
+  `/a/fonts/fonts.css`. Calls are recorded like the other CoWork tools.
+- **Font kit** (`src/CoWork.Server/PageKit/fonts`, embedded): Fraunces, Instrument Serif, Source Serif 4, IBM Plex Sans, Bricolage
+  Grotesque, IBM Plex Mono; Latin, 13 files, 290 KB; served at `/a/fonts/` with `Access-Control-Allow-Origin: *` (a font is fetched with CORS
+  and the frame's origin is opaque). A page's own font files get the same header. Licences beside them and in THIRD-PARTY-NOTICES (the
+  generator lists them).
+- **Light and dark follow CoWork:** the canvas and the card's thumbnail add `#scheme=dark|light` (from the chosen theme's colour scheme) to the
+  page's address. The server adds `PageKit/scheme.js` just before a served page's last `</body>`: it rewrites the page's own
+  `prefers-color-scheme` media rules (style sheets, imports, nested rules, `<link media>`, `<source media>`) to match, sets `color-scheme` on
+  the root only if the page declared both, and runs again on `hashchange`, so a theme change doesn't reload the page. Downloads and the app's
+  raw copy are untouched.
+
+**Decisions**
+- **One text, two routes.** The skill is embedded in Contracts so the runner and the server can't disagree. Changing it means a new sandbox
+  image (the runner installs its own copy); the MCP route changes with the server.
+- **The kit is served, not copied.** The proposal had agents copy font files into each report's folder; serving them at `/a/fonts/` is less
+  for an agent to get wrong and works the same on every runner. A downloaded page falls back to its stack.
+- **Literata out, Source Serif 4 in.** Literata's static Latin file sets words almost touching at body sizes ("acrossall27"), seen in the
+  first live report.
+- **The frame keeps its white background** while it loads: a page without a background of its own and without dark rules stays readable.
+- **The skill's tool row says only "skill".** OpenCode titles its skill tool that way; which skill it loaded is in its database. phase16
+  reads it from there; naming it in the row is a later change to the adapter.
+- **Haiku needed the recipe.** With the guide alone, its first report used a filled header row and side stripes (both on the avoid list) and
+  didn't open with the answer. With the recipe: the answer first, but bars sized by preference (100, 80, 62 for $24, $30, $18.50) and in
+  dollars; then right widths that `flex: 1` overrode; then, with the bar pattern, right on all counts (55, 100, 68 % for €0.22, €0.40,
+  €0.27). phase16 prints what each report did of the recipe and the bars as drawn, without failing on the model's taste.
+
+**Checked**
+- phase16 passed five times on the way (each run: a new sandbox, a new report); the last one's pictures in `docs/screens/brief12/`, looked
+  at in both themes. Claude Code and Codex each list `cowork-design` from a scratch folder holding the skill (project level), so the file is a
+  skill both accept.
+- `dotnet test` (Runner 44, Server 104), `bun run test` (58), and the live checks for the canvas on the b12 image: `phase13` 32 (its frame
+  checks too: no cookie, no API, no network, with CoWork's script in the page) and `phase14` 26, screenshots to a scratch folder.
+- **phase14's focus check raced the line's fade** (it read opacity 0.84 mid-transition, twice); it now waits for the computed opacity to be
+  1 before reading. Not this brief's change, found running it.
+- **Two sessions, one scratch folder:** the first phase13 and phase14 runs failed because the sign-in worktree ran the same phases at the
+  same time, and the live checks use fixed folders (`~/.cache/cowork-p13`, `-p14`). Rerun alone, both passed; that session was told.
+
+**Not done / next**
+- A pinned runner's agent was checked through the MCP tool in the server's tests, not live with a real harness.
+- Pages that pick their theme with `matchMedia` in JavaScript still follow the computer; the guide says not to.
+- The theme follows CoWork's light or dark, not its exact palette (Nord, Dracula…).
