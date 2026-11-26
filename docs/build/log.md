@@ -906,3 +906,81 @@ threw, and the connection's handler swallowed the exception, so the report never
 code and all ten with the fix. On the next phase10 run the pool logged exactly that case ("the client hung up before the refusal reached it")
 and still told the server; Rosa got the ask. Checked: 42 runner tests; on `…:2.4.1-b9` `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 35,
 `phase13` 32 (phases 1 to 8 use no pool and passed on this server and web build).
+
+## Brief 10: panels you can size
+
+**Demo:** `tests/live/phase14.mjs` (27 checks; Alex and Rosa in browsers; a real pool with real containers and real OpenCode 2.4.1 for the
+researcher template, model calls through the gateway to this machine's Copilot sign-in). researcher's instructions don't say where files go.
+Rosa asks it for a report "so I can read it beside this thread" without naming a path: it writes `reports/…html` and shows it with a single
+`cowork_show` call, not refused. Her canvas opens beside the thread at its default (612 px of 1274). Hovering the canvas's left edge shows a
+2 px accent line and a resize cursor. She drags it 120 px narrower: the canvas and the thread resize live, the report inside reflows
+(587 → 467 px), and a cover is over the window. She drags on past the minimum with the pointer over the report's iframe: the canvas stops at
+320 px. She drags back across the iframe and further out: 812 px, remembered when she lets go. All the way out, the thread keeps 360 px.
+Double-click puts the default back and forgets the chosen width. A chosen 762 px survives a reload (`localStorage` `cowork:panel:canvas`), and
+Alex's browser keeps its own default. On a 1100 px window the canvas opens clamped to 414 px, leaving the thread its 360. Back on the wide
+window it has 762 again. The handle is a focusable `separator` (`aria-valuenow` 762, `min` 320, `max` 914). Arrows move it 16 px, Shift+arrow
+64, Home goes to 320 and End to 914. Keyboard focus shows the line drawn 4 px wide. The quick look (400 px) and the member list (220 px
+beside it) have the same handle. Dragged to 520 and 280, each is remembered under its own key and kept on reload. Dragged all the way, the
+quick look stops with the channel at 360. The member list alone beside the channel keeps its 280. On a phone the canvas and the quick look are
+full screen with no handle. Asked to write a summary at `/tmp/opencode/summary.html` and show it from there, researcher's call is refused
+with the new answer, and it writes `reports/summary.html` and shows that.
+
+**What changed**
+- **`ui/resize-handle`** (`ResizeHandle.vue`): a 0-wide box between a panel and what's beside it, with an 8 px grip over the border.
+  Dragging uses pointer capture, and while dragging a fixed cover over the window (and `html.panel-resizing`: no text selection, iframes
+  without pointer events) keeps a report's iframe from taking the pointer. Double-click resets, Esc while dragging puts the width back, and
+  the width is remembered when the drag or key press ends. The line uses the accent token, so it follows every theme. Keyboard focus is the
+  line at 4 px in place of the global ring (a base-layer rule in `main.css`, beside the menu rows' own).
+- **`panels.ts`**: each panel's spec (canvas: at least 320, the thread beside it at least 360; quick look: at least 320, the channel at least
+  360; member list: 180 to 420, the channel at least 360). Also `limitsFor`, `clampWidth`, `keyStep` and `dragWidth` (pure, tested),
+  `loadWidth`/`saveWidth` (`cowork:panel:<key>`), `useElementWidth` (a ResizeObserver on the container's inner width) and `usePanelWidth`.
+- **Layout**: the widths are CSS variables on the containers (`--canvas-w` on the thread view, `--thread-panel-w` and `--members-w` on the
+  main area). The member list's room leaves the quick look its minimum, and the quick look gets what the member list leaves, so the two never
+  squeeze the channel below 360 and never depend on each other in a loop. The canvas's default is unchanged (48% of the area, 420 to 860).
+- **`cowork_show`**: a path outside the workspace gets "…isn't in your workspace (/work/repo); cowork_show only shows files inside it. Write
+  the file inside your workspace (/work/repo), for example /work/repo/reports/summary.html, then call cowork_show with that path." (the
+  same for a link pointing out). The description leads with "It takes the file's path, not its content, and the file must be inside your
+  workspace (your working directory): first write it there with your file tool, …". **CoWork's MCP instructions** now give each tool's call
+  shape and that rule (see below).
+
+**Decisions**
+- **What's remembered is what was chosen; what's shown is clamped.** A narrower window shows the canvas narrower without overwriting the
+  chosen width, so a wider window gets it back.
+- **The panel wins when there's no room for both** (a window just above phone width): the canvas keeps 320 and the thread gets what's left,
+  as before this brief (when the canvas's minimum was 420).
+- **Home is the narrowest and End the widest** (`aria-valuenow` is the panel's width; the handle is on the panel's left edge, so ArrowLeft
+  widens it, the way the handle moves).
+- **The member list has one width** wherever it shows (beside the channel, a quick look or All threads). Its default stays 220 beside a quick
+  look and 244 otherwise until someone sizes it.
+- **Found live: OpenCode 2.4.1 calls MCP tools from code.** In the first runs researcher's first call was
+  `tools.cowork.cowork_show({ format: "html", content: html, title })`. The harness refused it ("path: Missing key") before it reached CoWork.
+  Then it wrote `/tmp/opencode/tax_api_report.html`, got the new answer, and showed it from the workspace on the third try. The model never
+  saw the tool's description: code mode lists only the MCP server's `instructions` up front, and descriptions come from `search(...)` after
+  a guess. So the instructions now carry each call shape (`cowork_show({ path, title?, open? })`) and the rule (a path in the workspace,
+  never the content). Two runs since showed the report on the first try. phase14 now counts the harness's own `cowork_show` rows, not only
+  the calls that reach CoWork, and on failure copies each sandbox's OpenCode data (its database has every tool call's input) to
+  `~/.cache/cowork-p14/diag/` before the cleanup. That is how this was found.
+
+**Checked** (ports 5883 to 5888 only; LiveKit as `cwb10-lk` on 7980 to 7982 labelled `cwb10`, removed; every pool container and volume removed
+by its label. The trial on 5889, `cowork-try`, the images `cowork-sandbox-opencode:2.4.1` and `:try`, the `cowork` compose project and
+`~/.weave` untouched. `cowork-sandbox-opencode:2.4.1-b9` rebuilt from this branch with `TAG=… CTX=~/.cache/cowork-sandbox-build-b10`.)
+- `dotnet test`: 101 server (`WorkTests` checks the instructions and the description's first sentences) and 43 runner (new:
+  `/tmp/opencode/tax-report.html` gets the exact answer naming the workspace and `reports/tax-report.html`, `../secret.txt` too; the runner
+  sends it in place of the files; following it works). `bun run test`: 56 (6 new in `panels.test.ts`: the limits, clamping, keyboard
+  steps, drag, remembered and clamped widths and reset; the handle mounted in jsdom: its separator attributes, every key, double-click, a
+  drag with the cover, and Esc).
+- Live: **`phase14` 27 checks** on the final build. Six runs: the first three stopped at "first try" (above; fixed in the product), the
+  fourth on the test's own mistake (it moved the pointer past the window's edge), the fifth passed with 26, and the sixth passed with 27
+  after the focus cue changed and the area was measured inside its border (the channel had stopped at 358). Screenshots
+  `docs/screens/brief10/01-…` to `06-…`, dark and light, looked at. Fixed from them: the global focus ring drew two extra lines around
+  the 8 px grip.
+- The whole regression on the final build, each on a fresh scratch server or its own: `phase1` 24, `phase2` 30 (real OpenCode 2.4.1
+  through Copilot), `phase4` 19, `phase5` 22, `phase6` 27, `phase7` 31, `phase8` 31, `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 35,
+  `phase13` 32. The older scripts' screenshots went to a scratch folder (phase6 and phase8 still write their own; restored).
+
+**Not done / next**
+- The left channel list and the rail aren't resizable. The brief named the canvas, the quick look and the member list.
+- No mockup was made for this brief. The handle is a thin line on an existing edge, so it was built straight from the brief. While the work was
+  running the user asked why the quick look and the member list got handles too (they asked only for the canvas). That's brief item 4; taking
+  them out is a few lines in `Shell.vue` if the user prefers only the canvas.
+- Touch devices between phone and desktop width get the handle, but it's 8 px wide, which is small for a finger.
