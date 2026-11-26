@@ -717,12 +717,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
 
-### Literata (@fontsource/literata 5.3.0)
+### Source Serif 4 (@fontsource/source-serif-4 5.3.0)
 
 Licence: OFL-1.1
 
 ```text
-Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata) Literata-Italic[opsz,wght].ttf: Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata)
+Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. All Rights Reserved.
+Source is a trademark of Adobe in the United States and/or other countries.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

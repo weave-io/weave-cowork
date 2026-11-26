@@ -39,10 +39,10 @@ public class PageKitTests
         Assert.Equal("text/css", css.Content.Headers.ContentType!.MediaType);
         Assert.Equal("*", css.Headers.GetValues("Access-Control-Allow-Origin").Single());
         var text = await css.Content.ReadAsStringAsync();
-        foreach (var family in new[] { "Fraunces", "Instrument Serif", "Literata", "IBM Plex Sans", "Bricolage Grotesque", "IBM Plex Mono" })
+        foreach (var family in new[] { "Fraunces", "Instrument Serif", "Source Serif 4", "IBM Plex Sans", "Bricolage Grotesque", "IBM Plex Mono" })
             Assert.Contains($"font-family: \"{family}\"", text);
         // the guide names the same families
-        foreach (var family in new[] { "Fraunces", "Instrument Serif", "Literata", "IBM Plex Sans", "Bricolage Grotesque", "IBM Plex Mono" })
+        foreach (var family in new[] { "Fraunces", "Instrument Serif", "Source Serif 4", "IBM Plex Sans", "Bricolage Grotesque", "IBM Plex Mono" })
             Assert.Contains($"`\"{family}\"`", Skills.Design.Body);
         var files = Regex.Matches(text, @"url\(([^)]+)\)").Select(m => m.Groups[1].Value).ToList();
         Assert.Equal(13, files.Count);
