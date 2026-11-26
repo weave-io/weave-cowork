@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { Download, FileQuestion } from 'lucide-vue-next'
 import type { Artifact, ArtifactVersion } from '@/artifacts'
-import { jsonTable, parseCsv } from '@/artifacts'
+import { jsonTable, parseCsv, withScheme } from '@/artifacts'
+import { scheme } from '@/theme'
 import { renderDocument } from '@/render'
 import { handles } from '@/store'
 import { Button } from '@/components/ui/button'
@@ -36,7 +37,7 @@ const cell = (v: unknown) => v == null ? '' : typeof v === 'object' ? JSON.strin
 <template>
   <div class="artifact-stage h-full min-h-0 overflow-auto" data-testid="artifact-view" :data-kind="version.kind" :data-version="version.version">
     <EmptyState v-if="version.redacted" :icon="FileQuestion" title="This version was redacted" description="Its files are gone. That it was shown stays in the thread and the audit." class="mt-10" />
-    <iframe v-else-if="version.kind === 'html' && version.url" :key="version.url" :src="version.url" sandbox="allow-scripts" referrerpolicy="no-referrer" :title="version.title"
+    <iframe v-else-if="version.kind === 'html' && version.url" :key="version.url" :src="withScheme(version.url, scheme)" sandbox="allow-scripts" referrerpolicy="no-referrer" :title="version.title"
       class="block h-full min-h-[440px] w-full rounded-[8px] border-0 bg-white shadow-[0_1px_3px_rgba(0,0,0,.2)]" data-testid="artifact-frame" />
     <iframe v-else-if="version.kind === 'pdf' && version.url" :key="version.url" :src="version.url" referrerpolicy="no-referrer" :title="version.title"
       class="block h-full min-h-[440px] w-full rounded-[8px] border-0 bg-white" data-testid="artifact-frame" />

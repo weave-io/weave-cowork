@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest'
-import { artifactPostArrived, canvas, canvasLink, closeCanvas, closeTab, formatSize, jsonTable, openInCanvas, parseCsv, shouldAutoOpen, shownVersion, threadArtifacts } from './artifacts'
+import { artifactPostArrived, canvas, canvasLink, closeCanvas, closeTab, formatSize, jsonTable, openInCanvas, parseCsv, shouldAutoOpen, shownVersion, threadArtifacts, withScheme } from './artifacts'
 import type { Post } from './types'
 
 const card = (o: Partial<Post> & { open?: string } = {}): Post => ({
@@ -68,4 +68,9 @@ test('CSV and JSON as tables', () => {
   expect(jsonTable([{ a: 1 }, { a: 2, b: 'x' }])).toEqual({ columns: ['a', 'b'], rows: [[1, undefined], [2, 'x']] })
   expect(jsonTable({ providers: [{ name: 'Tallyrate' }] })).toEqual({ columns: ['name'], rows: [['Tallyrate']] })
   expect(jsonTable({ a: 1 })).toBeNull()
+})
+
+test('a page in the canvas is told the app\'s light or dark in its fragment, replacing any it had (brief 12)', () => {
+  expect(withScheme('/a/tok123/index.html', 'dark')).toBe('/a/tok123/index.html#scheme=dark')
+  expect(withScheme('https://artifacts.example/a/tok/index.html#scheme=dark', 'light')).toBe('https://artifacts.example/a/tok/index.html#scheme=light')
 })

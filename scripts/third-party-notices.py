@@ -16,6 +16,10 @@ LICENSE_FILES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md"
 PERMISSIVE = {"MIT", "MIT-0", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "0BSD", "BlueOak-1.0.0", "Unlicense",
               "CC0-1.0", "OFL-1.1", "Zlib", "Python-2.0", "CC-BY-4.0", "BSD-3-Clause-Clear"}
 FONTS = ["@fontsource-variable/inter", "@fontsource-variable/jetbrains-mono"]
+# brief 12: the font kit the server gives agents' pages (src/CoWork.Server/PageKit/fonts), Latin files from @fontsource 5.3.0, licences beside them
+PAGE_KIT = ROOT / "src" / "CoWork.Server" / "PageKit" / "fonts"
+PAGE_FONTS = [("Bricolage Grotesque", "bricolage-grotesque"), ("Fraunces", "fraunces"), ("IBM Plex Mono", "ibm-plex-mono"),
+              ("IBM Plex Sans", "ibm-plex-sans"), ("Instrument Serif", "instrument-serif"), ("Literata", "literata")]
 bad = []
 
 
@@ -144,6 +148,11 @@ def main():
             bad.append(f"{n} {lic}")
         out.append(block(f"{n}", pj["version"], lic, text))
 
+    out.append("## Fonts for agents' pages\n\nServed by the server at `/a/fonts/` for pages agents show (Latin subsets of the "
+               "`@fontsource` 5.3.0 packages, in `src/CoWork.Server/PageKit/fonts`).\n")
+    for name, key in PAGE_FONTS:
+        out.append(block(name, "(@fontsource/" + key + " 5.3.0)", "OFL-1.1", (PAGE_KIT / "licenses" / f"{key}-OFL.txt").read_text().strip()))
+
     # web
     pk = web_packages()
     out.append(f"## Web app packages\n\n{len(pk)} packages: everything reachable from `dependencies` in "
@@ -170,7 +179,7 @@ def main():
         out.append(block(f"{pid}", ver, lic, text, f"\n\nUsed by: {', '.join(sorted(projs))}"))
 
     (ROOT / "THIRD-PARTY-NOTICES.md").write_text("\n".join(out))
-    print(f"wrote THIRD-PARTY-NOTICES.md: {len(FONTS)} fonts, {len(pk)} web packages, {len(nu)} NuGet packages")
+    print(f"wrote THIRD-PARTY-NOTICES.md: {len(FONTS)} fonts, {len(PAGE_FONTS)} page fonts, {len(pk)} web packages, {len(nu)} NuGet packages")
     for b in bad:
         print("NEEDS REVIEW:", b)
     return 1 if bad else 0

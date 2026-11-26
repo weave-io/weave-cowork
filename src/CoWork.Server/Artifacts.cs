@@ -253,6 +253,7 @@ public sealed class Artifacts
         app.MapPost("/api/runner/artifacts/{requestId}", (string requestId, HttpContext ctx, Artifacts a) => a.Upload(requestId, ctx)).DisableAntiforgery();
         // the artifact itself, at a signed address, for the canvas's sandboxed frame
         app.MapGet("/a/{token}/{**path}", (string token, string? path, HttpContext ctx, Artifacts a) => a.Serve(token, path, ctx));
+        app.MapGet("/a/fonts/{file}", (string file, HttpContext ctx, Artifacts a) => a.Font(file, ctx));
         var authed = app.MapGroup("/api").RequireAuthorization();
         authed.MapGet("/artifacts/{id:long}", (long id, HttpContext ctx, Artifacts a) => a.Describe(id, AppHub.MemberId(ctx.User)) is { } d ? Results.Ok(d) : NotFound());
         authed.MapGet("/artifacts/{id:long}/versions/{v:int}/raw/{**path}", (long id, int v, string? path, HttpContext ctx, Artifacts a) => a.Raw(id, v, path, AppHub.MemberId(ctx.User), ctx));
@@ -442,7 +443,23 @@ public sealed class Artifacts
         // a markdown, CSV or JSON file is data here (the app shows it); only pages and their own files render
         var type = file.Type.StartsWith("text/markdown") || file.Type.StartsWith("text/csv") ? "text/plain; charset=utf-8" : file.Type;
         Harden(ctx.Response, type);
+        // brief 12: a page follows the theme chosen in CoWork (the script reads the canvas's #scheme=); fonts load in the opaque-origin frame
+        if (type.StartsWith("text/html", StringComparison.Ordinal)) return Results.Bytes(PageKit.WithScheme(File.ReadAllBytes(_blobs.PathOf(file.Sha256))), type);
+        if (type.StartsWith("font/", StringComparison.Ordinal)) ctx.Response.Headers.AccessControlAllowOrigin = "*";
         return Results.File(_blobs.PathOf(file.Sha256), type);
+    }
+
+    /// <summary>Brief 12: CoWork's font kit, for any page shown (<c>/a/fonts/fonts.css</c> and the files it declares). A page's frame has an
+    /// opaque origin, and fonts are fetched with CORS, so they're served to any origin; they're open-licence files, the same for everyone.</summary>
+    private IResult Font(string file, HttpContext ctx)
+    {
+        if (_opts.Origin is { } origin && !SameHost(ctx.Request, origin)) return Results.NotFound();
+        if (!PageKit.Fonts.TryGetValue(file, out var bytes)) return Results.NotFound();
+        var type = ArtifactKinds.ContentType(file);
+        Harden(ctx.Response, type);
+        ctx.Response.Headers.AccessControlAllowOrigin = "*";
+        ctx.Response.Headers.CacheControl = "public, max-age=86400";
+        return Results.Bytes(bytes, type);
     }
 
     static bool SameHost(HttpRequest r, string origin) => Uri.TryCreate(origin, UriKind.Absolute, out var u) && string.Equals(r.Host.Host, u.Host, StringComparison.OrdinalIgnoreCase) && (u.IsDefaultPort || r.Host.Port == u.Port);
