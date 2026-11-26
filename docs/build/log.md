@@ -1049,3 +1049,73 @@ untouched.)
 - Passkeys of CoWork's own (deferred above). Several providers at once, joining without an invite (e.g. by email domain), groups or roles from
   the provider, and single sign-out: none were asked for.
 
+## Brief 12: a showcase and a README
+
+(Written and run as brief 11 beside the sign-in brief; renumbered 12 when both reached main. Its live runs signed in with
+passwords, before sign-in was merged.)
+
+**Demo:** `tests/live/showcase.mjs` (19 steps; four people in browsers, a real pool with real containers, a real runner on `build-01`, real
+OpenCode 2.4.1 for both agents through this machine's Copilot sign-in, LiveKit with fake microphones) builds Lumen Labs from nothing and
+photographs it into `docs/screens/showcase/`. Alex Morgan sets the server up; Rosa Delgado, Sam Okafor and Priya Nair join with invite links.
+Checkout app comes from a small invented repository (a cart that rounds VAT per line, refunds that round once on the total, a test, a setup
+script) with #checkout-app, #checkout-alerts and 🔊 checkout-standup, a network list, a setup command and a budget; Research has no
+repository and #research; #general is outside both. People talk in four channels. researcher (a team template) compares Tallyrate, Levy.io and
+Vatbook and shows an HTML report on Rosa's canvas, answers Priya in the thread and makes the next version when Rosa asks under the canvas;
+reviewer (Alex's own, pinned) reads the code with tool rows, explains `roundTax`, and resolves the thread when Sam asks; Rosa's sandbox is
+refused example.com, she allows it once and researcher reads it; Priya's ask for status.tallyrate.example is left waiting; Sam's thread is
+photographed while researcher works; Alex, Rosa and Sam meet in the voice room. The README's top is rewritten around the pictures.
+
+**The pictures** (1600×1000 at device scale 2, dark and light; the phone 390×844 at scale 3): `01-hero`, `02-channel`, `03-agent-at-work`,
+`04-ask-rosa` and `04-ask-alex`, `05-add-agent`, `06-project-settings`, `07-search`, `08-voice`, `09-audit`, `10-phone-thread`, and
+`social.png` (1200×630: the hero, the logo, the name, one line and "Experimental"). Each is 250 to 700 KB as Chromium writes it; the script
+reduces any over 700 KB to a palette PNG with [sharp](https://sharp.pixelplumbing.com) (libvips with libimagequant), installed with
+`bun add sharp` in a scratch folder outside the repository (`SHARP_DIR`), so nothing needs root. In the final run none needed it.
+
+**What changed**
+- **`tests/live/showcase.mjs`**: the script, with what it needs and how to run it at its top and in the README's contributing notes. It starts
+  its own server (5886), LiveKit (7980 to 7982, container `cowork-showcase-livekit-<port>`, label `cowork.showcase=1`), a pool with 4 slots and a
+  60 s idle time, and the pinned runner with a scratch home. Before each picture it swaps this machine's paths (the bare repository, the
+  runner's home, the data folder, the home folder) and the sandbox image's local tag for invented ones on the page, then checks the page's
+  text for the home folder, the user name, the host name and the local image tag; a picture that still shows one fails the run. Posts go
+  through the same API the composer uses (`POST /api/channels/{id}/posts`), so mentions start threads the usual way.
+- **`tests/live/lib.mjs`**: Playwright comes from `PLAYWRIGHT_MODULE`, then wherever node finds it, then the dev machine's install, so the
+  live checks run elsewhere too.
+- **Member list (found in the pictures):** an agent's name and its AGENT badge ran under the Activity and Edit buttons (worst for its owner,
+  who has both). With a mouse the buttons now show over the end of the row on hover or keyboard focus, and the name has the row; on a touch
+  screen they stay in the row and the name truncates.
+- **Search snippets (found in the pictures):** a snippet is cut from a message's markdown, so `**bold**`, `*it*` and `` `code` `` showed their
+  markers. `plain()` in `search.ts` takes them out before the hits are marked (a lone `*` between words and `snake_case` stay); tested.
+- **README:** the name and one line, the experimental notice (a GitHub warning block), the hero following the reader's theme (`<picture>`),
+  what it is, what you can do today (a grid of the pictures, two a row), how it fits together (a mermaid diagram), the quick start, the
+  detailed sections as before (configuration moved under the quick start; `cowork_show` added to the tools), what's not built yet (search,
+  unread and the phone layout are built now; presence for people isn't), built with, contributing (tests, live checks, the showcase).
+
+**Decisions**
+- **The hero has no member list.** The full view gives the canvas the member list's room when it's open (brief 10), so the hero shows the
+  thread, the canvas and the threads under their channels; the member list is in `02-channel` and `03-agent-at-work`. Changing that would
+  change the app's layout, which the brief didn't ask for.
+- **Display names are full names** (Alex Morgan, Rosa Delgado, Sam Okafor, Priya Nair), so the asks say "waiting for Rosa Delgado".
+- **The sandbox image shows as `cowork-sandbox-opencode:2.4.1`** in the pictures: the run uses this machine's `:2.4.1-b9` tag (the trial owns
+  `:2.4.1`), and the local tag means nothing to a reader.
+- **Real hosts in the ask:** the allowed host is example.com, so researcher can really read it after Rosa allows it; Priya's waiting ask is
+  for an invented `.example` host that's never allowed.
+- **reviewer resolves only when asked.** In one run it resolved the thread in its first answer; Sam's reply then reopened it and the channel
+  showed no "done". Its instructions now say so, and the script checks the thread is resolved at the end (and asks once more if not).
+
+**Checked**
+- Three full runs; each picture of the last one looked at in both themes. Fixed between runs: the working thread had finished before the
+  channel was photographed (the channel is now taken first, as soon as the turn is open, with a longer task); the third sandbox waited 161 s
+  for a slot (4 slots, 60 s idle); muted tiles still lit their speaking ring (the script waits for the next speaker update); the budget was
+  cut off in project settings (the page is scrolled so the workspace stays at the top).
+- With the two app fixes: `dotnet test` (Runner 43, Server 101), `bun run test` (57, with the new snippet test), and the live checks that
+  cover them on the final build: `phase8` 31 (search), `phase6` 27 (the member list's Activity button), `phase14` 26 (the member list's
+  width and handle). Their screenshots went to a scratch folder (phase6 and phase8 still write their own; restored).
+- Ports 5886 to 5888 only; LiveKit on 7980 to 7982; every pool container and volume and the LiveKit container removed by their labels after
+  each run. The pictures and the committed files were searched for this machine's user name, host name and home paths: none.
+
+**Not done / next**
+- The website page (`cowork.tryweave.io`) is a later brief in the website's own repository; the pictures and `social.png` are ready for it.
+- The pictures come from real model answers, so each run's wording differs (the report's title and figures, the outcome's title). The script
+  checks what must be true (a report shown and changed, an outcome, an ask allowed and one waiting, a turn photographed while it works), not
+  the words.
+- The member list's Activity and Edit now show on hover; on a touch screen wider than a phone the name still truncates beside them.
