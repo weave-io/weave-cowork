@@ -1037,12 +1037,15 @@ untouched.)
 - Live: **`phase15` 21 checks** (twice; the first run failed on the test reading `textContent`, which runs the lines together), and
   **`phase1` 25 checks** on a scratch server with Dex (screenshots to a scratch folder). Screenshots `docs/screens/brief11/`, dark and
   light, looked at. Fixed from them: the "already @alex" error stayed after the handle was changed.
-- The other live checks (`phase2`, `phase4` to `phase14`, `makeover`) were changed the same way: `setUp`, `ssoJoin` and `ssoSignIn` from
-  `lib.mjs`, and `SSO_ENV` for the servers they start. They are syntax-checked but **not run** in this brief. phase2 and phase4 need their
-  scratch server started with the `SSO_ENV` variables.
+- The other live checks were changed the same way: `setUp`, `ssoJoin` and `ssoSignIn` from `lib.mjs`, and `SSO_ENV` for the servers they
+  start. The whole regression ran on the final build, one check after another, each on its own scratch server with Dex (screenshots to a
+  scratch folder): `phase2` 30 (real OpenCode 2.4.1 through Copilot), `phase4` 19 (LiveKit as `cwb11-lk` on 7980 to 7982, removed), `phase5`
+  22, `phase6` 27, `phase7` 31, `phase8` 31, `phase9` 37, `phase10` 27, `phase11` 19, `phase12` 35, `phase13` 32, `phase14` 26. phase6 and
+  phase14 first failed without reaching CoWork: another session's server held their default ports (5887, then 5888), so their start-up
+  probe was answered by an older build. Rerun with `PORT=5881` and `PORT=5883`, both passed. `makeover` (a screenshot script, not in the
+  regression list) wasn't run.
 
 **Not done / next**
 - Passkeys of CoWork's own (deferred above). Several providers at once, joining without an invite (e.g. by email domain), groups or roles from
   the provider, and single sign-out: none were asked for.
-- The rest of the live regression (above).
 
