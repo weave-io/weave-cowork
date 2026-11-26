@@ -1,8 +1,12 @@
 // Shared helpers for the live checks (Playwright against a scratch server). Run with:
 //   PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 BASE=http://127.0.0.1:5881 node tests/live/phase1.mjs
-import { chromium } from '/home/pgermishuys/source/crumb/node_modules/playwright/index.mjs'
 import { homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
+// Playwright: PLAYWRIGHT_MODULE (the path of its index.mjs), else wherever node finds it, else the dev machine's install (see AGENTS.md)
+const { chromium } = await (async () => {
+  for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', `${homedir()}/source/crumb/node_modules/playwright/index.mjs`].filter(Boolean)) { try { return await import(m) } catch { /* next */ } }
+  throw new Error('Playwright not found: install it, or set PLAYWRIGHT_MODULE to its index.mjs')
+})()
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync } from 'node:fs'
 export const BASE = process.env.BASE ?? 'http://127.0.0.1:5881'
 export const SHOTS = process.env.SHOTS_DIR ? process.env.SHOTS_DIR.replace(/\/?$/, '/') : new URL('../../docs/screens/', import.meta.url).pathname
