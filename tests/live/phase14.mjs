@@ -10,7 +10,7 @@
 // where to write it instead and shows it from its workspace.
 // Starts its own server (default port 5888). Everything in podman carries the pool's label and is removed by it at the end.
 //   node tests/live/phase14.mjs          (screenshots go to docs/screens/brief10/)
-import { launch, person, expect, ok, SANDBOX_IMAGE } from './lib.mjs'
+import { launch, person, expect, ok, SANDBOX_IMAGE, setUp, ssoJoin, SSO_ENV } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { rmSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -45,7 +45,7 @@ git(DIR, 'clone', '-q', '--bare', seed, BARE)
 
 let server = null, pool = null, poolKey = null
 function startServer() {
-  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, COWORK_DB: DB, ASPNETCORE_URLS: BASE }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, ...SSO_ENV, COWORK_DB: DB, ASPNETCORE_URLS: BASE }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
   server.log = ''; server.stdout.on('data', d => server.log += d); server.stderr.on('data', d => server.log += d)
   return until('the server to listen', async () => { try { return (await fetch(BASE + '/api/setup/status')).ok } catch { return false } }, 30000)
 }
@@ -74,7 +74,7 @@ const shots = async (p, name, keep) => {
 async function join(p, handle, name) {
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await p.goto(`${BASE}/invite/${code}`)
-  await p.fill('[name=username]', handle); await p.fill('[name=displayName]', name); await p.fill('[name=password]', `${handle}-password`); await p.click('button[type=submit]')
+  await ssoJoin(p, handle, name)
   await p.waitForSelector('[data-channel=general]')
 }
 const events = (type, thread) => sql(`select count(*) from events where type='${type}'${thread ? ` and stream_id='thread-${thread}'` : ''}`)[0][0]
@@ -108,8 +108,8 @@ async function drag(p, which, dx, { steps = 12, during } = {}) {
 try {
   await startServer()
   await a.goto(BASE)
-  await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex'); await a.fill('[name=displayName]', 'Alex'); await a.fill('[name=password]', 'correct horse')
-  await a.click('button[type=submit]'); await a.waitForSelector('[data-channel=general]')
+  await setUp(a)
+  await a.waitForSelector('[data-channel=general]')
   await join(r, 'rosa', 'Rosa')
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-where]'); await a.click('[data-testid=add-pool]')
   const command = clean(await a.textContent('[data-testid=pool-command]'))

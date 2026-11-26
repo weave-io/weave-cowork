@@ -1,4 +1,4 @@
-import { launch, person, BASE, SHOTS, expect, ok } from './lib.mjs'
+import { launch, person, BASE, SHOTS, expect, ok, setUp, ssoJoin, ssoSignIn } from './lib.mjs'
 const browser = await launch()
 const A = await person(browser), R = await person(browser)
 const a = A.page, r = R.page
@@ -8,24 +8,19 @@ const shot = (p, name) => p.screenshot({ path: SHOTS + `phase1-${name}.png` })
 await a.goto(BASE)
 await a.getByRole('heading', { name: 'Set up your server' }).waitFor()
 await shot(a, 'setup')
-await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex')
-await a.fill('[name=displayName]', 'Alex'); await a.fill('[name=password]', 'correct horse')
-await a.click('button[type=submit]')
-await a.waitForSelector('[data-channel=general]')
+expect(await a.locator('input[type=password]').count() === 0, 'setup has no password: the server name, then single sign-on')
+await setUp(a)
 expect(await a.textContent('[data-testid=channel-title]').then(t => t.includes('general')), 'Alex lands in #general after setup')
 expect((await a.textContent('[data-testid=server-menu]')).includes('Lumen Labs'), 'server is named Lumen Labs')
 
-// 2. sign out / in, wrong password
+// 2. sign out / in (single sign-on: no username, no password)
 await a.click('[data-testid=user-menu]'); await a.click('[data-testid=sign-out]')
 await a.getByRole('heading', { name: /Sign in to Lumen Labs/ }).waitFor()
-await a.fill('[name=username]', 'alex'); await a.fill('[name=password]', 'nope nope nope')
-await a.click('button[type=submit]')
-await a.waitForSelector('[data-testid=auth-error]')
-expect((await a.textContent('[data-testid=auth-error]')).includes('Wrong username or password'), 'wrong password says so')
-await shot(a, 'signin-error')
-await a.fill('[name=password]', 'correct horse'); await a.click('button[type=submit]')
+expect(await a.locator('input').count() === 0, 'the sign-in screen has no fields, just "Continue with single sign-on"')
+await shot(a, 'signin')
+await ssoSignIn(a, 'alex')
 await a.waitForSelector('[data-channel=general]')
-ok('Alex signs back in')
+ok('Alex signs back in with single sign-on')
 
 // 3. channels
 await a.click('[data-testid=create-channel]')
@@ -63,12 +58,11 @@ expect((await rPage2.textContent('[data-testid=invite-error]')).includes('revoke
 await rPage2.close()
 
 await r.goto(link.replace(/^https?:\/\/[^/]+/, BASE))
-await r.getByRole('heading', { name: /Join Lumen Labs/ }).waitFor()
+await r.waitForSelector('[data-testid=sso-continue]')
 await shot(r, 'invite-signup')
-await r.fill('[name=username]', 'rosa'); await r.fill('[name=displayName]', 'Rosa'); await r.fill('[name=password]', 'rosa-password')
-await r.click('button[type=submit]')
+await ssoJoin(r, 'rosa', 'Rosa')
 await r.waitForSelector('[data-channel=general]')
-expect((await r.textContent('[data-testid=me-name]')).includes('Rosa'), 'Rosa signs up via the link and lands in the app')
+expect((await r.textContent('[data-testid=me-name]')).includes('Rosa'), 'Rosa joins via the link with single sign-on and lands in the app')
 expect(await r.locator('[data-channel=checkout-app]').count() === 1, 'Rosa sees public #checkout-app')
 expect(await r.locator('[data-channel=leads]').count() === 0, 'Rosa does not see private #leads')
 expect(await r.locator('[data-testid=create-channel]').count() === 1, 'Rosa can create channels')
@@ -134,7 +128,7 @@ await shot(r, 'feed-rosa')
 
 // dark theme
 const dctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'dark' })
-const dp = await dctx.newPage(); await dp.goto(BASE); await dp.fill('[name=username]', 'alex'); await dp.fill('[name=password]', 'correct horse'); await dp.click('button[type=submit]')
+const dp = await dctx.newPage(); await dp.goto(BASE); await ssoSignIn(dp, 'alex')
 await dp.waitForSelector('[data-channel=checkout-app]'); await dp.click('[data-channel=checkout-app]'); await dp.waitForSelector('[data-testid=thread-card]')
 await dp.screenshot({ path: SHOTS + 'phase1-dark.png' })
 

@@ -3,7 +3,7 @@
 // to run `git log -3`. Alex allowed it once. It ran on build-01." from the causation chain, with its filters; agent activity on reviewer's
 // profile; a rebuild of each view from zero that changes nothing. Starts its own server (default port 5887).
 //   node tests/live/phase6.mjs          (screenshots go to docs/screens/round3/)
-import { launch, person, expect, ok, freshHarnessHome } from './lib.mjs'
+import { launch, person, expect, ok, freshHarnessHome, setUp, ssoJoin, SSO_ENV } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { rmSync, mkdirSync } from 'node:fs'
@@ -29,7 +29,7 @@ const clean = (t) => t.replace(/\s+/g, ' ').trim()
 
 let server = null, runner = null
 function startServer() {
-  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, COWORK_DB: DB, ASPNETCORE_URLS: BASE }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, ...SSO_ENV, COWORK_DB: DB, ASPNETCORE_URLS: BASE }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
   server.log = ''; server.stdout.on('data', d => server.log += d); server.stderr.on('data', d => server.log += d)
   return until('the server to listen', async () => { try { return (await fetch(BASE + '/api/setup/status')).ok } catch { return false } }, 30000)
 }
@@ -50,13 +50,13 @@ try {
 
   // --- people, a channel and the agent ---
   await a.goto(BASE)
-  await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex'); await a.fill('[name=displayName]', 'Alex'); await a.fill('[name=password]', 'correct horse')
-  await a.click('button[type=submit]'); await a.waitForSelector('[data-channel=general]')
+  await setUp(a)
+  await a.waitForSelector('[data-channel=general]')
   await a.click('[data-testid=create-channel]'); await a.fill('[name=name]', 'checkout-app'); await a.fill('[name=topic]', 'Cart, payment and order confirmation'); await a.click('button:has-text("Create channel")')
   await a.waitForSelector('[data-testid=channel-title]:has-text("checkout-app")')
   const invite = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await r.goto(`${BASE}/invite/${invite}`)
-  await r.fill('[name=username]', 'rosa'); await r.fill('[name=displayName]', 'Rosa'); await r.fill('[name=password]', 'rosa-password'); await r.click('button[type=submit]')
+  await ssoJoin(r, 'rosa', 'Rosa')
   await r.waitForSelector('[data-channel=checkout-app]')
   await a.click('[data-testid=server-menu]'); await a.click('[data-testid=menu-invite-agent]')
   await a.fill('[name=handle]', 'reviewer'); await a.fill('[name=about]', 'Reviews the checkout app')

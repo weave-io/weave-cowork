@@ -2,7 +2,7 @@
 //   BASE=http://127.0.0.1:5884 BASE_NOVOICE=http://127.0.0.1:5888 node tests/live/phase4.mjs
 // BASE is a fresh CoWork server with LIVEKIT_API_KEY / LIVEKIT_API_SECRET / LIVEKIT_URL set and LiveKit running.
 // BASE_NOVOICE (optional) is a fresh server without them: its voice channel must say voice isn't set up.
-import { launch, person, BASE, SHOTS, expect, ok } from './lib.mjs'
+import { launch, person, BASE, SHOTS, expect, ok, setUp, ssoJoin, ssoSignIn } from './lib.mjs'
 import { writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 const NOVOICE = process.env.BASE_NOVOICE
@@ -27,8 +27,8 @@ const roster = (p, ch = 'standup') => p.locator(`[data-voice-members=${ch}] [dat
 const rosterNames = async (p) => (await roster(p).evaluateAll(els => els.map(e => e.dataset.voiceMember))).sort().join(',')
 async function setup(p, base) {
   await p.goto(base)
-  await p.fill('[name=serverName]', 'Lumen Labs'); await p.fill('[name=username]', 'alex'); await p.fill('[name=displayName]', 'Alex'); await p.fill('[name=password]', 'correct horse')
-  await p.click('button[type=submit]'); await p.waitForSelector('[data-channel=general]')
+  await setUp(p)
+  await p.waitForSelector('[data-channel=general]')
 }
 async function createVoice(p, name) {
   await p.click('[data-testid=create-channel]')
@@ -43,7 +43,7 @@ try {
   expect(await a.locator('[data-testid=voice-join]').count() === 1 && await a.locator('[data-testid=composer]').count() === 0, 'a voice channel shows a Join button, not a composer')
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await r.goto(`${BASE}/invite/${code}`)
-  await r.fill('[name=username]', 'rosa'); await r.fill('[name=displayName]', 'Rosa'); await r.fill('[name=password]', 'rosa-password'); await r.click('button[type=submit]')
+  await ssoJoin(r, 'rosa', 'Rosa')
   await r.waitForSelector('[data-channel=standup]')
   ok('Rosa joins the server and sees standup')
 
@@ -117,7 +117,7 @@ try {
   await r.waitForFunction(() => document.querySelectorAll('[data-voice-members=standup] [data-voice-member]').length === 1, null, { timeout: 30000 })
   ok('Alex closes his tab: the server drops him from the list')
   const A2 = await person(browser, perm); const a2 = A2.page
-  await a2.goto(BASE); await a2.fill('[name=username]', 'alex'); await a2.fill('[name=password]', 'correct horse'); await a2.click('button[type=submit]')
+  await a2.goto(BASE); await ssoSignIn(a2, 'alex')
   await a2.waitForSelector('[data-channel=standup]')
 
   // --- manage like a text channel: rename, private, delete ---
