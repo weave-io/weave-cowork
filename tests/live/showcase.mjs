@@ -20,12 +20,13 @@
 //     OpenAI-compatible provider (then OPENCODE_MODEL picks the pinned agent's model)
 //   - Playwright with Chromium (PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs if it isn't installed where node finds it)
 //   - for voice, the LiveKit image docker.io/livekit/livekit-server:v1.13.11 (SHOWCASE_VOICE=0 skips the voice picture)
+//   - sign-in: the live checks' Dex (ghcr.io/dexidp/dex), which tests/live/lib.mjs starts in podman on 127.0.0.1:5556
 //   - optional: sharp, to keep each PNG small (SHARP_DIR=the folder where you ran `bun add sharp`)
 // Then:
 //   PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 node tests/live/showcase.mjs
 // It starts its own server (PORT, default 5886) and LiveKit (LIVEKIT_PORT, default 7980, with +1/tcp and +2/udp), keeps its data in
 // ~/.cache/cowork-showcase, and removes every container and volume it made (by its labels) when it's done. Takes 15 to 25 minutes.
-import { launch, person, expect, ok, freshHarnessHome, MODEL, SANDBOX_IMAGE } from './lib.mjs'
+import { launch, person, expect, ok, freshHarnessHome, MODEL, SANDBOX_IMAGE, setUp, ssoJoin, SSO_ENV } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir, hostname, userInfo, tmpdir } from 'node:os'
 import { rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
@@ -87,7 +88,7 @@ git(DIR, 'clone', '-q', '--bare', seed, BARE)
 let server = null, pool = null, runner = null, poolKey = null
 function startServer() {
   const voice = VOICE ? { LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret', LIVEKIT_URL: `ws://127.0.0.1:${LK_PORT}` } : {}
-  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, COWORK_DATA: `${DIR}/data`, COWORK_DB: DB, ASPNETCORE_URLS: BASE, ...voice }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  server = spawn('dotnet', [SERVER], { cwd: `${REPO}/src/CoWork.Server`, env: { ...process.env, ...SSO_ENV, COWORK_DATA: `${DIR}/data`, COWORK_DB: DB, ASPNETCORE_URLS: BASE, ...voice }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
   server.log = ''; server.stdout.on('data', d => server.log += d); server.stderr.on('data', d => server.log += d)
   return until('the server to listen', async () => { try { return (await fetch(BASE + '/api/setup/status')).ok } catch { return false } }, 30000)
 }
@@ -161,7 +162,7 @@ async function shots(p, name, before) {
 async function join(p, handle) {
   const code = await a.evaluate(async () => (await (await fetch('/api/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).code)
   await p.goto(`${BASE}/invite/${code}`)
-  await p.fill('[name=username]', handle); await p.fill('[name=displayName]', PEOPLE[handle]); await p.fill('[name=password]', `${handle}-showcase-password`); await p.click('button[type=submit]')
+  await ssoJoin(p, handle, PEOPLE[handle])           // single sign-on through the live checks' Dex (tests/live/lib.mjs)
   await p.waitForSelector('[data-channel=general]')
 }
 /** a post (or a thread reply) as the person signed in on p, through the same API the composer uses; the author comes from the cookie */
@@ -197,8 +198,7 @@ try {
   await startServer()
   // --- Lumen Labs: Alex sets it up; Rosa, Sam and Priya join with invite links ---
   await a.goto(BASE)
-  await a.fill('[name=serverName]', 'Lumen Labs'); await a.fill('[name=username]', 'alex'); await a.fill('[name=displayName]', PEOPLE.alex); await a.fill('[name=password]', 'alex-showcase-password')
-  await a.click('button[type=submit]'); await a.waitForSelector('[data-channel=general]')
+  await setUp(a, 'alex', PEOPLE.alex)
   await join(r, 'rosa'); await join(s, 'sam'); await join(pr, 'priya')
   ok('Lumen Labs: Alex Morgan set it up; Rosa Delgado, Sam Okafor and Priya Nair joined with invite links')
 
