@@ -70,6 +70,24 @@ public class ArtifactFilesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_outside_the_workspace_gets_an_answer_that_says_exactly_where_to_write_it()
+    {
+        // brief 10: in the user's run an agent wrote its report to /tmp/opencode/… and called cowork_show on it
+        var ws = Path.GetFullPath(_ws);
+        var answer = ArtifactFiles.Pick(_ws, "/tmp/opencode/tax-report.html").Error;
+        Assert.Equal($"/tmp/opencode/tax-report.html isn't in your workspace ({ws}); cowork_show only shows files inside it. " +
+            $"Write the file inside your workspace ({ws}), for example {ws}/reports/tax-report.html, then call cowork_show with that path.", answer);
+        Assert.EndsWith($"for example {ws}/reports/secret.txt, then call cowork_show with that path.", ArtifactFiles.Pick(_ws, "../secret.txt").Error);
+        // and the agent hears it as the tool's answer: the runner sends it in place of the files
+        var seen = new Recorder();
+        await ArtifactFiles.Upload(new HttpClient(seen), "http://cowork.test", "tok-1", 42, "req-11", null, answer);
+        Assert.Equal(answer, JsonDocument.Parse(seen.Parts["manifest"]).RootElement.GetProperty("error").GetString());
+        // following it works on the next call
+        Write("reports/tax-report.html", "<title>Tax</title>");
+        Assert.Null(ArtifactFiles.Pick(_ws, $"{ws}/reports/tax-report.html").Error);
+    }
+
+    [Fact]
     public async Task The_upload_carries_a_manifest_the_files_and_the_runners_token_and_thread()
     {
         Write("reports/r/index.html", "<p>hi</p>"); Write("reports/r/a.css", "p{}");

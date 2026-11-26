@@ -20,11 +20,11 @@ public static class ArtifactFiles
         string full;
         try { full = System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(path) ? path : System.IO.Path.Combine(root, path)); }
         catch { return (null, $"{path} isn't a path in your workspace."); }
-        if (!Inside(root, full)) return (null, $"{path} isn't in your workspace ({root}); cowork_show only shows files there.");
+        if (!Inside(root, full)) return (null, Outside(root, path, full));
         if (Directory.Exists(full)) return (null, $"{path} is a folder; give the file to show (like {path.TrimEnd('/')}/index.html).");
         if (!File.Exists(full)) return (null, $"There's no file at {path} in your workspace. Write it first, then call cowork_show.");
         var realRoot = Real(root);
-        if (!Inside(realRoot, Real(full))) return (null, $"{path} points outside your workspace; cowork_show only shows files there.");
+        if (!Inside(realRoot, Real(full))) return (null, Outside(root, path, full, link: true));
         var rel = System.IO.Path.GetRelativePath(root, full).Replace('\\', '/');
         if (rel.Split('/').Any(s => s.StartsWith('.'))) return (null, $"{path} is hidden; cowork_show doesn't show hidden files.");
         var folder = System.IO.Path.GetDirectoryName(full)!;
@@ -45,6 +45,18 @@ public static class ArtifactFiles
             return (null, $"{(files.Count > 1 ? $"The folder {System.IO.Path.GetRelativePath(root, folder)} is" : $"{path} is")} {total / 1024d / 1024d:0.0} MB; cowork_show takes at most {ArtifactLimits.MaxBytes / 1024 / 1024} MB.{(files.Count > 1 ? " Put the page in a folder of its own." : "")}");
         var entry = files.Count > 1 || page && folder.TrimEnd('/') != root ? System.IO.Path.GetRelativePath(folder, full).Replace('\\', '/') : System.IO.Path.GetFileName(full);
         return (new Picked(rel, entry, files), null);
+    }
+
+    /// <summary>
+    /// Brief 10: a file outside the workspace (an agent wrote its report to /tmp) gets an answer that says exactly what to do, with the workspace's
+    /// own path, so the next call works.
+    /// </summary>
+    static string Outside(string root, string path, string full, bool link = false)
+    {
+        var name = System.IO.Path.GetFileName(full);
+        if (string.IsNullOrEmpty(name)) name = "report.html";
+        var why = link ? $"{path} points outside your workspace ({root})" : $"{path} isn't in your workspace ({root})";
+        return $"{why}; cowork_show only shows files inside it. Write the file inside your workspace ({root}), for example {root}/reports/{name}, then call cowork_show with that path.";
     }
 
     static IEnumerable<string> Walk(string dir, string realRoot)
