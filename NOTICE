@@ -13,7 +13,8 @@ Trademarks
 
 Origins
   Parts of Weave CoWork were adapted from Weave Fleet, by the same copyright
-  holder: the ACP client, the theme tokens and the ui components.
+  holder: the ACP client, the theme tokens, the ui components, and the
+  cowork-design skill (from Weave Fleet's fleet-design skill).
 
 Third-party software that ships with CoWork is listed, with its licences, in
 THIRD-PARTY-NOTICES.md.
