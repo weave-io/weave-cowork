@@ -19,7 +19,7 @@ FONTS = ["@fontsource-variable/inter", "@fontsource-variable/jetbrains-mono"]
 # brief 12: the font kit the server gives agents' pages (src/CoWork.Server/PageKit/fonts), Latin files from @fontsource 5.3.0, licences beside them
 PAGE_KIT = ROOT / "src" / "CoWork.Server" / "PageKit" / "fonts"
 PAGE_FONTS = [("Bricolage Grotesque", "bricolage-grotesque"), ("Fraunces", "fraunces"), ("IBM Plex Mono", "ibm-plex-mono"),
-              ("IBM Plex Sans", "ibm-plex-sans"), ("Instrument Serif", "instrument-serif"), ("Literata", "literata")]
+              ("IBM Plex Sans", "ibm-plex-sans"), ("Instrument Serif", "instrument-serif"), ("Source Serif 4", "source-serif-4")]
 bad = []
 
 
