@@ -63,10 +63,10 @@ export function saveWidth(key: string, w: number | null) {
   try { if (w == null) storage()?.removeItem(KEY(key)); else storage()?.setItem(KEY(key), String(Math.round(w))) } catch { /* private mode: not remembered */ }
 }
 
-/** An element's width, kept up to date (0 until it's mounted). */
+/** An element's inner width (without its borders: that's the room inside it), kept up to date (0 until it's mounted). */
 export function useElementWidth(el: Ref<HTMLElement | null | undefined>): Ref<number> {
   const w = ref(0)
-  const measure = () => { w.value = el.value?.getBoundingClientRect().width ?? 0 }
+  const measure = () => { w.value = el.value?.clientWidth ?? 0 }
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
   watch(el, (now, before) => { if (before) ro?.unobserve(before); if (now) ro?.observe(now); measure() }, { flush: 'post', immediate: true })
   onMounted(measure)

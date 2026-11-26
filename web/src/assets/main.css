@@ -525,6 +525,12 @@
     border-color: var(--accent) !important;
   }
 
+  /* A panel's resize handle (ui/resize-handle) shows focus as its accent line drawn thicker: a ring around an 8px grip
+     would be two more lines beside it. */
+  [role="separator"][data-resize]:focus-visible {
+    outline: none !important;
+  }
+
   /* A menu's rows show focus with the highlight tint, the same for the keyboard as for the pointer. */
   [role="menuitem"]:focus-visible,
   [role="menuitemcheckbox"]:focus-visible,
