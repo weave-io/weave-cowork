@@ -24,7 +24,7 @@ CoWork's canvas, beside the thread, in CoWork's light or dark theme.
   |---|---|---|
   | `"Fraunces"` | 400, 600 | Warm, soft display serif. Headlines and big figures. |
   | `"Instrument Serif"` | 400, italic 400 | Elegant, narrow display serif. Large headlines only. |
-  | `"Literata"` | 400, 600, italic 400 | Book serif made for reading. Long text, documents. |
+  | `"Source Serif 4"` | 400, 600, italic 400 | Book serif made for reading. Long text, documents. |
   | `"IBM Plex Sans"` | 400, 600 | Plain, engineered sans. Body text, interfaces, tables. |
   | `"Bricolage Grotesque"` | 400, 700 | Sans with character. Headlines with a voice. |
   | `"IBM Plex Mono"` | 400, 500 | Figures, codes, labels, captions. |
@@ -34,12 +34,38 @@ CoWork's canvas, beside the thread, in CoWork's light or dark theme.
 
 ## 2. Decide how much design it needs
 
-- **A report, a comparison, results, a plan, a document:** clear structure, plus one move taken from the subject. Open
-  with the answer (the figure, the verdict, the recommendation), show the numbers as a simple chart where that helps,
-  and pick a font pairing from the kit that suits the subject. Everything else stays quiet.
+- **A report, a comparison, results, a plan, a document:** clear structure, plus one move taken from the subject.
+  Everything else stays quiet. Follow the recipe below.
 - **Distinctive** (a landing page, a game, a tool people will keep or share): take a point of view (section 6).
 
 A well-set page with one good idea beats an overdesigned one.
+
+**The recipe for a report.** These five are where agents' pages most often go wrong; keep to all of them.
+
+1. **Open with the answer.** Right under the title: the verdict or recommendation in one or two sentences, with the key
+   figure set large (in the display face). Tables and detail come after it. Figures use the subject's own units and
+   currency (an EU question is in euros).
+2. **Show amounts as a chart** when the page compares numbers: simple horizontal bars in HTML and CSS (a track and a
+   filled bar sized with `width: NN%`), each with its label and value. Each bar's width is its value divided by the
+   largest value (the largest is 100%), never a rank or a preference. Keep the full table too if it has more columns.
+   A pattern that works (the fill sits inside a track, so its width counts; never give a bar `flex: 1`):
+
+   ```html
+   <div class="bar is-answer"><span>Levy.io</span><span class="track"><i style="width: 52%"></i></span><b>€0.22</b></div>
+   ```
+   ```css
+   .bar { display: grid; grid-template-columns: 7rem 1fr 5rem; gap: 12px; align-items: center; }
+   .bar .track { height: 12px; background: var(--track); border-radius: 2px; }
+   .bar .track i { display: block; height: 100%; background: var(--bar); border-radius: 2px; }
+   .bar.is-answer .track i { background: var(--accent); }
+   .bar b { text-align: right; font-variant-numeric: tabular-nums; }
+   ```
+3. **Tables are quiet:** the header row is small, muted, uppercase text with no fill colour; rows are split by thin
+   lines in the divider colour; numbers are right-aligned in the mono face with `tabular-nums`.
+4. **No boxes and bars around sections:** no `border-left` stripe, no card per section. Separate sections with space
+   and a heading. If one thing needs setting apart (the answer), give only that one a soft tint.
+5. **One accent, used sparingly:** for the answer and at most one highlight in the chart. Body text stays in the text
+   colour.
 
 ## 3. Start from what exists
 
@@ -149,6 +175,9 @@ CoWork can't look at the page for you, so check the file before you call `cowork
   `/a/fonts/fonts.css`.
 - Every colour is a variable, and the dark block redefines them all.
 - No fixed width over 360px outside an `overflow-x: auto` box; tables and code sit in one.
-- The answer or the most important thing is the first thing on the page.
+- The answer is the first thing after the title.
+- Every bar's width is its value divided by the largest value: check each one.
+- Search your CSS: no `border-left` (or `border-inline-start`) in a colour, and no `background` on `th` or `thead`. If
+  you find one, take it out.
 
 Then show it, say in one or two sentences what it shows, and let people ask for changes.
