@@ -11,7 +11,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.*" />
     <EmbeddedResource Include="Migrations\*.sql" />
-    <!-- brief 12: the font kit and the scheme script every shown page gets (PageKit.cs); the fonts' licences sit beside them -->
+    <!-- brief 13: the font kit and the scheme script every shown page gets (PageKit.cs); the fonts' licences sit beside them -->
     <EmbeddedResource Include="PageKit\fonts\*.woff2;PageKit\fonts\fonts.css" LogicalName="CoWork.Server.PageKit.fonts.%(Filename)%(Extension)" />
     <EmbeddedResource Include="PageKit\scheme.js" LogicalName="CoWork.Server.PageKit.scheme.js" />
     <ProjectReference Include="..\CoWork.Contracts\CoWork.Contracts.csproj" />

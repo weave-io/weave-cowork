@@ -1,4 +1,4 @@
-// CoWork (brief 12): this page follows the theme chosen in CoWork. The canvas puts #scheme=dark or #scheme=light in the page's
+// CoWork (brief 13): this page follows the theme chosen in CoWork. The canvas puts #scheme=dark or #scheme=light in the page's
 // address; this turns the page's own prefers-color-scheme rules on or off to match, and again when it changes. Opened on its own,
 // without that, the page follows the computer as usual.
 (() => {

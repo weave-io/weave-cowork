@@ -4,7 +4,7 @@ using System.Text;
 namespace CoWork.Server;
 
 /// <summary>
-/// Brief 12: what CoWork gives every page an agent shows. A font kit (open-licence families, served at <c>/a/fonts/</c>, declared by
+/// Brief 13: what CoWork gives every page an agent shows. A font kit (open-licence families, served at <c>/a/fonts/</c>, declared by
 /// <c>/a/fonts/fonts.css</c>), because a page may load nothing from the internet; and a small script added to each page as it's served, so the
 /// page's own <c>prefers-color-scheme</c> rules follow the theme chosen in CoWork (the canvas says which in the address's fragment, which never
 /// reaches the server). Pages keep writing standard CSS; downloads get the page as the agent wrote it.

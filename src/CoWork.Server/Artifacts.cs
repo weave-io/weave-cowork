@@ -443,13 +443,13 @@ public sealed class Artifacts
         // a markdown, CSV or JSON file is data here (the app shows it); only pages and their own files render
         var type = file.Type.StartsWith("text/markdown") || file.Type.StartsWith("text/csv") ? "text/plain; charset=utf-8" : file.Type;
         Harden(ctx.Response, type);
-        // brief 12: a page follows the theme chosen in CoWork (the script reads the canvas's #scheme=); fonts load in the opaque-origin frame
+        // brief 13: a page follows the theme chosen in CoWork (the script reads the canvas's #scheme=); fonts load in the opaque-origin frame
         if (type.StartsWith("text/html", StringComparison.Ordinal)) return Results.Bytes(PageKit.WithScheme(File.ReadAllBytes(_blobs.PathOf(file.Sha256))), type);
         if (type.StartsWith("font/", StringComparison.Ordinal)) ctx.Response.Headers.AccessControlAllowOrigin = "*";
         return Results.File(_blobs.PathOf(file.Sha256), type);
     }
 
-    /// <summary>Brief 12: CoWork's font kit, for any page shown (<c>/a/fonts/fonts.css</c> and the files it declares). A page's frame has an
+    /// <summary>Brief 13: CoWork's font kit, for any page shown (<c>/a/fonts/fonts.css</c> and the files it declares). A page's frame has an
     /// opaque origin, and fonts are fetched with CORS, so they're served to any origin; they're open-licence files, the same for everyone.</summary>
     private IResult Font(string file, HttpContext ctx)
     {

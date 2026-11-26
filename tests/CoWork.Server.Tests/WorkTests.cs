@@ -63,7 +63,7 @@ public class WorkTests
         Assert.Contains("cowork_show takes the path of a file, never its content: write the file inside your workspace (your working directory) first", (string)init["result"]!["instructions"]!);
         var tools = (await Mcp(w.App, token, "tools/list")).Body!["result"]!["tools"]!.AsArray().Select(t => (string)t!["name"]!).ToArray();
         Assert.Equal(new[] { "cowork_read_channel", "cowork_search", "cowork_resolve_thread", "cowork_show", "cowork_design_guide" }, tools);
-        // brief 12: the instructions send any agent to the design guide before it writes a page, as a skill or through the tool
+        // brief 13: the instructions send any agent to the design guide before it writes a page, as a skill or through the tool
         Assert.Contains("the cowork-design skill if you have it, otherwise cowork_design_guide({})", (string)init["result"]!["instructions"]!);
         var (guide, guideError) = await Tool(w.App, token, "cowork_design_guide", new { });
         Assert.False(guideError);
@@ -111,7 +111,7 @@ public class WorkTests
             // every tool call is on the record, the refused one too, for whoever asked
             var calls = c.Query<(string Tool, bool Refused, long Behalf)>("SELECT json_extract(data,'$.tool'), json_extract(data,'$.refused'), on_behalf_of FROM events WHERE type='CoworkToolCalled' ORDER BY position").ToList();
             Assert.Equal(7, calls.Count);
-            Assert.Equal("cowork_design_guide", calls[0].Tool);       // brief 12: reading the design guide is on the record too
+            Assert.Equal("cowork_design_guide", calls[0].Tool);       // brief 13: reading the design guide is on the record too
             Assert.Equal(new[] { false, false, true, false, false, false, false }, calls.Select(x => x.Refused));
             Assert.All(calls, x => Assert.Equal(w.Rosa.Id, x.Behalf));
         }

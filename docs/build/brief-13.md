@@ -35,8 +35,8 @@ it's in, and ship a small font kit.
 
 - Everything that exists keeps working: `dotnet test`, `bun run test`, and the live checks that cover what changes (phase13 and
   phase14 for the canvas). Add `phase16.mjs` for this demo (phase15 is taken on the sign-in branch).
-- Screenshots in `docs/screens/brief12/`, dark and light; look at them.
-- Ports 5883 to 5888; sandbox image `cowork-sandbox-opencode:2.4.1-b12` for the new runner. Never rebuild or retag
+- Screenshots in `docs/screens/brief13/`, dark and light; look at them.
+- Ports 5883 to 5888; sandbox image `cowork-sandbox-opencode:2.4.1-b13` for the new runner. Never rebuild or retag
   `cowork-sandbox-opencode:2.4.1` or `:try`, and never touch port 5889.
 - Cap heavy commands with `systemd-run --user --scope -q -p MemoryMax=2500M -p MemorySwapMax=0 -- …`.
 - Small commits with tests, on this branch. Log it in `docs/build/log.md`.

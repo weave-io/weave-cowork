@@ -133,7 +133,7 @@ public class ArtifactTests
         Assert.Equal("nosniff", page.Headers.GetValues("X-Content-Type-Options").Single());
         var served = await page.Content.ReadAsStringAsync();
         Assert.Contains("Tax APIs</h1>", served);
-        // brief 12: the page gets the script that follows CoWork's light or dark, just before </body>; its other files don't, nor does the app's copy
+        // brief 13: the page gets the script that follows CoWork's light or dark, just before </body>; its other files don't, nor does the app's copy
         Assert.EndsWith("</script>\n</body></html>", served);
         Assert.Contains("<img src=img/chart.png><script data-cowork=\"scheme\">", served);
         var css = await anon.GetAsync(v1.GetProperty("base").GetString() + "style.css");

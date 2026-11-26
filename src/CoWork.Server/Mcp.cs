@@ -96,7 +96,7 @@ public sealed class Mcp
     /// What the harness puts in front of the model before it has read any tool's description. Brief 10: OpenCode 2.4.1 calls MCP tools from code
     /// ("code mode") and lists only these instructions up front, so the model guessed <c>cowork_show({ format, content, title })</c> before it
     /// looked the tool up. The call shapes are here, and cowork_show's rule (a path in the workspace, never the content) with them.
-    /// Brief 12: and the design guide, read before a page is written (as a skill where the harness has it, else through the tool).
+    /// Brief 13: and the design guide, read before a page is written (as a skill where the harness has it, else through the tool).
     /// </summary>
     public const string Instructions =
         "CoWork's tools for this thread: cowork_read_channel({ channel?, limit?, threadId? }) reads a channel or a thread you take part in; " +

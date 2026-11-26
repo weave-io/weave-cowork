@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <!-- brief 12: skills CoWork gives every agent (the runner installs them in a sandbox's home; the server's MCP tool returns them) -->
+    <!-- brief 13: skills CoWork gives every agent (the runner installs them in a sandbox's home; the server's MCP tool returns them) -->
     <EmbeddedResource Include="Skills/cowork-design/SKILL.md" LogicalName="skills/cowork-design/SKILL.md" />
   </ItemGroup>
 </Project>

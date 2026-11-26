@@ -70,7 +70,7 @@ test('CSV and JSON as tables', () => {
   expect(jsonTable({ a: 1 })).toBeNull()
 })
 
-test('a page in the canvas is told the app\'s light or dark in its fragment, replacing any it had (brief 12)', () => {
+test('a page in the canvas is told the app\'s light or dark in its fragment, replacing any it had (brief 13)', () => {
   expect(withScheme('/a/tok123/index.html', 'dark')).toBe('/a/tok123/index.html#scheme=dark')
   expect(withScheme('https://artifacts.example/a/tok/index.html#scheme=dark', 'light')).toBe('https://artifacts.example/a/tok/index.html#scheme=light')
 })

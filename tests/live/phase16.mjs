@@ -1,4 +1,4 @@
-// Brief 12: pages that look chosen. Browsers for Alex (admin) and Rosa (her computer in LIGHT, CoWork in its default dark); a REAL pool with
+// Brief 13: pages that look chosen. Browsers for Alex (admin) and Rosa (her computer in LIGHT, CoWork in its default dark); a REAL pool with
 // REAL containers and REAL OpenCode 2.4.1 (the researcher template, on an image whose runner installs CoWork's skills), model calls through the
 // gateway to this machine's GitHub Copilot sign-in (the user agreed, 25 Nov 2026). researcher's instructions say nothing about design.
 // The demo: the sandbox's home has cowork-design where Claude Code, Codex and OpenCode look → Rosa asks for a report (brief 10's words) →
@@ -7,7 +7,7 @@
 // dark, the page is dark → she switches CoWork to light and the same page (no reload) turns light, and back → the card's thumbnail is told too →
 // opened on its own the page follows the computer → the app's copy of the page is as researcher wrote it, without CoWork's script.
 // Starts its own server (default port 5887). Everything in podman carries the pool's label and is removed by it at the end.
-//   node tests/live/phase16.mjs          (screenshots go to docs/screens/brief12/)
+//   node tests/live/phase16.mjs          (screenshots go to docs/screens/brief13/)
 import { launch, person, expect, ok } from './lib.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -19,10 +19,10 @@ const BASE = `http://127.0.0.1:${PORT}`
 const REPO = new URL('../../', import.meta.url).pathname.replace(/\/$/, '')
 const DIR = `${HOME}/.cache/cowork-p16`
 const DB = `${DIR}/data/cowork.db`
-const SHOTS = process.env.SHOTS_DIR ?? `${REPO}/docs/screens/brief12/`
+const SHOTS = process.env.SHOTS_DIR ?? `${REPO}/docs/screens/brief13/`
 const SERVER = `${REPO}/src/CoWork.Server/bin/Debug/net10.0/CoWork.Server.dll`
 const RUNNER = `${REPO}/src/CoWork.Runner/bin/Debug/net10.0/cowork-runner.dll`
-const IMAGE = process.env.COWORK_SANDBOX_IMAGE || 'cowork-sandbox-opencode:2.4.1-b12'   // brief 12's runner installs the skill; never the trial's own tag
+const IMAGE = process.env.COWORK_SANDBOX_IMAGE || 'cowork-sandbox-opencode:2.4.1-b13'   // brief 13's runner installs the skill; never the trial's own tag
 const LONG = 300000
 rmSync(DIR, { recursive: true, force: true }); mkdirSync(`${DIR}/data`, { recursive: true }); mkdirSync(SHOTS, { recursive: true })
 const sql = (q) => JSON.parse(execFileSync('python3', ['-I', '-c', 'import sqlite3,sys,json;c=sqlite3.connect(sys.argv[1]);print(json.dumps(c.execute(sys.argv[2]).fetchall()))', DB, q]).toString())

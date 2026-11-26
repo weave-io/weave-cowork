@@ -8,7 +8,7 @@ using Dapper;
 
 namespace CoWork.Server.Tests;
 
-/// <summary>Brief 12: what CoWork gives every page an agent shows: the font kit at /a/fonts/, and the script that makes a page's own
+/// <summary>Brief 13: what CoWork gives every page an agent shows: the font kit at /a/fonts/, and the script that makes a page's own
 /// prefers-color-scheme rules follow the theme chosen in CoWork.</summary>
 public class PageKitTests
 {
