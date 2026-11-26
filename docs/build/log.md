@@ -1120,10 +1120,12 @@ reduces any over 700 KB to a palette PNG with [sharp](https://sharp.pixelplumbin
   the words.
 - The member list's Activity and Edit now show on hover; on a touch screen wider than a phone the name still truncates beside them.
 
-## Brief 12: pages that look chosen
+## Brief 13: pages that look chosen
+
+(Built as brief 12 on the showcase's line; renumbered 13 when it reached main after sign-in and the showcase.)
 
 **Demo:** `tests/live/phase16.mjs` (10 checks; Alex and Rosa in browsers, Rosa's computer light and CoWork in its default dark; a real pool with
-real containers on `cowork-sandbox-opencode:2.4.1-b12`, real OpenCode 2.4.1 through this machine's Copilot sign-in, Haiku 4.5). researcher's
+real containers on `cowork-sandbox-opencode:2.4.1-b13`, real OpenCode 2.4.1 through this machine's Copilot sign-in, Haiku 4.5). researcher's
 instructions say nothing about design, and Rosa asks in brief 10's words. The sandbox's runner has put `cowork-design` in the harness's home;
 OpenCode loads it with its own skill tool before it writes the page; the page has its own dark and light, links `/a/fonts/fonts.css` and loads
 nothing from the internet, and its fonts load in the sandboxed frame; it's dark beside dark CoWork although Rosa's computer is light; she
@@ -1168,7 +1170,7 @@ the computer; the app's copy is the page as researcher wrote it.
   €0.27). phase16 prints what each report did of the recipe and the bars as drawn, without failing on the model's taste.
 
 **Checked**
-- phase16 passed five times on the way (each run: a new sandbox, a new report); the last one's pictures in `docs/screens/brief12/`, looked
+- phase16 passed five times on the way (each run: a new sandbox, a new report); the last one's pictures in `docs/screens/brief13/`, looked
   at in both themes. Claude Code and Codex each list `cowork-design` from a scratch folder holding the skill (project level), so the file is a
   skill both accept.
 - `dotnet test` (Runner 44, Server 104), `bun run test` (58), and the live checks for the canvas on the b12 image: `phase13` 32 (its frame

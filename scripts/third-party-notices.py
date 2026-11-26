@@ -16,7 +16,7 @@ LICENSE_FILES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md"
 PERMISSIVE = {"MIT", "MIT-0", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "0BSD", "BlueOak-1.0.0", "Unlicense",
               "CC0-1.0", "OFL-1.1", "Zlib", "Python-2.0", "CC-BY-4.0", "BSD-3-Clause-Clear"}
 FONTS = ["@fontsource-variable/inter", "@fontsource-variable/jetbrains-mono"]
-# brief 12: the font kit the server gives agents' pages (src/CoWork.Server/PageKit/fonts), Latin files from @fontsource 5.3.0, licences beside them
+# brief 13: the font kit the server gives agents' pages (src/CoWork.Server/PageKit/fonts), Latin files from @fontsource 5.3.0, licences beside them
 PAGE_KIT = ROOT / "src" / "CoWork.Server" / "PageKit" / "fonts"
 PAGE_FONTS = [("Bricolage Grotesque", "bricolage-grotesque"), ("Fraunces", "fraunces"), ("IBM Plex Mono", "ibm-plex-mono"),
               ("IBM Plex Sans", "ibm-plex-sans"), ("Instrument Serif", "instrument-serif"), ("Source Serif 4", "source-serif-4")]

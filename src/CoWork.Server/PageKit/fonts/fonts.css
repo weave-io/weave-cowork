@@ -1,4 +1,4 @@
-/* CoWork's font kit for pages (brief 12): open-licence families (SIL OFL 1.1, licences in licenses/), Latin, served at /a/fonts/.
+/* CoWork's font kit for pages (brief 13): open-licence families (SIL OFL 1.1, licences in licenses/), Latin, served at /a/fonts/.
    Link this file from a page shown with cowork_show, then name a family with a fallback stack. */
 @font-face { font-family: "Bricolage Grotesque"; src: url(bricolage-grotesque-400-normal.woff2) format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "Bricolage Grotesque"; src: url(bricolage-grotesque-700-normal.woff2) format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }

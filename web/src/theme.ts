@@ -30,7 +30,7 @@ const systemTick = ref(systemDark?.matches ?? true)
 systemDark?.addEventListener('change', e => { systemTick.value = e.matches; apply() })
 
 export const resolved = computed<ThemeId>(() => selection.value === 'system' ? (systemTick.value ? 'dark' : 'light') : selection.value)
-/** Light or dark, whichever theme is chosen: what an agent's page in the canvas follows (brief 12). */
+/** Light or dark, whichever theme is chosen: what an agent's page in the canvas follows (brief 13). */
 export const scheme = computed<'dark' | 'light'>(() => themes.find(t => t.id === resolved.value)?.colorScheme ?? 'dark')
 
 function apply() {

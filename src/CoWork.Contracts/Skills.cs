@@ -1,7 +1,7 @@
 namespace CoWork.Contracts;
 
 /// <summary>
-/// Brief 12: skills CoWork gives every agent, whatever its harness. Each is one <c>SKILL.md</c> (the standard format: YAML front matter with a
+/// Brief 13: skills CoWork gives every agent, whatever its harness. Each is one <c>SKILL.md</c> (the standard format: YAML front matter with a
 /// name and a description, then markdown) embedded here once. The runner installs it where a sandbox's harness looks for skills; the server's
 /// MCP tool returns it to any agent, so a harness without skills, or a pinned runner whose home CoWork doesn't own, gets the same text.
 /// </summary>

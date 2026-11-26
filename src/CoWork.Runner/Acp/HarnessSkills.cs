@@ -3,7 +3,7 @@ using CoWork.Contracts;
 namespace CoWork.Runner.Acp;
 
 /// <summary>
-/// Brief 12: CoWork's skills as real skills, where a harness looks for them under its home. Only in a sandbox, whose home belongs to the thread:
+/// Brief 13: CoWork's skills as real skills, where a harness looks for them under its home. Only in a sandbox, whose home belongs to the thread:
 /// a pinned runner runs as its owner, and writing into their home would change their own harnesses (those agents get the same text from the
 /// server's <c>cowork_design_guide</c> tool). ACP has no notion of skills, so which folder each harness reads stops here, in the runner:
 /// <list type="bullet">
