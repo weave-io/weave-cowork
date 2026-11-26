@@ -9,6 +9,8 @@ import { artifactPostArrived } from './artifacts'
 export const store = reactive({
   phase: 'loading' as 'loading' | 'setup' | 'signin' | 'app',
   serverName: '',
+  /** How people sign in here: whether the server has a single sign-on provider, and whether it is a server from before one whose accounts had passwords. */
+  auth: { sso: true, passwordAccounts: false },
   meId: 0,
   isAdmin: false,
   members: [] as Member[],
@@ -89,6 +91,7 @@ export function closeModal() { store.modal = null }
 export async function init() {
   const st = await get('/setup/status')
   store.serverName = st.serverName ?? ''
+  store.auth = { sso: !!st.sso, passwordAccounts: !!st.passwordAccounts }
   if (st.needsSetup) { store.phase = 'setup'; return }
   try { store.position = (await loadBootstrap()).position ?? 0; store.phase = 'app'; startHub(); loadThreadList() }
   catch (e) { if (e instanceof ApiError && e.status === 401) store.phase = 'signin'; else throw e }

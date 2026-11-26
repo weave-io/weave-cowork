@@ -5,13 +5,9 @@ using CoWork.Contracts;
 using Dapper;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Identity;
 
 namespace CoWork.Server;
 
-public record SetupBody(string ServerName, string Username, string DisplayName, string Password);
-public record LoginBody(string Username, string Password);
-public record SignupBody(string Username, string DisplayName, string Password);
 public record InviteBody(int? MaxUses, int? ExpiresInDays);
 public record ChannelBody(string? Name, string? Topic, bool? IsPrivate, string? Kind = null, long? ProjectId = null);
 public record PostBody(string Body, long? ThreadId, QuoteBody? Quote = null);
@@ -31,76 +27,19 @@ public static partial class Api
     static long Me(HttpContext c) => long.Parse(c.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     static IResult Err(int status, string message) => Results.Json(new { error = message }, statusCode: status);
 
-    static async Task SignIn(HttpContext ctx, long memberId)
+    internal static async Task SignIn(HttpContext ctx, long memberId)
     {
         var id = new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, memberId.ToString()) }, CookieAuthenticationDefaults.AuthenticationScheme);
         await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(id), new AuthenticationProperties { IsPersistent = true });
     }
 
-    static string? ValidateAccount(string username, string displayName, string password)
-    {
-        if (!HandleRx.IsMatch(username)) return "Usernames are 2–31 characters: lowercase letters, numbers, - and _.";
-        if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 60) return "Add a display name (up to 60 characters).";
-        if (password is null || password.Length < 8) return "Passwords need at least 8 characters.";
-        return null;
-    }
 
     public static void Map(WebApplication app)
     {
         var api = app.MapGroup("/api");
         var authed = api.MapGroup("").RequireAuthorization();
 
-        // ---- setup, sign in, sign out ----
-        api.MapGet("/setup/status", (Db db) =>
-        {
-            using var c = db.Open();
-            var needs = c.ExecuteScalar<int>("SELECT COUNT(*) FROM people") == 0;
-            var name = c.ExecuteScalar<string>("SELECT value FROM settings WHERE key='server_name'");
-            return Results.Ok(new { needsSetup = needs, serverName = name });
-        });
-
-        api.MapPost("/setup", async (SetupBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher, IEventStore store) =>
-        {
-            using (var c = db.Open())
-            {
-                if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM people") > 0) return Err(409, "This server is already set up.");
-                if (string.IsNullOrWhiteSpace(b.ServerName) || b.ServerName.Length > 60) return Err(400, "Name the server (up to 60 characters).");
-                var bad = ValidateAccount(b.Username, b.DisplayName, b.Password);
-                if (bad is not null) return Err(400, bad);
-            }
-            var hash = hasher.HashPassword(new MemberRow(), b.Password);
-            long id = 0; var already = false;
-            store.Append(d =>
-            {
-                already = d.Scalar<int>("SELECT COUNT(*) FROM people") > 0;            // two setups at once: the second one loses
-                if (already) return Array.Empty<NewEvent>();
-                id = d.NextId("members"); var general = d.NextId("channels");
-                d.Execute("INSERT OR REPLACE INTO credentials VALUES (@id,@hash)", new { id, hash });
-                return new[]
-                {
-                    new NewEvent("server", "ServerSetUp", new { serverName = b.ServerName.Trim() }, id),
-                    new NewEvent("server", "PersonJoined", new { memberId = id, handle = b.Username, displayName = b.DisplayName.Trim(), role = "admin" }, id, CausedByIndex: 0),
-                    new NewEvent($"channel-{general}", "ChannelCreated", new { channelId = general, name = "general", topic = "Everything that doesn't have a channel yet", isPrivate = false, kind = "text", creatorId = id }, id, CausedByIndex: 0),
-                };
-            });
-            if (already) return Err(409, "This server is already set up.");
-            await SignIn(ctx, id);
-            return Results.Ok(new { ok = true });
-        });
-
-        api.MapPost("/auth/login", async (LoginBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher) =>
-        {
-            using var c = db.Open();
-            var row = c.QueryFirstOrDefault<(long Id, string Hash)?>(
-                "SELECT m.id, cr.password_hash FROM members m JOIN people p ON p.member_id=m.id JOIN credentials cr ON cr.member_id=m.id WHERE m.handle=@u AND m.removed=0", new { u = (b.Username ?? "").Trim() });
-            if (row is null) { hasher.HashPassword(new MemberRow(), "x"); return Err(401, "Wrong username or password."); }
-            var res = hasher.VerifyHashedPassword(new MemberRow(), row.Value.Hash, b.Password ?? "");
-            if (res == PasswordVerificationResult.Failed) return Err(401, "Wrong username or password.");
-            await SignIn(ctx, row.Value.Id);
-            return Results.Ok(new { ok = true });
-        });
-
-        api.MapPost("/auth/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.Ok(new { ok = true }); });
+        MapAuth(app, api);
 
         // ---- invite links (public part) ----
         api.MapGet("/invites/{code}", (string code, Db db) =>
@@ -110,39 +49,6 @@ public static partial class Api
             var name = c.ExecuteScalar<string>("SELECT value FROM settings WHERE key='server_name'");
             var by = inv is null ? null : c.ExecuteScalar<string>("SELECT display_name FROM members WHERE id=@id", new { id = inv.CreatedBy });
             return Results.Ok(new { valid = reason is null, reason, serverName = name, invitedBy = by });
-        });
-
-        api.MapPost("/invites/{code}/accept", async (string code, SignupBody b, HttpContext ctx, Db db, IPasswordHasher<MemberRow> hasher, Realtime rt, IEventStore store) =>
-        {
-            using (var c = db.Open())
-            {
-                var (_, reason) = CheckInvite(c, code);
-                if (reason is not null) return Err(410, reason);
-                var bad = ValidateAccount(b.Username, b.DisplayName, b.Password);
-                if (bad is not null) return Err(400, bad);
-                if (c.ExecuteScalar<int>("SELECT COUNT(*) FROM members WHERE handle=@u", new { u = b.Username }) > 0) return Err(409, "That username is taken.");
-            }
-            var hash = hasher.HashPassword(new MemberRow(), b.Password);
-            long id = 0; string? refused = null; var status = 0;
-            store.Append(d =>
-            {
-                refused = null;
-                var inv = d.Query<InviteRow>(InviteSql, new { code }).FirstOrDefault();       // again, inside the write: two people may be using the last place
-                var (_, reason) = CheckInvite(inv);
-                if (reason is not null) { refused = reason; status = 410; return Array.Empty<NewEvent>(); }
-                if (d.Scalar<int>("SELECT COUNT(*) FROM members WHERE handle=@u", new { u = b.Username }) > 0) { refused = "That username is taken."; status = 409; return Array.Empty<NewEvent>(); }
-                id = d.NextId("members");
-                d.Execute("INSERT OR REPLACE INTO credentials VALUES (@id,@hash)", new { id, hash });
-                return new[]
-                {
-                    new NewEvent("server", "PersonJoined", new { memberId = id, handle = b.Username, displayName = b.DisplayName.Trim(), role = "member", inviteId = inv!.Id }, id),
-                    new NewEvent("server", "InviteUsed", new { inviteId = inv.Id, memberId = id }, id, CausedByIndex: 0),
-                };
-            });
-            if (refused is not null) return Err(status, refused);
-            await SignIn(ctx, id);
-            await rt.ToAll("bootstrap-changed");
-            return Results.Ok(new { ok = true });
         });
 
         // ---- everything below needs a signed-in person ----

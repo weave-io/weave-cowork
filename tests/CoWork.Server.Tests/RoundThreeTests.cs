@@ -293,9 +293,8 @@ public class RoundThreeTests
         try
         {
             using var app = new TestApp(existingDb: path);
-            var login = new Person(app, "rosa");
-            var r = await login.Http.PostAsJsonAsync("/api/auth/login", new { username = "rosa", password = "rosa-password" });
-            r.EnsureSuccessStatusCode(); login.CaptureCookie(r);
+            app.LinkSso("rosa");                    // a server from before single sign-on: Rosa is given a sign-in to look with
+            var login = await app.SignIn("rosa");
             await Settle(app);
             Assert.Single(app.Sql().Query<long>("SELECT position FROM events WHERE type='UnreadBaselineSet'"));
             Assert.Empty((await login.Http.GetFromJsonAsync<JsonElement>("/api/unread")).GetProperty("channels").EnumerateObject());

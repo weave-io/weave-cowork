@@ -1,7 +1,7 @@
 namespace CoWork.Server;
 
 /// <summary>The tables the inline projections keep. A rebuild empties them (children first) and replays the events.
-/// Not in the list, on purpose: `events`, and the tables of secrets (`credentials`, `runner_secrets`, `invite_codes`), which no event holds.</summary>
+/// Not in the list, on purpose: `events`, and the tables of secrets and sign-ins (`logins`, `runner_secrets`, `invite_codes`), which no event holds.</summary>
 public static class Projections
 {
     public static readonly string[] Tables =

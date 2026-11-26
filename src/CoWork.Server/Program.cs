@@ -3,6 +3,7 @@ using CoWork.Server;
 using Dapper;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -46,7 +47,8 @@ builder.Services.AddSingleton<ArtifactStore>();
 builder.Services.AddSingleton<ArtifactSigner>();
 builder.Services.AddSingleton<Artifacts>();
 builder.Services.AddSingleton<Dispatcher>();
-builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<MemberRow>, Microsoft.AspNetCore.Identity.PasswordHasher<MemberRow>>();
+var sso = SsoOptions.From(builder.Configuration);
+builder.Services.AddSingleton(sso);
 builder.Services.AddSignalR().AddHubOptions<RunnerHub>(o =>
 {
     // a runner that dies hard (or whose connection is dropped silently, e.g. behind a port proxy) is noticed within seconds
@@ -77,9 +79,17 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             using var c = ctx.HttpContext.RequestServices.GetRequiredService<Db>().Open();
             if (!Access.IsActivePerson(c, id)) { ctx.RejectPrincipal(); await ctx.HttpContext.SignOutAsync(); }
         };
-    });
+    })
+    .AddSso(sso);
 
 var app = builder.Build();
+if (!sso.Configured)
+    app.Logger.LogWarning("Single sign-on isn't set up, so nobody can sign in: set COWORK_OIDC__AUTHORITY, COWORK_OIDC__CLIENTID and COWORK_OIDC__CLIENTSECRET");
+
+// behind a reverse proxy that ends TLS (deploy/Caddyfile.example), the request was https: the provider's redirect URL and the cookies need to know
+var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedProto };
+forwarded.KnownIPNetworks.Clear(); forwarded.KnownProxies.Clear();       // the proxy is wherever compose puts it; only the scheme is taken from it
+app.UseForwardedHeaders(forwarded);
 
 // a server that kept its state in tables (before the events) is written down as events once, and checked, before anything else reads it
 LegacyImporter.Run(db, app.Services.GetRequiredService<IEventStore>(), m => app.Logger.LogInformation("{Message}", m));
