@@ -5,7 +5,7 @@
 #   deploy/single-host/cowork-host.sh install --url https://cowork.example.ts.net   # once; the address people open
 #   deploy/single-host/cowork-host.sh person add alex@lumen.example "Alex Morgan"  # a sign-in for each person (prints a password)
 #   deploy/single-host/cowork-host.sh pool XXXX-XXXX                               # after Where agents run → Add a pool
-#   deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider
+#   deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider (interactive)
 #   LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… deploy/single-host/cowork-host.sh voice   # optional: voice channels
 #   deploy/single-host/cowork-host.sh status | logs [server|dex|pool] | stop | start | uninstall
 #
@@ -133,7 +133,7 @@ cmd_install() {
     sed -i "s|^COWORK_URL=.*|COWORK_URL=$url|" "$CONF/host.env"
   fi
   chmod 600 "$CONF/host.env"; . "$CONF/host.env"
-  local voice=""; voice="$(grep '^LIVEKIT_' "$CONF/server.env" 2>/dev/null || true)"
+  local voice=""; voice="$(grep -E '^(LIVEKIT_|COWORK_COPILOT_AUTH=)' "$CONF/server.env" 2>/dev/null || true)"   # kept across installs
   cat > "$CONF/server.env" <<EOF
 COWORK_DATA=$DATA/data
 ASPNETCORE_URLS=http://127.0.0.1:5880
@@ -194,7 +194,33 @@ cmd_pool() {
 cmd_copilot_login() {
   echo "Sign this machine's OpenCode in to GitHub Copilot. CoWork's gateway then forwards every sandbox's model calls to"
   echo "that Copilot account (Server settings → Models → GitHub Copilot). Use a server only you, or a short demo, relies on."
+  echo "Run this in an interactive terminal: OpenCode asks for the GitHub deployment type (Enter for github.com), then shows a device code."
   opencode auth login github-copilot
+  cmd_copilot_sync
+}
+
+# OpenCode 2 keeps its sign-ins in its own database, not in the auth.json CoWork's gateway reads: copy the GitHub token of the
+# active Copilot sign-in from `opencode auth export` into a file of the gateway's shape, and point the server at it.
+cmd_copilot_sync() {
+  need_conf
+  local out="$CONF/copilot-auth.json"
+  (umask 077; opencode auth export | python3 -c '
+import json, sys
+entries = json.load(sys.stdin)
+entries = entries if isinstance(entries, list) else [entries]
+cop = [e for e in entries if isinstance(e, dict) and e.get("integrationID") == "github-copilot"]
+cop.sort(key=lambda e: not e.get("active"))
+v = (cop[0].get("value") or {}) if cop else {}
+token = v.get("refresh") or v.get("access")
+if not token:
+    sys.exit("OpenCode has no GitHub Copilot sign-in: run copilot-login first.")
+print(json.dumps({"github-copilot": {"type": "oauth", "refresh": token}}))' > "$out.new") || { rm -f "$out.new"; exit 1; }
+  mv "$out.new" "$out"
+  chmod 600 "$out"
+  sed -i '/^COWORK_COPILOT_AUTH=/d' "$CONF/server.env"
+  echo "COWORK_COPILOT_AUTH=$out" >> "$CONF/server.env"
+  systemctl --user restart cowork-server.service
+  echo "The server reads the Copilot sign-in from $out. Pick GitHub Copilot under Server settings → Models."
 }
 
 cmd_voice() {   # voice channels through a LiveKit server (LiveKit Cloud, or your own): the values come from the environment, not argv
@@ -231,6 +257,7 @@ case "${1:-}" in
   person) shift; cmd_person "$@";;
   pool) shift; cmd_pool "$@";;
   copilot-login) cmd_copilot_login;;
+  copilot-sync) cmd_copilot_sync;;
   voice) cmd_voice;;
   tailscale-serve) cmd_tailscale_serve;;
   status) systemctl --user --no-pager status cowork-dex cowork-server cowork-pool 2>/dev/null | grep -E '●|Active:' || true;;

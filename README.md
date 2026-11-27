@@ -140,7 +140,7 @@ public interface; put HTTPS in front (on a Tailscale node, `cowork-host.sh tails
 deploy/single-host/cowork-host.sh install --url https://cowork.example.ts.net   # packages, .NET, bun, builds, services
 deploy/single-host/cowork-host.sh person add rosa@lumen.example "Rosa Delgado"  # a sign-in for each person (prints a password)
 deploy/single-host/cowork-host.sh pool XXXX-XXXX                               # after Where agents run → Add a pool
-deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider
+deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider (in a terminal)
 LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… deploy/single-host/cowork-host.sh voice   # optional: voice (e.g. LiveKit Cloud)
 ```
 
