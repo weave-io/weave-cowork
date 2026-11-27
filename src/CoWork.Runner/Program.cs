@@ -55,7 +55,7 @@ static class Cli
         {
             var server = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"));
             var code = Opt(args, "--code");
-            if (server is null || code is null) { Console.Error.WriteLine("Usage: cowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M"); return 2; }
+            if (server is null || code is null) { Console.Error.WriteLine("Usage: cowork-runner pool connect <server> --code XXXX-XXXX --slots 2 --memory 1500M [--enrol-only]"); return 2; }
             server = server.TrimEnd('/');
             var slots = int.TryParse(Opt(args, "--slots"), out var sl) && sl > 0 ? sl : 2;
             var memory = PoolConfig.MemoryMb(Opt(args, "--memory") ?? "1500M");
@@ -72,6 +72,8 @@ static class Cli
             }
             var pr = (await res.Content.ReadFromJsonAsync<PoolEnrolResponse>())!;
             pools.Add(new SavedPool(server, pr.PoolId, pr.Name, pr.Token, slots, memory.Value, pr.ServerId));
+            // --enrol-only: save the pool and stop, so a service manager can run `cowork-runner pool run` from then on
+            if (args.Contains("--enrol-only")) { Console.WriteLine($"Enrolled {pr.Name}: {slots} slots, {memory} MB each. Saved to {pools.Path}. Start it with: cowork-runner pool run"); return 0; }
             Console.WriteLine($"Enrolled {pr.Name}: {slots} slots, {memory} MB each. Saved to {pools.Path}. Staying connected; press Ctrl+C to stop (later: cowork-runner pool run).");
             return await ServePools(pools);
         }

@@ -130,6 +130,22 @@ For HTTPS put it behind a reverse proxy: `deploy/docker-compose.yml` has a comme
 `deploy/Caddyfile.example` has the two lines it needs. SignalR needs WebSockets, which Caddy passes through. The server
 takes the scheme from the proxy's `X-Forwarded-Proto`, so the redirect URL it sends the provider is `https://…`.
 
+### On one Linux machine
+
+`deploy/single-host/cowork-host.sh` sets up everything on one Linux machine (Ubuntu 24.04 tested) for trying CoWork with a
+few people: Dex for sign-in, the server and a pool, as systemd user services of the user who runs it. Nothing listens on a
+public interface; put HTTPS in front (on a Tailscale node, `cowork-host.sh tailscale-serve`).
+
+```bash
+deploy/single-host/cowork-host.sh install --url https://cowork.example.ts.net   # packages, .NET, bun, builds, services
+deploy/single-host/cowork-host.sh person add rosa@lumen.example "Rosa Delgado"  # a sign-in for each person (prints a password)
+deploy/single-host/cowork-host.sh pool XXXX-XXXX                               # after Where agents run → Add a pool
+deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider
+```
+
+The sandbox image's OpenCode 2.4.1 is downloaded from npm (`@opencode/cli-linux-x64`) and checked against a pinned SHA-256
+by `deploy/sandbox/fetch-opencode.sh`.
+
 ### Sign-in
 
 CoWork takes no passwords. People sign in through your OpenID Connect provider, using standard OIDC (the authorization code
