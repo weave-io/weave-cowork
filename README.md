@@ -141,6 +141,7 @@ deploy/single-host/cowork-host.sh install --url https://cowork.example.ts.net   
 deploy/single-host/cowork-host.sh person add rosa@lumen.example "Rosa Delgado"  # a sign-in for each person (prints a password)
 deploy/single-host/cowork-host.sh pool XXXX-XXXX                               # after Where agents run → Add a pool
 deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider
+LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… deploy/single-host/cowork-host.sh voice   # optional: voice (e.g. LiveKit Cloud)
 ```
 
 The sandbox image's OpenCode 2.4.1 is downloaded from npm (`@opencode/cli-linux-x64`) and checked against a pinned SHA-256

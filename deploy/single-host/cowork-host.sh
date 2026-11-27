@@ -6,6 +6,7 @@
 #   deploy/single-host/cowork-host.sh person add alex@lumen.example "Alex Morgan"  # a sign-in for each person (prints a password)
 #   deploy/single-host/cowork-host.sh pool XXXX-XXXX                               # after Where agents run → Add a pool
 #   deploy/single-host/cowork-host.sh copilot-login                                # optional: GitHub Copilot as the model provider
+#   LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… deploy/single-host/cowork-host.sh voice   # optional: voice channels
 #   deploy/single-host/cowork-host.sh status | logs [server|dex|pool] | stop | start | uninstall
 #
 # What it sets up:
@@ -132,6 +133,7 @@ cmd_install() {
     sed -i "s|^COWORK_URL=.*|COWORK_URL=$url|" "$CONF/host.env"
   fi
   chmod 600 "$CONF/host.env"; . "$CONF/host.env"
+  local voice=""; voice="$(grep '^LIVEKIT_' "$CONF/server.env" 2>/dev/null || true)"
   cat > "$CONF/server.env" <<EOF
 COWORK_DATA=$DATA/data
 ASPNETCORE_URLS=http://127.0.0.1:5880
@@ -140,6 +142,7 @@ COWORK_OIDC__CLIENTID=cowork
 COWORK_OIDC__CLIENTSECRET=$CLIENT_SECRET
 DOTNET_ROOT=$HOME/.dotnet
 EOF
+  [ -z "$voice" ] || echo "$voice" >> "$CONF/server.env"
   chmod 600 "$CONF/server.env"
   touch "$CONF/people.tsv"; chmod 600 "$CONF/people.tsv"
 
@@ -194,6 +197,19 @@ cmd_copilot_login() {
   opencode auth login github-copilot
 }
 
+cmd_voice() {   # voice channels through a LiveKit server (LiveKit Cloud, or your own): the values come from the environment, not argv
+  need_conf
+  [ -n "${LIVEKIT_URL:-}" ] && [ -n "${LIVEKIT_API_KEY:-}" ] && [ -n "${LIVEKIT_API_SECRET:-}" ] \
+    || die "Usage: LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… $0 voice"
+  case "$LIVEKIT_URL" in wss://*|ws://*) ;; *) die "LIVEKIT_URL is the address browsers use: wss://…";; esac
+  sed -i '/^LIVEKIT_/d' "$CONF/server.env"
+  printf 'LIVEKIT_URL=%s\nLIVEKIT_API_KEY=%s\nLIVEKIT_API_SECRET=%s\n' "$LIVEKIT_URL" "$LIVEKIT_API_KEY" "$LIVEKIT_API_SECRET" >> "$CONF/server.env"
+  chmod 600 "$CONF/server.env"
+  systemctl --user restart cowork-server.service
+  for _ in $(seq 60); do curl -fs -o /dev/null http://127.0.0.1:5880/api/setup/status && break; sleep 1; done
+  echo "Voice is on: voice channels use $LIVEKIT_URL. Browsers need the server's HTTPS address to use the microphone."
+}
+
 cmd_tailscale_serve() {
   need_conf
   sudo tailscale serve --bg --https=443 http://127.0.0.1:5880
@@ -207,6 +223,7 @@ case "${1:-}" in
   person) shift; cmd_person "$@";;
   pool) shift; cmd_pool "$@";;
   copilot-login) cmd_copilot_login;;
+  voice) cmd_voice;;
   tailscale-serve) cmd_tailscale_serve;;
   status) systemctl --user --no-pager status cowork-dex cowork-server cowork-pool 2>/dev/null | grep -E '●|Active:' || true;;
   logs) journalctl --user --no-pager -n 80 -u "cowork-${2:-server}";;
