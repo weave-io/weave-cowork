@@ -212,8 +212,16 @@ cmd_voice() {   # voice channels through a LiveKit server (LiveKit Cloud, or you
 
 cmd_tailscale_serve() {
   need_conf
-  sudo tailscale serve --bg --https=443 http://127.0.0.1:5880
-  sudo tailscale serve --bg --https=443 --set-path=/dex http://127.0.0.1:5556/dex
+  command -v tailscale >/dev/null || die "Tailscale isn't installed on this machine."
+  # tailscale serve waits forever when the tailnet has Serve or HTTPS certificates off: check first, and say what's missing
+  local certs
+  certs="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin).get("CertDomains") or []))' 2>/dev/null || true)"
+  [ -n "$certs" ] || die "This tailnet has no HTTPS certificates, so tailscale serve can't give $COWORK_URL a certificate.
+A tailnet admin turns on MagicDNS, HTTPS Certificates (admin console, DNS) and Serve, then run this again."
+  case " $certs " in *" ${COWORK_URL#https://} "*) ;; *) echo "Note: $COWORK_URL isn't this machine's certificate name ($certs)." >&2;; esac
+  timeout 60 sudo tailscale serve --bg --https=443 http://127.0.0.1:5880 \
+    || die "tailscale serve didn't finish. If it asked for Serve to be turned on, a tailnet admin does that at the link it printed."
+  timeout 60 sudo tailscale serve --bg --https=443 --set-path=/dex http://127.0.0.1:5556/dex || die "tailscale serve for /dex didn't finish."
   sudo tailscale serve status
 }
 
